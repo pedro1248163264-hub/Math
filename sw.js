@@ -1,4 +1,4 @@
-const CACHE = 'calculo-rapido-v7';
+const CACHE = 'calculo-rapido-v8';
 const ASSETS = [
   './',
   './index.html',
