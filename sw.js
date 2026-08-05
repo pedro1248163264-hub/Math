@@ -1,4 +1,7 @@
-const CACHE = 'calculo-rapido-v7';
+// Mude esta versão sempre que um arquivo listado em ASSETS for alterado.
+// Sem isso, um PWA já instalado pode continuar executando uma cópia antiga do
+// app.js no celular, mesmo depois de uma nova publicação.
+const CACHE = 'calculo-rapido-v8';
 const ASSETS = [
   './',
   './index.html',
