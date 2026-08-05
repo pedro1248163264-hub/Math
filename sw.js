@@ -1,7 +1,7 @@
 // Mude esta versão sempre que um arquivo listado em ASSETS for alterado.
 // Sem isso, um PWA já instalado pode continuar executando uma cópia antiga do
 // app.js no celular, mesmo depois de uma nova publicação.
-const CACHE = 'calculo-rapido-v8';
+const CACHE = 'calculo-rapido-v9';
 const ASSETS = [
   './',
   './index.html',
@@ -49,9 +49,14 @@ self.addEventListener('fetch', (event) => {
       }
     }
 
-    const cached = await cache.match(event.request);
-    if (cached) return cached;
-
+    // BUGFIX: isto era cache-first (servia a cópia salva sem checar se havia uma
+    // nova, e só parava de servir a antiga se CACHE mudasse de nome). Como
+    // index.html acima é sempre buscado fresco da rede, uma pessoa que já tinha
+    // visitado o site ficava com o HTML novo publicado rodando junto com um
+    // app.js/styles.css antigos — se os dois não batessem mais (ex.: um id
+    // renomeado), botões paravam de funcionar silenciosamente. Agora, com rede
+    // disponível, sempre busca a versão mais nova primeiro; o cache só é usado
+    // como reserva para abrir offline.
     try {
       const response = await fetch(event.request);
       // Não grava respostas de erro; fontes com resposta opaca continuam podendo
@@ -59,7 +64,7 @@ self.addEventListener('fetch', (event) => {
       if (response.ok || response.type === 'opaque') cache.put(event.request, response.clone());
       return response;
     } catch {
-      return (await caches.match(event.request)) || Response.error();
+      return (await cache.match(event.request)) || Response.error();
     }
   })());
 });
