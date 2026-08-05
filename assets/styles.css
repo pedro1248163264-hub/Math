@@ -149,6 +149,7 @@ input[type=range]{width:100%; accent-color:var(--accent);}
 /* ============ TRAINING SCREEN ============ */
 #screen-training{padding:16px 20px; justify-content:space-between;}
 .train-top{display:flex; align-items:center; justify-content:space-between; gap:10px;}
+.training-time-spacer{flex:1;}
 .ring-wrap{position:relative; width:48px; height:48px;}
 .ring-wrap svg{transform:rotate(-90deg);}
 .ring-bg{fill:none; stroke:var(--border); stroke-width:5;}
@@ -156,8 +157,7 @@ input[type=range]{width:100%; accent-color:var(--accent);}
 .ring-label{position:absolute; inset:0; display:flex; align-items:center; justify-content:center; font-family:var(--font-num); font-weight:700; font-size:0.7rem;}
 .pause-btn{width:40px; height:40px; border-radius:10px; border:1px solid var(--border); background:var(--surface); color:var(--text); font-size:0.95rem; display:flex; align-items:center; justify-content:center;}
 
-.equation-zone{flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:12px; text-align:center; width:100%;}
-.op-badge{font-size:0.7rem; font-weight:600; letter-spacing:0.08em; text-transform:uppercase; color:var(--dim);}
+.equation-zone{flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:12px; padding-top:32px; text-align:center; width:100%;}
 .math-card{
   width:100%; min-height:188px; display:flex; align-items:center; justify-content:center;
   padding:22px 18px; border:1.5px solid rgba(148,163,184,0.72); border-radius:22px;

@@ -45,7 +45,7 @@ const I18N = {
     home_tagline:'Treine mais rápido. Pense mais afiado. Todos os dias.',
     home_today:'Desempenho de hoje', home_reaction:'Tempo de reação', home_accuracy:'Precisão',
     start_training:'Iniciar treino →', exercises:'Exercícios', sessions:'Sessões', best_streak:'Melhor sequência',
-    config_title:'Configurar sessão', operations:'Operações', training_mode:'Formato da sessão', options:'Opções',
+    config_title:'Configurar sessão', configure_training:'Configurar treino', operations:'Operações', training_mode:'Formato da sessão', options:'Opções',
     speed_skills:'Habilidades em foco', speed_skills_sub:'Escolha uma ou mais famílias. Todas já estão disponíveis.', speed_mode:'Estilo do treino',
     select_all_skills:'Treinar todas as contas', select_all_skills_sub:'Inclui automaticamente todas as famílias disponíveis',
     drill_focus_l:'Foco', drill_focus_d:'Repita a habilidade escolhida', drill_mix_l:'Misto', drill_mix_d:'Alterne e ataque o gargalo',
@@ -117,7 +117,7 @@ const I18N = {
     home_tagline:'Train faster. Think sharper. Every day.',
     home_today:"Today's performance", home_reaction:'Reaction time', home_accuracy:'Accuracy',
     start_training:'Start training →', exercises:'Exercises', sessions:'Sessions', best_streak:'Best streak',
-    config_title:'Session setup', operations:'Operations', training_mode:'Session format', options:'Options',
+    config_title:'Session setup', configure_training:'Configure training', operations:'Operations', training_mode:'Session format', options:'Options',
     speed_skills:'Skills in focus', speed_skills_sub:'Choose one or more families. Every family is already available.', speed_mode:'Training style',
     select_all_skills:'Train all skills', select_all_skills_sub:'Automatically includes every available family',
     drill_focus_l:'Focus', drill_focus_d:'Repeat the selected skill', drill_mix_l:'Mixed', drill_mix_d:'Alternate and attack the bottleneck',
@@ -1337,13 +1337,13 @@ const UI = {
     this.bindNav();
     this.bindTraining();
     this.renderHome();
-    document.getElementById('btnStart').onclick = ()=>Session.start();
-    document.getElementById('btnStartFromHome').onclick = ()=>{ this.showScreen('config'); };
-    document.getElementById('btnBackHome').onclick = ()=>{ this.showScreen('home'); this.setTab('home'); this.renderHome(); };
+    document.getElementById('btnStartFromHome').onclick = ()=>Session.start();
+    document.getElementById('btnToggleTrainingConfig').onclick = ()=>this.showScreen('config');
+    document.getElementById('btnBackSettings').onclick = ()=>{ this.showScreen('settings'); this.setTab('settings'); this.buildAppSettings(); };
     document.getElementById('btnPause').onclick = ()=>Session.togglePause();
     document.getElementById('btnExitTraining').onclick = ()=>Session.exit();
     document.getElementById('btnGoHistory').onclick = ()=>{ this.showScreen('insights'); this.renderInsights(); this.setTab('insights'); };
-    document.getElementById('btnNewSession').onclick = ()=>{ this.showScreen('config'); };
+    document.getElementById('btnNewSession').onclick = ()=>Session.start();
   },
   toast(msg){
     const el = document.getElementById('toast');
@@ -1745,9 +1745,6 @@ const UI = {
     eqEl.append(row);
   },
   renderQuestion(item, onReady){
-    const lang = Store.data.settings.appLang;
-    const tag = item.isCalibration ? ' · '+t('calibration') : ' · '+t('target')+' '+U.fmtSec(item.targetMs);
-    document.getElementById('opBadge').textContent = (lang==='en' ? kcLabel(item.key||'', item.kcLabel) : item.kcLabel).toUpperCase() + tag.toUpperCase();
     const eqEl = document.getElementById('equationText');
     this.renderMathQuestion(item, eqEl);
     this.updateAnswerDisplay('');
@@ -1793,12 +1790,7 @@ const UI = {
       strip.appendChild(bar);
     });
   },
-  updateHud(records){
-    const correct = records.filter(r=>r.correct);
-    document.getElementById('hudAcc').textContent = records.length ? U.fmtPct(correct.length/records.length) : '100%';
-    document.getElementById('hudAvg').textContent = correct.length ? U.fmtSec(U.mean(correct.map(r=>r.ms))) : '0.0s';
-    document.getElementById('hudCount').textContent = records.length;
-  },
+  updateHud(){},
   updateRing(session){
     const circle = document.getElementById('ringFg');
     const label = document.getElementById('ringLabel');
