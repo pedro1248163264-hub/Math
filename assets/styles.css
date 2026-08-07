@@ -237,10 +237,6 @@ input.native-numeric{position:absolute; opacity:0; width:0; height:0; pointer-ev
 .metric .val{font-family:var(--font-num); font-size:1.35rem; font-weight:700; color:var(--text); letter-spacing:-0.02em;}
 .metric .lab{font-size:0.65rem; color:var(--dim); text-transform:uppercase; letter-spacing:0.05em; margin-top:4px; font-weight:600;}
 
-.fact-line{display:flex; justify-content:space-between; font-size:0.86rem; padding:8px 0; border-bottom:1px solid var(--border);}
-.fact-line:last-child{border-bottom:none;}
-.fact-line .t{font-family:var(--font-num); color:var(--dim);}
-
 svg.chart{width:100%; height:120px; overflow:visible;}
 .toast{
   position:fixed; left:50%; bottom:100px; transform:translateX(-50%);

@@ -55,7 +55,7 @@ const I18N = {
     rest:'Descanso', rest_msg:'Respire. O próximo bloco começa em instantes.',
     summary_title:'Resumo da sessão', avg_time:'Tempo médio', accuracy_cap:'Precisão', cognitive_time:'Tempo cognitivo',
     motor_time:'Tempo motor', fluency_index:'Índice de fluência', biggest_gain:'Maior evolução',
-    main_bottleneck:'Principal gargalo', skills_in_focus:'Habilidades em foco', view_history:'Ver histórico', new_training:'Novo treino',
+    main_bottleneck:'Principal gargalo', view_history:'Ver histórico', new_training:'Novo treino',
     stats_title:'Estatísticas', avg_accuracy:'Precisão média', avg_time_item:'Tempo médio / conta', all_operations:'todas as operações',
     evolution_time:'Evolução — tempo médio', evolution_acc:'Evolução — precisão', median:'Mediana', p90:'Percentil 90',
     settings_title:'Ajustes', tab_home:'Início', tab_stats:'Estatísticas', tab_settings:'Ajustes',
@@ -94,7 +94,6 @@ const I18N = {
     no_evolution:'Ainda não há histórico suficiente para comparar.',
     summary_evolution_line:'{op}: de {prev} para {cur} em média.',
     summary_bottleneck_line:'{op} — tempo médio {avg}, precisão {acc}.',
-    no_skills_session:'Nenhuma habilidade de destaque nesta sessão.',
     rating:'rating', block:'bloco', awaiting_retest:'aguardando reteste de retenção', recent_acc:'precisão recente',
     est_retention:'retenção estimada', answer_label:'Resposta',
     date_locale:'pt-BR'
@@ -113,7 +112,7 @@ const I18N = {
     rest:'Break', rest_msg:'Breathe. The next block starts shortly.',
     summary_title:'Session summary', avg_time:'Average time', accuracy_cap:'Accuracy', cognitive_time:'Cognitive time',
     motor_time:'Motor time', fluency_index:'Fluency index', biggest_gain:'Biggest gain',
-    main_bottleneck:'Main bottleneck', skills_in_focus:'Skills in focus', view_history:'View history', new_training:'New session',
+    main_bottleneck:'Main bottleneck', view_history:'View history', new_training:'New session',
     stats_title:'Statistics', avg_accuracy:'Avg. accuracy', avg_time_item:'Avg. time / item', all_operations:'all operations',
     evolution_time:'Evolution — average time', evolution_acc:'Evolution — accuracy', median:'Median', p90:'90th percentile',
     settings_title:'Settings', tab_home:'Home', tab_stats:'Stats', tab_settings:'Settings',
@@ -152,7 +151,6 @@ const I18N = {
     no_evolution:'Not enough history yet to compare.',
     summary_evolution_line:'{op}: from {prev} to {cur} on average.',
     summary_bottleneck_line:'{op} — average time {avg}, accuracy {acc}.',
-    no_skills_session:'No standout skills this session.',
     rating:'rating', block:'block', awaiting_retest:'awaiting retention retest', recent_acc:'recent accuracy',
     est_retention:'estimated retention', answer_label:'Answer',
     date_locale:'en-US'
@@ -1783,14 +1781,6 @@ const UI = {
     document.getElementById('sumBottleneck').textContent = sum.bottleneck
       ? `${sum.bottleneck.label} — ${U.fmtSec(sum.bottleneck.median)} ${t('median').toLowerCase()} · ${U.fmtPct(sum.bottleneck.targetRate)} ${t('target_rate').toLowerCase()}.`
       : '—';
-    const factsBox = document.getElementById('sumFacts');
-    factsBox.innerHTML='';
-    if(!sum.kcFocus || !sum.kcFocus.length){ factsBox.innerHTML = `<p>${t('no_skills_session')}</p>`; }
-    (sum.kcFocus||[]).forEach(f=>{
-      const line = document.createElement('div'); line.className='fact-line';
-      line.innerHTML = `<span>${f.label}</span><span class="t">${U.fmtSec(f.median)} · ${U.fmtPct(f.targetRate)} ${t('target_rate').toLowerCase()}</span>`;
-      factsBox.appendChild(line);
-    });
   },
 
   renderHome(){
