@@ -241,26 +241,6 @@ input.native-numeric{position:absolute; opacity:0; width:0; height:0; pointer-ev
 .fact-line:last-child{border-bottom:none;}
 .fact-line .t{font-family:var(--font-num); color:var(--dim);}
 
-.history-item{padding:12px 0; border-bottom:1px solid var(--border);}
-.history-item:last-child{border-bottom:none;}
-.history-item .top{display:flex; justify-content:space-between; font-weight:600; font-size:0.88rem;}
-.history-item .meta{font-size:0.76rem; color:var(--dim); margin-top:3px;}
-
-.insight-item{display:flex; gap:10px; padding:9px 0; border-bottom:1px solid var(--border); font-size:0.86rem;}
-.insight-item:last-child{border-bottom:none;}
-.insight-item .dot{width:6px; height:6px; border-radius:50%; background:var(--accent); margin-top:7px; flex-shrink:0;}
-
-/* KC (habilidade/família) — pílulas de estado e linhas do mapa */
-.kc-pill{display:inline-block; font-size:0.6rem; font-weight:700; text-transform:uppercase; letter-spacing:0.03em;
-  padding:2px 7px; border-radius:999px; margin-left:6px; vertical-align:middle;}
-.kc-em_aquisicao{background:rgba(79,70,229,0.16); color:var(--accent);}
-.kc-em_consolidacao{background:rgba(148,163,184,0.16); color:var(--muted);}
-.kc-dominado{background:rgba(34,197,94,0.16); color:var(--good);}
-.kc-row{padding:10px 0; border-bottom:1px solid var(--border); font-size:0.86rem;}
-.kc-row:last-child{border-bottom:none;}
-.kc-row-top{display:flex; align-items:center; justify-content:space-between; font-weight:600;}
-.kc-row-meta{display:flex; justify-content:space-between; color:var(--dim); font-size:0.75rem; margin-top:3px; font-family:var(--font-num);}
-
 svg.chart{width:100%; height:120px; overflow:visible;}
 .toast{
   position:fixed; left:50%; bottom:100px; transform:translateX(-50%);
@@ -269,7 +249,7 @@ svg.chart{width:100%; height:120px; overflow:visible;}
   opacity:0; pointer-events:none; transition:opacity .2s ease; z-index:50;
 }
 .toast.show{opacity:1;}
-/* ============ NEW SCREENS: Home / Stats / Insights / Settings ============ */
+/* ============ NEW SCREENS: Home / Stats / Settings ============ */
 .navbar{display:flex; align-items:center; gap:12px; padding:2px 0 16px 0;}
 .navbar .back{width:36px; height:36px; border-radius:10px; border:1px solid var(--border); background:var(--surface); color:var(--text); font-size:1.2rem; display:flex; align-items:center; justify-content:center; flex-shrink:0;}
 .navbar .title{font-size:1.05rem; font-weight:700;}
@@ -283,21 +263,6 @@ svg.chart{width:100%; height:120px; overflow:visible;}
 .quick-row .q{text-align:center;}
 .quick-row .q .v{font-family:var(--font-num); font-weight:700; font-size:1.1rem;}
 .quick-row .q .l{font-size:0.6rem; color:var(--dim); text-transform:uppercase; letter-spacing:0.05em; margin-top:2px;}
-
-.op-stat-card{display:flex; align-items:center; gap:14px; background:var(--surface); border:1px solid var(--border); border-radius:14px; padding:14px 16px; margin-bottom:10px;}
-.op-stat-card .sq{width:42px; height:42px; border-radius:11px; background:var(--surface-2); color:var(--accent); display:flex; align-items:center; justify-content:center; font-family:var(--font-num); font-weight:700; font-size:1.2rem; flex-shrink:0;}
-.op-stat-card .mid{flex:1;}
-.op-stat-card .mid .l{font-weight:600; font-size:0.9rem;}
-.op-stat-card .mid .m{font-size:0.74rem; color:var(--dim); margin-top:2px;}
-.op-stat-card .trend{font-family:var(--font-num); font-weight:700; font-size:0.8rem; flex-shrink:0;}
-.op-stat-card .trend.up{color:var(--good);}
-.op-stat-card .trend.down{color:var(--bad);}
-.op-stat-card .trend.flat{color:var(--dim);}
-
-.insight-card{display:flex; gap:12px; background:var(--surface); border:1px solid var(--border); border-radius:16px; padding:14px 16px; margin-bottom:10px;}
-.insight-card .ic{font-size:1.5rem; flex-shrink:0; line-height:1.2;}
-.insight-card .tag{display:inline-block; font-size:0.58rem; font-weight:700; letter-spacing:0.05em; text-transform:uppercase; padding:2px 8px; border-radius:20px; margin-bottom:5px;}
-.insight-card .body{font-size:0.8rem; color:var(--muted); line-height:1.45;}
 
 .settings-section-title{font-size:0.68rem; font-weight:700; letter-spacing:0.08em; text-transform:uppercase; color:var(--accent); margin:16px 0 6px 0;}
 .settings-section-title:first-child{margin-top:0;}

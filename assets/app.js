@@ -49,7 +49,7 @@ const I18N = {
     speed_skills:'Habilidades em foco', speed_skills_sub:'Escolha uma ou mais famílias. Todas já estão disponíveis.', speed_mode:'Estilo do treino',
     select_all_skills:'Treinar todas as contas', select_all_skills_sub:'Inclui automaticamente todas as famílias disponíveis',
     drill_focus_l:'Foco', drill_focus_d:'Repita a habilidade escolhida', drill_mix_l:'Misto', drill_mix_d:'Alterne e ataque o gargalo',
-    calibration:'Calibração', target:'meta', target_rate:'Dentro da meta', median_cognitive:'Tempo mediano', by_skill:'Por habilidade',
+    calibration:'Calibração', target:'meta', target_rate:'Dentro da meta', median_cognitive:'Tempo mediano',
     status_calibrating:'calibrando', status_acquisition:'aquisição', status_consolidating:'consolidando', status_mastered:'domínio confirmado', status_review_due:'revisão pendente',
     accuracy:'precisão', average:'média', items:'contas',
     rest:'Descanso', rest_msg:'Respire. O próximo bloco começa em instantes.',
@@ -58,13 +58,9 @@ const I18N = {
     main_bottleneck:'Principal gargalo', skills_in_focus:'Habilidades em foco', view_history:'Ver histórico', new_training:'Novo treino',
     stats_title:'Estatísticas', avg_accuracy:'Precisão média', avg_time_item:'Tempo médio / conta', all_operations:'todas as operações',
     evolution_time:'Evolução — tempo médio', evolution_acc:'Evolução — precisão', median:'Mediana', p90:'Percentil 90',
-    by_operation:'Por operação', insights_title:'Insights', skill_map:'Mapa de habilidades',
-    skill_map_desc:'Cada habilidade (família de cálculo) é rastreada e progride de forma independente — nunca uma conta específica.',
-    settings_title:'Ajustes', tab_home:'Início', tab_stats:'Estatísticas', tab_insights:'Insights', tab_settings:'Ajustes',
+    settings_title:'Ajustes', tab_home:'Início', tab_stats:'Estatísticas', tab_settings:'Ajustes',
     no_data_today:'sem dados hoje', today:'hoje', last_session:'última sessão', no_data_yet:'sem dados ainda',
     last_30_days:'últimos 30 dias', overall:'geral', no_data:'sem dados',
-    no_op_data:'Ainda sem dados suficientes por habilidade.', avg_short:'médio', acc_short:'precisão',
-    no_kc_yet:'Nenhuma habilidade introduzida ainda. Comece um treino!', no_sessions_yet:'Nenhuma sessão registrada ainda.',
     mode_label:'modo', fluency_short:'fluência',
     keep_one_op:'Mantenha ao menos uma operação ativa.', data_erased:'Dados apagados.', no_op_selected:'Nenhuma operação ativa selecionada.', answer_required:'Digite uma resposta antes de confirmar.',
     confirm_reset:'Isso vai apagar todo o histórico e progresso salvos neste dispositivo. Confirmar?',
@@ -101,16 +97,6 @@ const I18N = {
     no_skills_session:'Nenhuma habilidade de destaque nesta sessão.',
     rating:'rating', block:'bloco', awaiting_retest:'aguardando reteste de retenção', recent_acc:'precisão recente',
     est_retention:'retenção estimada', answer_label:'Resposta',
-    tag_mastery:'Domínio', tag_focus:'Foco', tag_review:'Revisão', tag_pending:'Aguardando', tag_new_skill:'Nova habilidade',
-    tag_evolution:'Evolução', tag_insight:'Insight',
-    tag_new_item:'Novo', tag_review_item:'Revisão', tag_reinforce_item:'Reforço',
-    no_insights_yet:'Continue treinando para desbloquear insights personalizados sobre seu desempenho.',
-    insight_mastered:'Você já domina {n} habilidade(s): {list}.',
-    insight_consolidating:'Foco atual em consolidação: "{label}" (precisão recente de {acc}).',
-    insight_acquiring:'Habilidade nova sendo introduzida agora: "{label}".',
-    insight_forgetting_window:'{n} habilidade(s) dominada(s) estão entrando na janela de revisão por esquecimento natural.',
-    insight_retention_test:'"{label}" atingiu os critérios de desempenho e aguarda um reteste após um intervalo para confirmar domínio real.',
-    insight_weekly_improvement:'{op} apresentou a maior evolução na última semana ({delta} mais rápido em média).',
     date_locale:'pt-BR'
   },
   en:{
@@ -121,7 +107,7 @@ const I18N = {
     speed_skills:'Skills in focus', speed_skills_sub:'Choose one or more families. Every family is already available.', speed_mode:'Training style',
     select_all_skills:'Train all skills', select_all_skills_sub:'Automatically includes every available family',
     drill_focus_l:'Focus', drill_focus_d:'Repeat the selected skill', drill_mix_l:'Mixed', drill_mix_d:'Alternate and attack the bottleneck',
-    calibration:'Calibration', target:'target', target_rate:'On target', median_cognitive:'Median time', by_skill:'By skill',
+    calibration:'Calibration', target:'target', target_rate:'On target', median_cognitive:'Median time',
     status_calibrating:'calibrating', status_acquisition:'acquisition', status_consolidating:'consolidating', status_mastered:'mastery confirmed', status_review_due:'review due',
     accuracy:'accuracy', average:'average', items:'items',
     rest:'Break', rest_msg:'Breathe. The next block starts shortly.',
@@ -130,13 +116,9 @@ const I18N = {
     main_bottleneck:'Main bottleneck', skills_in_focus:'Skills in focus', view_history:'View history', new_training:'New session',
     stats_title:'Statistics', avg_accuracy:'Avg. accuracy', avg_time_item:'Avg. time / item', all_operations:'all operations',
     evolution_time:'Evolution — average time', evolution_acc:'Evolution — accuracy', median:'Median', p90:'90th percentile',
-    by_operation:'By operation', insights_title:'Insights', skill_map:'Skill map',
-    skill_map_desc:'Each skill (calculation family) is tracked and progresses independently — never a specific pair of numbers.',
-    settings_title:'Settings', tab_home:'Home', tab_stats:'Stats', tab_insights:'Insights', tab_settings:'Settings',
+    settings_title:'Settings', tab_home:'Home', tab_stats:'Stats', tab_settings:'Settings',
     no_data_today:'no data today', today:'today', last_session:'last session', no_data_yet:'no data yet',
     last_30_days:'last 30 days', overall:'overall', no_data:'no data',
-    no_op_data:'Not enough data per skill yet.', avg_short:'avg', acc_short:'accuracy',
-    no_kc_yet:'No skills introduced yet. Start a training session!', no_sessions_yet:'No sessions recorded yet.',
     mode_label:'mode', fluency_short:'fluency',
     keep_one_op:'Keep at least one operation active.', data_erased:'Data erased.', no_op_selected:'No active operation selected.', answer_required:'Enter an answer before confirming.',
     confirm_reset:'This will erase all history and progress saved on this device. Confirm?',
@@ -173,16 +155,6 @@ const I18N = {
     no_skills_session:'No standout skills this session.',
     rating:'rating', block:'block', awaiting_retest:'awaiting retention retest', recent_acc:'recent accuracy',
     est_retention:'estimated retention', answer_label:'Answer',
-    tag_mastery:'Mastery', tag_focus:'Focus', tag_review:'Review', tag_pending:'Pending', tag_new_skill:'New skill',
-    tag_evolution:'Evolution', tag_insight:'Insight',
-    tag_new_item:'New', tag_review_item:'Review', tag_reinforce_item:'Reinforce',
-    no_insights_yet:'Keep training to unlock personalized insights about your performance.',
-    insight_mastered:'You already master {n} skill(s): {list}.',
-    insight_consolidating:'Current consolidation focus: "{label}" (recent accuracy of {acc}).',
-    insight_acquiring:'New skill currently being introduced: "{label}".',
-    insight_forgetting_window:'{n} mastered skill(s) are entering the natural-forgetting review window.',
-    insight_retention_test:'"{label}" reached the performance criteria and is awaiting a retest after an interval to confirm real mastery.',
-    insight_weekly_improvement:'{op} showed the biggest improvement this past week ({delta} faster on average).',
     date_locale:'en-US'
   }
 };
@@ -222,7 +194,6 @@ function defaultOpsMap(){
   Object.keys(OPS).forEach(k=>{ map[k] = !!OPS[k].active; });
   return map;
 }
-function opLabel(key){ const o=OPS[key]; if(!o) return key; return t('op_'+key); }
 // Aplica uma operação básica (pelas chaves de OPS) a dois operandos — usado pelos
 // geradores de expressões com parênteses (seç. "Expressões").
 function applyOp2(opKey, x, y){
@@ -388,8 +359,12 @@ const KC_DEFS = {
       return {a:dividend,b:divisor,answer:quotient,features:{exact:true}}; } },
 
   pct_basico:{ label:'Porcentagem — básica', op:'porcentagem', prereqs:['mult_tabuada'], eloBounds:[750,1050],
-    gen(t){ const opts=[10,20,50,25]; const pct=U.choice(opts); const base=U.rint(2,2+Math.round(t*18))*10;
-      return {a:pct,b:base,answer:Math.round(pct*base/100),features:{pct}}; } },
+    gen(t){ const opts=[10,20,50,25]; const pct=U.choice(opts); let base=U.rint(2,2+Math.round(t*18))*10;
+      // BUGFIX: "25%" sobre uma base que não é múltiplo de 20 dava resultado decimal (25% de 30 = 7,5),
+      // e o Math.round abaixo mascarava isso aceitando o inteiro arredondado. Ajusta a base até a
+      // porcentagem ser exata, como os geradores intermediário/avançado já fazem.
+      let result=pct*base/100, tries=0; while(!Number.isInteger(result)&&tries<10){ base+=10; result=pct*base/100; tries++; }
+      base=Math.round(base); return {a:pct,b:base,answer:Math.round(pct*base/100),features:{pct}}; } },
   pct_intermediario:{ label:'Porcentagem — intermediária', op:'porcentagem', prereqs:['pct_basico'], eloBounds:[1000,1300],
     gen(t){ const opts=[15,25,75,5,30]; const pct=U.choice(opts); let base=U.rint(4,4+Math.round(t*56))*10;
       let result=pct*base/100, tries=0; while(!Number.isInteger(result)&&tries<10){ base+=5; result=pct*base/100; tries++; }
@@ -1272,21 +1247,6 @@ const Analytics = {
   overallMedianP90(){
     const all=[]; Object.values(Store.data.speedProfiles||{}).forEach(p=>(p.window||[]).forEach(w=>{if(w.correct) all.push(w.ms);}));
     return {median:U.median(all),p90:U.percentile(all,90)};
-  },
-  kcPanorama(){
-    return KC_ORDER.map(key=>{ const p=Engine.profile(key), w=p.window||[], correct=w.filter(x=>x.correct).map(x=>x.ms); return {
-      key,label:kcLabel(key),calibrating:Engine.isCalibrating(p),calibration:`${p.calibration.length}/${CALIBRATION_ITEMS}`,
-      stage:Engine.stage(p),reviewProgress:(p.reviewResults||[]).length,
-      targetMs:p.targetMs,median:U.median(correct),accuracy:Engine.recentAccuracy(p),targetRate:Engine.targetRate(p),bestMs:p.bestMs}; });
-  },
-  generateInsights(){
-    const profiles=this.kcPanorama().filter(p=>!p.calibrating&&p.median);
-    if(!profiles.length) return [t('no_insights_yet')];
-    const slow=[...profiles].sort((a,b)=>(a.targetRate-b.targetRate)||(b.median-a.median))[0];
-    const fastest=[...profiles].filter(p=>p.bestMs).sort((a,b)=>a.bestMs-b.bestMs)[0];
-    const list=[`${slow.label}: ${U.fmtPct(slow.targetRate)} ${t('target_rate').toLowerCase()} · ${U.fmtSec(slow.median)} ${t('median').toLowerCase()}.`];
-    if(fastest) list.push(`${fastest.label}: melhor marca ${U.fmtSec(fastest.bestMs)}.`);
-    return list;
   }
 };
 
@@ -1342,7 +1302,7 @@ const UI = {
     document.getElementById('btnBackSettings').onclick = ()=>{ this.showScreen('settings'); this.setTab('settings'); this.buildAppSettings(); };
     document.getElementById('btnPause').onclick = ()=>Session.togglePause();
     document.getElementById('btnExitTraining').onclick = ()=>Session.exit();
-    document.getElementById('btnGoHistory').onclick = ()=>{ this.showScreen('insights'); this.renderInsights(); this.setTab('insights'); };
+    document.getElementById('btnGoHistory').onclick = ()=>{ this.showScreen('stats'); this.renderStats(); this.setTab('stats'); };
     document.getElementById('btnNewSession').onclick = ()=>Session.start();
   },
   toast(msg){
@@ -1350,7 +1310,7 @@ const UI = {
     el.textContent = msg; el.classList.add('show');
     setTimeout(()=>el.classList.remove('show'), 1800);
   },
-  tabScreens:['home','stats','insights','settings'],
+  tabScreens:['home','stats','settings'],
   showScreen(name){
     document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
     document.getElementById('screen-'+name).classList.add('active');
@@ -1367,7 +1327,6 @@ const UI = {
         this.showScreen(target);
         if(target==='home') this.renderHome();
         if(target==='stats') this.renderStats();
-        if(target==='insights') this.renderInsights();
         if(target==='settings') this.buildAppSettings();
         this.setTab(target);
       };
@@ -1565,7 +1524,7 @@ const UI = {
       // Idioma do app (textos da interface) — independente do idioma da VOZ (TTS).
       applyI18N();
       this.buildSkillChips(); this.buildDrillModeChips(); this.buildModeChips(); this.buildSessionOptions(); this.buildAppSettings();
-      this.renderHome(); this.renderStats(); this.renderInsights();
+      this.renderHome(); this.renderStats();
     });
     addSelect(t('theme'), 'theme', [
       {v:'dark', l:t('theme_dark')}, {v:'light', l:t('theme_light')}, {v:'auto', l:t('theme_auto')}
@@ -1600,7 +1559,7 @@ const UI = {
     const bReset = document.createElement('button'); bReset.className='btn btn-danger'; bReset.textContent=t('erase_all');
     bReset.onclick = ()=>{
       if(confirm(t('confirm_reset'))){
-        Store.reset(); this.toast(t('data_erased')); this.renderHome(); this.renderStats(); this.renderInsights();
+        Store.reset(); this.toast(t('data_erased')); this.renderHome(); this.renderStats();
       }
     };
     rowReset.appendChild(bReset);
@@ -1859,15 +1818,6 @@ const UI = {
     document.getElementById('homeSessions').textContent = hist.length;
     document.getElementById('homeStreak').textContent = Store.data.bestStreak||0;
   },
-  skillAggregate(){
-    const agg={};
-    Store.data.history.forEach(h=>Object.entries(h.bySkill||{}).forEach(([key,s])=>{
-      const a=agg[key]||(agg[key]={key,label:s.label,n:0,correct:0,targetHits:0,times:[]});
-      a.n+=s.n; a.correct+=s.correct; a.targetHits+=Math.round(s.targetRate*s.n); if(s.median) a.times.push(s.median);
-    }));
-    Object.values(agg).forEach(a=>{ a.median=U.median(a.times); a.accuracy=a.n?a.correct/a.n:0; a.targetRate=a.n?a.targetHits/a.n:0; });
-    return agg;
-  },
   renderStats(){
     const hist = Store.data.history;
     this.drawChart('chartAvg', hist.map(h=>h.avgTime), true);
@@ -1885,83 +1835,6 @@ const UI = {
     document.getElementById('statAccAvg').textContent = accSource.length ? U.fmtPct(U.mean(accSource.map(h=>h.accuracy))) : '—';
     document.getElementById('statAccAvgSub').textContent = last30.length ? t('last_30_days') : (hist.length ? t('overall') : t('no_data'));
     document.getElementById('statTimeAvg').textContent = hist.length ? U.fmtSec(U.mean(hist.map(h=>h.avgTime))) : '—';
-
-    const agg = this.skillAggregate();
-    const opBox = document.getElementById('opStatsList');
-    opBox.innerHTML='';
-    const skillsWithData = Object.keys(agg);
-    if(!skillsWithData.length){ opBox.innerHTML = `<p>${t('no_op_data')}</p>`; }
-    skillsWithData.forEach(key=>{
-      const a = agg[key];
-      const previous=Analytics.historicalSkillMedian(key);
-      const trendVal=previous&&a.median ? previous-a.median : null;
-      const card = document.createElement('div'); card.className='op-stat-card';
-      let trendHtml = '';
-      if(trendVal!=null && Math.abs(trendVal) >= 30){
-        const up = trendVal > 0;
-        trendHtml = `<div class="trend ${up?'up':'down'}">${up?'▲':'▼'} ${U.fmtSec(Math.abs(trendVal))}</div>`;
-      } else {
-        trendHtml = `<div class="trend flat">—</div>`;
-      }
-      card.innerHTML = `<div class="sq">${OPS[KC_DEFS[key].op].symbol}</div>
-        <div class="mid"><div class="l">${a.label}</div><div class="m">${U.fmtSec(a.median)} ${t('median').toLowerCase()} · ${U.fmtPct(a.targetRate)} ${t('target_rate').toLowerCase()}</div></div>
-        ${trendHtml}`;
-      opBox.appendChild(card);
-    });
-  },
-  insightVisual(txt){
-    // Escolhe ícone/etiqueta de acordo com o conteúdo do insight gerado por Analytics.generateInsights()
-    // (apenas apresentação — o texto e o cálculo continuam 100% originais). Os gatilhos abaixo casam
-    // tanto com as frases em português quanto com as equivalentes em inglês.
-    if(/domina|master/i.test(txt)) return {ic:'🎯', tag:t('tag_mastery'), color:'var(--accent)'};
-    if(/consolidaç|consolidat/i.test(txt)) return {ic:'🐢', tag:t('tag_focus'), color:'var(--bad)'};
-    if(/revisão|esquecimento|review|forgetting/i.test(txt)) return {ic:'⏳', tag:t('tag_review'), color:'#F97316'};
-    if(/reteste|retest/i.test(txt)) return {ic:'⚠️', tag:t('tag_pending'), color:'#F97316'};
-    if(/nova|introduzida|new skill/i.test(txt)) return {ic:'✨', tag:t('tag_new_skill'), color:'var(--accent)'};
-    if(/evolução|mais rápido|evolution|faster/i.test(txt)) return {ic:'📈', tag:t('tag_evolution'), color:'var(--good)'};
-    return {ic:'💡', tag:t('tag_insight'), color:'var(--muted)'};
-  },
-  renderInsights(){
-    const hist = Store.data.history;
-    const insightsBox = document.getElementById('insightsList');
-    insightsBox.innerHTML='';
-    Analytics.generateInsights().forEach(txt=>{
-      const v = this.insightVisual(txt);
-      const card = document.createElement('div'); card.className='insight-card';
-      card.innerHTML = `<div class="ic">${v.ic}</div>
-        <div style="flex:1;">
-          <span class="tag" style="color:${v.color}; background:${v.color}22;">${v.tag}</span>
-          <div class="body">${txt}</div>
-        </div>`;
-      insightsBox.appendChild(card);
-    });
-
-    const kcBox = document.getElementById('kcMapList');
-    if(kcBox){
-      kcBox.innerHTML='';
-      const panorama = Analytics.kcPanorama();
-      if(!panorama.length){ kcBox.innerHTML = `<p>${t('no_kc_yet')}</p>`; }
-      panorama.forEach(p=>{
-        const row = document.createElement('div'); row.className='kc-row';
-        const meta=p.calibrating ? `${t('calibration')} ${p.calibration}` : p.stage==='review_due' ? `${p.reviewProgress}/${RETENTION_REVIEW_ITEMS} · ${t('status_review_due')}` : `${t('target')} ${U.fmtSec(p.targetMs)} · ${U.fmtPct(p.targetRate)} ${t('target_rate').toLowerCase()}`;
-        const stageClass={calibrating:'kc-em_aquisicao',acquisition:'kc-em_aquisicao',consolidating:'kc-em_consolidacao',mastered:'kc-dominado',review_due:'kc-em_consolidacao'}[p.stage];
-        row.innerHTML = `<div class="kc-row-top"><span>${p.label}</span><span class="kc-pill ${stageClass}">${t('status_'+p.stage)}</span></div>
-          <div class="kc-row-meta"><span>${p.median?U.fmtSec(p.median):'—'}</span><span>${meta}</span></div>`;
-        kcBox.appendChild(row);
-      });
-    }
-
-    const listBox = document.getElementById('sessionsList');
-    listBox.innerHTML='';
-    if(!hist.length){ listBox.innerHTML = `<p>${t('no_sessions_yet')}</p>`; }
-    const locale = t('date_locale');
-    [...hist].reverse().slice(0,30).forEach(h=>{
-      const item = document.createElement('div'); item.className='history-item';
-      const d = new Date(h.date);
-      item.innerHTML = `<div class="top"><span>${d.toLocaleDateString(locale)} ${d.toLocaleTimeString(locale,{hour:'2-digit',minute:'2-digit'})}</span><span>${U.fmtSec(h.median||h.avgTime)}</span></div>
-      <div class="meta">${(h.selectedSkills||h.ops||[]).map(k=>KC_DEFS[k]?kcLabel(k):opLabel(k)).join(', ')} · ${h.total} ${t('items')} · ${t('acc_short')} ${U.fmtPct(h.accuracy)} · ${U.fmtPct(h.targetRate||0)} ${t('target_rate').toLowerCase()}</div>`;
-      listBox.appendChild(item);
-    });
   },
   drawChart(id, values, isTime){
     const svg = document.getElementById(id);

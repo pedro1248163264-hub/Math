@@ -105,6 +105,16 @@ Object.keys(KC_DEFS).forEach(key=>{
       stats.badAnswer++;
       stats.examples.push('answer inválido: '+JSON.stringify(g));
     }
+    // BUGFIX (regressão pct_basico): o teste antigo só conferia se answer era inteiro, e o gerador
+    // "arredondava" o resultado esperado — 25% de 30 virava 8 em vez de 7,5. Agora verificamos que a
+    // resposta matemática dos operandos exibidos é de fato inteira e igual à esperada.
+    if(def.op==='porcentagem'){
+      const trueValue = g.a * g.b / 100;
+      if(!Number.isInteger(trueValue) || trueValue !== g.answer){
+        stats.badAnswer++;
+        stats.examples.push('porcentagem com resposta arredondada: '+JSON.stringify(g));
+      }
+    }
     const fakeItem = Object.assign({op:def.op, key, kcLabel:def.label, symbol:(OPS[def.op]||{}).symbol}, g);
     VOICES.forEach(v=>{
       try{ const phrase = spokenPhrase(fakeItem, v); if(typeof phrase!=='string' || !phrase.length) throw new Error('frase vazia'); }
