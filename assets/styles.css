@@ -169,7 +169,6 @@ input[type=range]{width:100%; accent-color:var(--accent);}
   transition:opacity .15s ease, filter .15s ease; color:var(--text);
 }
 .equation.hidden-eq{filter:blur(14px); opacity:0.5;}
-.equation.tts-icon{font-size:3.2rem;}
 .math-row{display:flex; align-items:center; justify-content:center; gap:0.24em; flex-wrap:wrap;}
 .math-operator{font-family:'STIX Two Text', 'Cambria Math', Cambria, serif; padding:0 0.04em;}
 .math-fraction{display:inline-flex; flex-direction:column; vertical-align:middle; min-width:1.1em; line-height:0.87; text-align:center; font-size:0.88em;}
@@ -195,12 +194,9 @@ input[type=range]{width:100%; accent-color:var(--accent);}
 
 .pulse-strip{display:flex; align-items:flex-end; gap:3px; height:28px; margin:4px 0 0 0; width:100%; max-width:320px;}
 .pulse-bar{flex:1; border-radius:3px 3px 0 0; background:var(--border); min-height:4px; transition:height .2s ease;}
-.pulse-bar.auto{background:var(--good);}
-.pulse-bar.proc{background:var(--accent);}
 .pulse-bar.slow{background:#9333EA;}
 .pulse-bar.err{background:var(--bad);}
 .pulse-bar.target{background:var(--good);}
-.pulse-bar.slow{background:#9333EA;}
 
 .answer-zone{width:100%;}
 #answerDisplay{
@@ -221,11 +217,6 @@ input[type=range]{width:100%; accent-color:var(--accent);}
 .key.wide3{grid-column:span 3; margin-top:2px;}
 .key.func{color:var(--text); font-size:1.15rem; font-family:var(--font-num); background:var(--surface-2);}
 .key.func[data-ok="1"]{background:var(--accent); color:#fff; font-weight:700;}
-input.native-numeric{position:absolute; opacity:0; width:0; height:0; pointer-events:none;}
-
-.stat-strip{display:flex; justify-content:space-around; text-align:center; padding-top:6px;}
-.stat-strip .n{font-family:var(--font-num); font-weight:700; font-size:1rem;}
-.stat-strip .l{font-size:0.62rem; color:var(--dim); text-transform:uppercase; letter-spacing:0.05em;}
 
 /* rest / hiit overlay */
 .rest-overlay{flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:10px; text-align:center;}
@@ -268,4 +259,3 @@ svg.chart{width:100%; height:120px; overflow:visible;}
 .pill-btn{background:var(--surface-2); border:1px solid var(--border); color:var(--muted); padding:7px 13px; border-radius:8px; font-size:0.78rem; font-family:var(--font-ui); font-weight:500;}
 .app-version{text-align:center; color:var(--dim); font-size:0.75rem; padding:14px 0 4px;}
 
-.hidden{display:none !important;}

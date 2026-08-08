@@ -284,6 +284,8 @@ Object.keys(RESULTS.perFamily).forEach(key=>{
 });
 ok(RESULTS.engineSmokeError===null, 'smoke test do motor completo: '+RESULTS.engineSmokeError);
 ok(RESULTS.speedEngineError===null, 'calibração, foco e recordes do motor de velocidade: '+RESULTS.speedEngineError);
+ok(RESULTS.adaptiveFlowError===null, 'fluxo adaptativo (domínio e revisão por retenção): '+RESULTS.adaptiveFlowError);
+ok(RESULTS.timingFlowError===null, 'fluxo de temporização (fim de bloco e descanso): '+RESULTS.timingFlowError);
 ok(RESULTS.confirmFlowError===null, 'fluxo de confirmação da resposta: '+RESULTS.confirmFlowError);
 
 console.log(`\n${passed} verificações passaram, ${failures} falharam.`);

@@ -6,6 +6,10 @@
 
 O Mental Math é um PWA local: funciona diretamente no navegador, pode usar o cache para abrir offline e guarda configurações, perfis de habilidade e histórico no localStorage do próprio dispositivo. Não há conta de usuário nem sincronização em servidor.
 
+## Única exceção ao modo offline
+
+Tudo funciona offline, com **uma única exceção**: as fontes do Google Fonts carregadas no `index.html`. Elas dependem da rede. Depois da primeira visita online elas ficam em cache (como resposta opaca do service worker), então as aberturas seguintes já usam as fontes reais mesmo sem conexão. Apenas a primeira abertura offline logo após instalar o app cai para as fontes de fallback locais. O restante — HTML, CSS, JS, dados — nunca depende da rede.
+
 O treino é organizado por **famílias de cálculo** (habilidades), e não por uma conta específica. Há 25 famílias, cobrindo somas, subtrações, multiplicações, divisões, porcentagens, expressões, frações, potências, radicais, logaritmos e equações. Na configuração, a pessoa pode escolher uma ou mais delas, ou marcar **Treinar todas as contas**. Todas as famílias ficam selecionáveis desde o início; os pré-requisitos são usados apenas como um sinal de prioridade, não como bloqueio.
 
 O botão **Iniciar treino** começa imediatamente com a configuração salva. Para alterá-la, acesse **Ajustes** e toque em **Configurar treino** para abrir a tela de configuração; as alterações são salvas na hora. Durante a sessão, o cabeçalho mostra apenas o tempo restante.

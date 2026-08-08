@@ -421,7 +421,7 @@ const UI = {
       }
     } else {
       const text = item.exprText ? item.exprText
-        : item.op==='porcentagem' ? `${item.a}% de ${item.b}`
+        : item.op==='porcentagem' ? `${item.a}% ${t('pct_of')} ${item.b}`
         : `${item.a} ${item.symbol} ${item.b}`;
       row.textContent = text;
     }

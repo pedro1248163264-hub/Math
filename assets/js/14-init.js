@@ -13,7 +13,10 @@ Store.load();
 TTS.init();
 document.addEventListener('DOMContentLoaded', ()=>{
   UI.init();
-  if(Store.data.settings.theme==='auto' && window.matchMedia){
+  // O listener é registrado sempre (não só quando o tema já é "auto"): aplicar depois
+  // de mudar para "Automático" nos ajustes passa a reagir ao sistema. Quando o tema não
+  // é "auto", o evento é inofensivo — applyTheme() sempre relê settings.theme primeiro.
+  if(window.matchMedia){
     window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', ()=>UI.applyTheme());
   }
 });

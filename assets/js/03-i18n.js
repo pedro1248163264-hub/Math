@@ -64,6 +64,7 @@ const I18N = {
     summary_bottleneck_line:'{op} — tempo médio {avg}, precisão {acc}.',
     rating:'rating', block:'bloco', awaiting_retest:'aguardando reteste de retenção', recent_acc:'precisão recente',
     est_retention:'retenção estimada', answer_label:'Resposta',
+    pct_of:'de',
     date_locale:'pt-BR'
   },
   en:{
@@ -121,6 +122,7 @@ const I18N = {
     summary_bottleneck_line:'{op} — average time {avg}, accuracy {acc}.',
     rating:'rating', block:'block', awaiting_retest:'awaiting retention retest', recent_acc:'recent accuracy',
     est_retention:'estimated retention', answer_label:'Answer',
+    pct_of:'of',
     date_locale:'en-US'
   }
 };

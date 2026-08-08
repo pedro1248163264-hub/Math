@@ -27,7 +27,7 @@ const Session = {
   records:[],           // {op,key,ms,cognitiveMs,motorMs,correct,etype,kcLabel,isReview,isAcquisition}
   timerHandle:null, endsAt:0, phase:'work', cyclesLeft:0,
   restHandle:null, itemTimeoutHandle:null, itemDeadline:null, nextQuestionHandle:null,
-  answering:false, phaseEndPending:false,
+  answering:false, inputLocked:false, phaseEndPending:false,
   state:'aquecimento',  // aquecimento | fluxo | fadiga | frustracao (seç. 13)
   touchedKcs:new Set(),
 
@@ -193,8 +193,14 @@ const Session = {
     // disparando a pergunta seguinte, cujo TTS.speak() cancela (speechSynthesis.cancel())
     // a fala anterior ainda em andamento — por isso a voz parecia cortar/quebrar no meio.
     this.itemDeadline = null;
+    // Enquanto a voz (TTS) está lendo a conta, o usuário não pode digitar — o input só é
+    // liberado no callback que roda quando a leitura termina (ou imediatamente, se o TTS
+    // estiver desativado). Isso também garante que o tempo cognitivo nunca fique negativo
+    // (a primeira tecla não pode mais ser anterior ao fim da leitura).
+    this.inputLocked = true;
     UI.renderQuestion(item, ()=>{
       if(!this.active || this.paused || this.current!==item) return; // sessão mudou enquanto a voz lia
+      this.inputLocked = false;
       this.qShownAt = U.now();
       this.itemDeadline = this.qShownAt + item.timeoutMs;
       this.itemTimeoutHandle = setTimeout(()=>this.handleTimeout(), item.timeoutMs);
@@ -209,7 +215,7 @@ const Session = {
     this.evaluate(true);
   },
   submitDigit(d){
-    if(!this.active || this.paused || !this.current || this.answering) return;
+    if(!this.active || this.paused || !this.current || this.answering || this.inputLocked) return;
     if(d==='back'){
       this.typed = this.typed.slice(0,-1);
       UI.updateAnswerDisplay(this.typed);
@@ -245,6 +251,10 @@ const Session = {
     // acidental registrava erro com campo vazio; toques repetidos também avaliavam a
     // mesma conta mais de uma vez antes da próxima pergunta aparecer.
     if(!this.active || this.paused || !this.current || this.answering) return;
+    // Enquanto a voz ainda está lendo, o ✓/Enter não pode avaliar (a digitação também
+    // está bloqueada); o abandono por prazo nunca acontece nesse intervalo, pois o
+    // timeout só é agendado depois que a leitura termina.
+    if(this.inputLocked && !timedOut) return;
     if(!timedOut && !this.typed.length){
       UI.toast(t('answer_required'));
       return;
@@ -293,6 +303,11 @@ const Session = {
     this.phaseEndPending = false;
     clearInterval(this.timerHandle); clearInterval(this.restHandle);
     clearTimeout(this.itemTimeoutHandle); clearTimeout(this.nextQuestionHandle);
+    this._saveSession();
+  },
+  // Salva o resumo da sessão, atualiza o recorde de sequência e mostra a tela de
+  // resultado — usado tanto pelo fim natural quanto pela saída antecipada.
+  _saveSession(){
     const summary = Analytics.buildSessionSummary(this.records);
     Store.data.history.push(summary);
     let streak=0, maxStreak=0;
@@ -318,14 +333,7 @@ const Session = {
     if(this.records.length){
       // Já respondeu pelo menos uma conta: fecha como uma sessão parcial, com resumo,
       // em vez de descartar o progresso silenciosamente.
-      const summary = Analytics.buildSessionSummary(this.records);
-      Store.data.history.push(summary);
-      let streak=0, maxStreak=0;
-      this.records.forEach(r=>{ if(r.correct){streak++; maxStreak=Math.max(maxStreak,streak);} else streak=0; });
-      Store.data.bestStreak = Math.max(Store.data.bestStreak||0, maxStreak);
-      Store.save();
-      UI.renderSummary(summary);
-      UI.showScreen('summary');
+      this._saveSession();
     } else {
       UI.showScreen('home');
       UI.setTab('home');
