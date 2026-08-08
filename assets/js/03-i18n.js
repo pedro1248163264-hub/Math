@@ -1,0 +1,138 @@
+/* =====================================================================
+   assets/js/03-i18n.js — textos do app em PT/EN e helpers de tradução
+   (t, tf, applyI18N). Só afeta apresentação; nenhuma lógica de treino.
+   Depende de: Store (definido em 07-storage.js) para saber o idioma
+   atual — chamado somente em runtime, depois que todos os módulos
+   já carregaram, então a ordem de carregamento não importa aqui.
+   Usado por: 10-session.js e 13-ui.js para exibir textos.
+   ===================================================================== */
+
+/* ---------- 2b. IDIOMA DO APP (PT/EN) — apresentação apenas, lógica intacta ---------- */
+const I18N = {
+  pt:{
+    home_tagline:'Treine mais rápido. Pense mais afiado. Todos os dias.',
+    home_today:'Desempenho de hoje', home_reaction:'Tempo de reação', home_accuracy:'Precisão',
+    start_training:'Iniciar treino →', exercises:'Exercícios', sessions:'Sessões', best_streak:'Melhor sequência',
+    config_title:'Configurar sessão', configure_training:'Configurar treino', operations:'Operações', training_mode:'Formato da sessão', options:'Opções',
+    speed_skills:'Habilidades em foco', speed_skills_sub:'Escolha uma ou mais famílias. Todas já estão disponíveis.', speed_mode:'Estilo do treino',
+    select_all_skills:'Treinar todas as contas', select_all_skills_sub:'Inclui automaticamente todas as famílias disponíveis',
+    drill_focus_l:'Foco', drill_focus_d:'Repita a habilidade escolhida', drill_mix_l:'Misto', drill_mix_d:'Alterne e ataque o gargalo',
+    calibration:'Calibração', target:'meta', target_rate:'Dentro da meta', median_cognitive:'Tempo mediano',
+    status_calibrating:'calibrando', status_acquisition:'aquisição', status_consolidating:'consolidando', status_mastered:'domínio confirmado', status_review_due:'revisão pendente',
+    accuracy:'precisão', average:'média', items:'contas',
+    rest:'Descanso', rest_msg:'Respire. O próximo bloco começa em instantes.',
+    summary_title:'Resumo da sessão', avg_time:'Tempo médio', accuracy_cap:'Precisão', cognitive_time:'Tempo cognitivo',
+    motor_time:'Tempo motor', fluency_index:'Índice de fluência', biggest_gain:'Maior evolução',
+    main_bottleneck:'Principal gargalo', view_history:'Ver histórico', new_training:'Novo treino',
+    stats_title:'Estatísticas', avg_accuracy:'Precisão média', avg_time_item:'Tempo médio / conta', all_operations:'todas as operações',
+    evolution_time:'Evolução — tempo médio', evolution_acc:'Evolução — precisão', median:'Mediana', p90:'Percentil 90',
+    settings_title:'Ajustes', tab_home:'Início', tab_stats:'Estatísticas', tab_settings:'Ajustes',
+    no_data_today:'sem dados hoje', today:'hoje', last_session:'última sessão', no_data_yet:'sem dados ainda',
+    last_30_days:'últimos 30 dias', overall:'geral', no_data:'sem dados',
+    mode_label:'modo', fluency_short:'fluência',
+    keep_one_op:'Mantenha ao menos uma operação ativa.', data_erased:'Dados apagados.', no_op_selected:'Nenhuma operação ativa selecionada.', answer_required:'Digite uma resposta antes de confirmar.',
+    confirm_reset:'Isso vai apagar todo o histórico e progresso salvos neste dispositivo. Confirmar?',
+    confirm_exit_training:'Sair do treino agora? O progresso desta sessão será salvo até aqui.', exit_training:'Sair do treino',
+    configure_first:'Configure e inicie um treino primeiro.',
+    section_appearance:'Aparência', section_audio:'Áudio e feedback', section_training:'Treino', section_data:'Dados',
+    app_language:'Idioma do app', theme:'Tema', theme_dark:'Escuro', theme_light:'Claro', theme_auto:'Automático',
+    font_size:'Tamanho da fonte', tts_label:'Modo auditivo (Text-to-Speech)', tts_sub:'Lê a conta em voz alta', tts_unsupported:'Não suportado neste navegador',
+    test_voice:'Testar voz', test_voice_sub:'Ouça um exemplo com as configurações atuais', listen:'▶ Ouvir',
+    hide_during_tts:'Ocultar conta durante ditado', hide_during_tts_sub:'Esconde os números enquanto a voz lê',
+    vibration:'Vibração', vibration_sub:'Feedback tátil a cada resposta', vibration_unsupported:'Não suportado neste dispositivo',
+    sounds:'Sons', sounds_sub:'Feedback sonoro a cada resposta',
+    stop_clock:'Parar cronômetro ao digitar', stop_clock_sub:'Conta só o tempo de raciocínio — não o tempo gasto digitando a resposta',
+    confirm_before_accept:'Confirmar resposta antes de aceitar', confirm_before_accept_sub:'Ligado: você sempre toca em ✓ (ou Enter) para confirmar. Desligado: a resposta é aceita automaticamente assim que os dígitos são digitados.',
+    voice_speed:'Velocidade da voz', voice_speed_sub:'Taxa da leitura por Text-to-Speech', voice_lang:'Idioma da voz',
+    answer_timeout:'Tempo limite para responder', answer_timeout_sub:'Sem digitar nada até o prazo, a conta é considerada incorreta',
+    gap_time:'Tempo entre contas', gap_time_sub:'Pausa após cada resposta',
+    correct_show:'Exibição da resposta correta', correct_show_sub:'Quanto tempo mostrar o acerto',
+    export_data:'Exportar dados', export_data_sub:'Baixe todas as sessões salvas', erase_all:'Apagar todos os dados',
+    op_soma:'Soma', op_subtracao:'Subtração', op_multiplicacao:'Multiplicação', op_divisao:'Divisão', op_porcentagem:'Porcentagem', op_expressao:'Expressão (parênteses)',
+    op_expressao_encadeada:'Encadeada (sem parênteses)', op_fracao:'Frações', op_potencia:'Potência', op_radical:'Radical (raiz quadrada)', op_logaritmo:'Logaritmo', op_equacao:'Equação (resolver x)',
+    mode_sprint_l:'Rapidez', mode_sprint_d:'Velocidade máxima',
+    mode_resistencia_l:'Resistência', mode_resistencia_d:'Sessão contínua',
+    mode_intervalado_l:'Intervalado', mode_intervalado_d:'Trabalho + descanso',
+    mode_hiit_l:'HIIT Cognitivo', mode_hiit_d:'Alta intensidade · 10min',
+    kc_aquisicao:'Aquisição', kc_consolidacao:'Consolidação', kc_dominado:'Dominado',
+    duration_sec:'Duração (segundos)', work_s:'Trabalho (s)', rest_s:'Descanso (s)', cycles:'Ciclos',
+    sprint_desc:'Modo Rapidez: o motor ajusta continuamente a dificuldade de cada habilidade para manter você perto do seu ponto ótimo de aprendizagem.',
+    hiit_desc:'10 minutos fixos: 10 blocos de 40s de treino + 20s de descanso.',
+    resistencia_desc:'Sessão contínua — toque em pausa/encerrar quando quiser parar.',
+    no_evolution:'Ainda não há histórico suficiente para comparar.',
+    summary_evolution_line:'{op}: de {prev} para {cur} em média.',
+    summary_bottleneck_line:'{op} — tempo médio {avg}, precisão {acc}.',
+    rating:'rating', block:'bloco', awaiting_retest:'aguardando reteste de retenção', recent_acc:'precisão recente',
+    est_retention:'retenção estimada', answer_label:'Resposta',
+    date_locale:'pt-BR'
+  },
+  en:{
+    home_tagline:'Train faster. Think sharper. Every day.',
+    home_today:"Today's performance", home_reaction:'Reaction time', home_accuracy:'Accuracy',
+    start_training:'Start training →', exercises:'Exercises', sessions:'Sessions', best_streak:'Best streak',
+    config_title:'Session setup', configure_training:'Configure training', operations:'Operations', training_mode:'Session format', options:'Options',
+    speed_skills:'Skills in focus', speed_skills_sub:'Choose one or more families. Every family is already available.', speed_mode:'Training style',
+    select_all_skills:'Train all skills', select_all_skills_sub:'Automatically includes every available family',
+    drill_focus_l:'Focus', drill_focus_d:'Repeat the selected skill', drill_mix_l:'Mixed', drill_mix_d:'Alternate and attack the bottleneck',
+    calibration:'Calibration', target:'target', target_rate:'On target', median_cognitive:'Median time',
+    status_calibrating:'calibrating', status_acquisition:'acquisition', status_consolidating:'consolidating', status_mastered:'mastery confirmed', status_review_due:'review due',
+    accuracy:'accuracy', average:'average', items:'items',
+    rest:'Break', rest_msg:'Breathe. The next block starts shortly.',
+    summary_title:'Session summary', avg_time:'Average time', accuracy_cap:'Accuracy', cognitive_time:'Cognitive time',
+    motor_time:'Motor time', fluency_index:'Fluency index', biggest_gain:'Biggest gain',
+    main_bottleneck:'Main bottleneck', view_history:'View history', new_training:'New session',
+    stats_title:'Statistics', avg_accuracy:'Avg. accuracy', avg_time_item:'Avg. time / item', all_operations:'all operations',
+    evolution_time:'Evolution — average time', evolution_acc:'Evolution — accuracy', median:'Median', p90:'90th percentile',
+    settings_title:'Settings', tab_home:'Home', tab_stats:'Stats', tab_settings:'Settings',
+    no_data_today:'no data today', today:'today', last_session:'last session', no_data_yet:'no data yet',
+    last_30_days:'last 30 days', overall:'overall', no_data:'no data',
+    mode_label:'mode', fluency_short:'fluency',
+    keep_one_op:'Keep at least one operation active.', data_erased:'Data erased.', no_op_selected:'No active operation selected.', answer_required:'Enter an answer before confirming.',
+    confirm_reset:'This will erase all history and progress saved on this device. Confirm?',
+    confirm_exit_training:'Exit this training now? Progress up to this point will be saved.', exit_training:'Exit training',
+    configure_first:'Set up and start a training session first.',
+    section_appearance:'Appearance', section_audio:'Audio & feedback', section_training:'Training', section_data:'Data',
+    app_language:'App language', theme:'Theme', theme_dark:'Dark', theme_light:'Light', theme_auto:'Automatic',
+    font_size:'Font size', tts_label:'Voice mode (Text-to-Speech)', tts_sub:'Reads the problem out loud', tts_unsupported:'Not supported in this browser',
+    test_voice:'Test voice', test_voice_sub:'Hear a sample with the current settings', listen:'▶ Listen',
+    hide_during_tts:'Hide problem while speaking', hide_during_tts_sub:'Hides the numbers while the voice reads them',
+    vibration:'Vibration', vibration_sub:'Haptic feedback on every answer', vibration_unsupported:'Not supported on this device',
+    sounds:'Sounds', sounds_sub:'Sound feedback on every answer',
+    stop_clock:'Stop clock when typing starts', stop_clock_sub:"Counts only thinking time — not the time spent typing the answer",
+    confirm_before_accept:'Confirm answer before accepting', confirm_before_accept_sub:'On: you always tap ✓ (or Enter) to confirm. Off: the answer is accepted automatically as soon as the digits are typed.',
+    voice_speed:'Voice speed', voice_speed_sub:'Text-to-Speech reading rate', voice_lang:'Voice language',
+    answer_timeout:'Answer time limit', answer_timeout_sub:'If no answer is started before this limit, the problem is marked incorrect',
+    gap_time:'Time between problems', gap_time_sub:'Pause after each answer',
+    correct_show:'Correct answer display time', correct_show_sub:'How long to show the correct answer',
+    export_data:'Export data', export_data_sub:'Download all saved sessions', erase_all:'Erase all data',
+    op_soma:'Addition', op_subtracao:'Subtraction', op_multiplicacao:'Multiplication', op_divisao:'Division', op_porcentagem:'Percentage', op_expressao:'Expression (parentheses)',
+    op_expressao_encadeada:'Chained (no parentheses)', op_fracao:'Fractions', op_potencia:'Power', op_radical:'Root (square root)', op_logaritmo:'Logarithm', op_equacao:'Equation (solve for x)',
+    mode_sprint_l:'Speed', mode_sprint_d:'Maximum velocity',
+    mode_resistencia_l:'Endurance', mode_resistencia_d:'Continuous session',
+    mode_intervalado_l:'Intervals', mode_intervalado_d:'Work + rest',
+    mode_hiit_l:'Cognitive HIIT', mode_hiit_d:'High intensity · 10min',
+    kc_aquisicao:'Acquiring', kc_consolidacao:'Consolidating', kc_dominado:'Mastered',
+    duration_sec:'Duration (seconds)', work_s:'Work (s)', rest_s:'Rest (s)', cycles:'Cycles',
+    sprint_desc:'Speed mode: the engine continuously adjusts the difficulty of each skill to keep you near your optimal learning point.',
+    hiit_desc:'Fixed 10 minutes: 10 blocks of 40s work + 20s rest.',
+    resistencia_desc:'Continuous session — tap pause/end whenever you want to stop.',
+    no_evolution:'Not enough history yet to compare.',
+    summary_evolution_line:'{op}: from {prev} to {cur} on average.',
+    summary_bottleneck_line:'{op} — average time {avg}, accuracy {acc}.',
+    rating:'rating', block:'block', awaiting_retest:'awaiting retention retest', recent_acc:'recent accuracy',
+    est_retention:'estimated retention', answer_label:'Answer',
+    date_locale:'en-US'
+  }
+};
+function t(key){ const lang = (Store.data && Store.data.settings.appLang) || 'pt'; return (I18N[lang]||I18N.pt)[key] || key; }
+function tf(key, vars){
+  let s = t(key);
+  Object.keys(vars||{}).forEach(k=>{ s = s.split('{'+k+'}').join(vars[k]); });
+  return s;
+}
+function applyI18N(){
+  document.documentElement.lang = (Store.data.settings.appLang==='en') ? 'en' : 'pt-BR';
+  document.querySelectorAll('[data-i18n]').forEach(el=>{ el.textContent = t(el.dataset.i18n); });
+  document.querySelectorAll('[data-i18n-aria]').forEach(el=>{ el.setAttribute('aria-label', t(el.dataset.i18nAria)); });
+}
+
