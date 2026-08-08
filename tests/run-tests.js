@@ -208,11 +208,19 @@ try{
   clearTimeout(Session.itemTimeoutHandle);
   UI.showScreen=()=>{}; Session.restCountdown=()=>{};
   Session.mode='intervalado'; Session.phase='work'; Session.cyclesLeft=2;
+  Session.endsAt=7000; Session.phaseEndPending=false;
   Session.current={answer:1}; Session.answering=false;
+  Session.itemDeadline=12000;
   Session.itemTimeoutHandle=setTimeout(()=>{ throw new Error('rest timeout fired'); }, 1000);
   Session.onPhaseEnd();
-  if(Session.current!==null || Session.itemDeadline!==null || !Session.answering){
-    throw new Error('rest preserved the previous work item');
+  if(!Session.phaseEndPending || Session.current===null || Session.answering){
+    throw new Error('work block cancelled the current problem instead of waiting for it');
+  }
+  if(Session.endsAt!==12000) throw new Error('block end was not extended to the problem deadline');
+  // Quando a conta termina (resposta ou prazo dela), o bloco vai pro descanso sem nova pergunta.
+  Session.nextQuestion();
+  if(Session.phase!=='rest' || Session.cyclesLeft!==1 || Session.current!==null || !Session.answering || Session.phaseEndPending){
+    throw new Error('deferred block end did not go to rest after the problem concluded');
   }
   clearTimeout(Session.itemTimeoutHandle); clearTimeout(Session.nextQuestionHandle); clearInterval(Session.restHandle);
   Session.active=false; U.now=realNow;

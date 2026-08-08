@@ -938,7 +938,7 @@ const Session = {
   records:[],           // {op,key,ms,cognitiveMs,motorMs,correct,etype,kcLabel,isReview,isAcquisition}
   timerHandle:null, endsAt:0, phase:'work', cyclesLeft:0,
   restHandle:null, itemTimeoutHandle:null, itemDeadline:null, nextQuestionHandle:null,
-  answering:false,
+  answering:false, phaseEndPending:false,
   state:'aquecimento',  // aquecimento | fluxo | fadiga | frustracao (seç. 13)
   touchedKcs:new Set(),
 
@@ -949,6 +949,7 @@ const Session = {
     clearTimeout(this.itemTimeoutHandle); clearTimeout(this.nextQuestionHandle);
     this.records = [];
     this.answering = false;
+    this.phaseEndPending = false;
     this.active = true; this.paused = false;
     this.state = 'aquecimento';
     this.touchedKcs = new Set();
@@ -988,16 +989,17 @@ const Session = {
     if(this.mode==='resistencia'){ return; }
     if(this.mode==='intervalado' || this.mode==='hiit'){
       if(this.phase==='work'){
-        this.cyclesLeft--;
-        if(this.cyclesLeft<=0){ this.finish(); return; }
-        clearTimeout(this.itemTimeoutHandle); clearTimeout(this.nextQuestionHandle);
-        this.itemDeadline=null; this.current=null; this.answering=true; this.typed='';
-        try{ speechSynthesis && speechSynthesis.cancel && speechSynthesis.cancel(); }catch(e){}
-        this.phase='rest';
-        const restSec = this.mode==='hiit' ? 20 : s.intRest;
-        this.endsAt = U.now() + restSec*1000;
-        UI.showScreen('rest');
-        this.restCountdown(restSec);
+        // Já estamos esperando a última conta do bloco terminar — não faz nada de novo.
+        if(this.phaseEndPending) return;
+        // BUGFIX: se o bloco acabou no meio de uma conta, não a cancela: espera a conta
+        // ser respondida (ou expirar pelo prazo dela, answerTimeoutSeconds) antes de ir
+        // para o descanso. O relógio é estendido até o prazo da conta para acompanhar.
+        if(this.current && !this.answering){
+          this.phaseEndPending = true;
+          if(this.itemDeadline && this.itemDeadline > this.endsAt) this.endsAt = this.itemDeadline;
+          return;
+        }
+        this.endWorkPhase();
       } else {
         this.phase='work';
         const workSec = this.mode==='hiit' ? 40 : s.intWork;
@@ -1006,6 +1008,22 @@ const Session = {
         this.nextQuestion();
       }
     }
+  },
+  // Encerra o bloco de trabalho (descendo um ciclo ou terminando a sessão) e entra no
+  // descanso. Também é o destino quando o fim de bloco foi adiado até a conta terminar.
+  endWorkPhase(){
+    const s = Store.data.settings;
+    this.phaseEndPending = false;
+    this.cyclesLeft--;
+    if(this.cyclesLeft<=0){ this.finish(); return; }
+    clearTimeout(this.itemTimeoutHandle); clearTimeout(this.nextQuestionHandle);
+    this.itemDeadline=null; this.current=null; this.answering=true; this.typed='';
+    try{ speechSynthesis && speechSynthesis.cancel && speechSynthesis.cancel(); }catch(e){}
+    this.phase='rest';
+    const restSec = this.mode==='hiit' ? 20 : s.intRest;
+    this.endsAt = U.now() + restSec*1000;
+    UI.showScreen('rest');
+    this.restCountdown(restSec);
   },
   restCountdown(sec){
     let n = sec;
@@ -1066,6 +1084,12 @@ const Session = {
   nextQuestion(){
     if(!this.active || this.paused) return;
     this.answering = false;
+    // Fim de bloco adiado: a conta que estava aberta acabou de ser respondida (ou
+    // expirou) — em vez de começar outra pergunta, encerra o bloco e vai pro descanso.
+    if(this.phaseEndPending){
+      this.endWorkPhase();
+      return;
+    }
     this.current = Engine.next();
     if(!this.current){ UI.toast(t('no_op_selected')); return; }
     const item = this.current;
@@ -1085,6 +1109,9 @@ const Session = {
       this.qShownAt = U.now();
       this.itemDeadline = this.qShownAt + item.timeoutMs;
       this.itemTimeoutHandle = setTimeout(()=>this.handleTimeout(), item.timeoutMs);
+      // Se o bloco terminou enquanto a voz ainda lia a conta, estende o relógio até o
+      // prazo da conta para o anel acompanhar a espera antes do descanso.
+      if(this.phaseEndPending && this.itemDeadline > this.endsAt) this.endsAt = this.itemDeadline;
     });
   },
   handleTimeout(){
@@ -1174,6 +1201,7 @@ const Session = {
   finish(){
     this.active = false;
     this.answering = false;
+    this.phaseEndPending = false;
     clearInterval(this.timerHandle); clearInterval(this.restHandle);
     clearTimeout(this.itemTimeoutHandle); clearTimeout(this.nextQuestionHandle);
     const summary = Analytics.buildSessionSummary(this.records);
@@ -1193,6 +1221,7 @@ const Session = {
     this.active = false;
     this.paused = false;
     this.answering = false;
+    this.phaseEndPending = false;
     clearInterval(this.timerHandle); clearInterval(this.restHandle);
     clearTimeout(this.itemTimeoutHandle); clearTimeout(this.nextQuestionHandle);
     try{ speechSynthesis && speechSynthesis.cancel && speechSynthesis.cancel(); }catch(e){}
