@@ -42,6 +42,7 @@ global.localStorage = {
   removeItem(k){ delete this._data[k]; }
 };
 global.navigator = { vibrate(){ return true; } }; // sem serviceWorker/speechSynthesis de propósito
+global.prompt = ()=>null; // stub — só usado por Session.promptUltimateGoal(), não exercitado diretamente aqui
 global.document = {
   addEventListener(){}, removeEventListener(){},
   querySelectorAll(){ return []; }, querySelector(){ return null; },
@@ -93,7 +94,8 @@ Object.keys(Store.data.settings.ops).forEach(k=>{ Store.data.settings.ops[k] = t
 const VOICES = ['pt-BR','en-US'];
 const T_SAMPLES = [0, 0.25, 0.5, 0.75, 1, ...Array.from({length:200}, ()=>Math.random())];
 
-globalThis.__TEST_RESULTS__ = { perFamily: {}, engineSmokeError: null, speedEngineError: null, adaptiveFlowError: null, timingFlowError: null, confirmFlowError: null };
+globalThis.__TEST_RESULTS__ = { perFamily: {}, engineSmokeError: null, speedEngineError: null, adaptiveFlowError: null, timingFlowError: null, confirmFlowError: null,
+  sequencingError: null, retryQueueError: null, impulseFloorError: null, ultimateTimeoutError: null, patternWeightError: null, patternGenError: null };
 
 Object.keys(KC_DEFS).forEach(key=>{
   const def = KC_DEFS[key];
@@ -137,7 +139,6 @@ Object.keys(KC_DEFS).forEach(key=>{
 try{
   Store.data = Store.defaults();
   Store.data.settings.selectedSkills = Object.keys(KC_DEFS);
-  Store.data.settings.drillMode = 'misto';
   for(let i=0;i<800;i++){
     const item = Engine.next();
     if(!item) continue;
@@ -151,6 +152,116 @@ try{
   }
 }catch(e){
   globalThis.__TEST_RESULTS__.engineSmokeError = e.message;
+}
+
+// Sequenciamento v2 (seç. 2 da revisão do motor): interleaving ponderado nunca repete a
+// mesma família 2x seguidas, uma vez fora da fase de calibração (que não usa este pool).
+try{
+  Store.data = Store.defaults();
+  const keys = ['soma_2d_cc','sub_2d_ce','mult_2d','pct_intermediario','potencia_basica'];
+  Store.data.settings.selectedSkills = keys;
+  Engine.recentKeys = []; Engine.errorRetryQueue = {}; Engine.itemCounter = 0;
+  keys.forEach(k=>{
+    for(let i=0;i<CALIBRATION_ITEMS;i++){
+      Engine.registerResult(Engine.generateItem(k,{isCalibration:true}), 1000, true, false);
+    }
+  });
+  let lastKey=null, repeats=0;
+  for(let i=0;i<200;i++){
+    const item = Engine.next();
+    if(item.key===lastKey) repeats++;
+    lastKey = item.key;
+    Engine.registerResult(item, item.targetMs*0.9, Math.random()<0.8, false);
+  }
+  if(repeats>0) throw new Error('sequenciamento repetiu a mesma família 2x seguidas '+repeats+' vez(es) em 200 escolhas');
+}catch(e){
+  globalThis.__TEST_RESULTS__.sequencingError = e.message;
+}
+
+// Retry pós-erro (modelo C): um erro real (não lapso) agenda a família para reaparecer
+// dentro da janela RETRY_MIN_GAP–RETRY_MAX_GAP itens depois.
+try{
+  Store.data = Store.defaults();
+  Store.data.settings.selectedSkills = ['soma_2d_cc'];
+  Engine.recentKeys = []; Engine.errorRetryQueue = {}; Engine.itemCounter = 0;
+  const item = Engine.generateItem('soma_2d_cc');
+  Engine.itemCounter = 10;
+  Engine.registerResult(item, 900, false, false); // erro genuíno (900ms > IMPULSE_FLOOR)
+  const due = Engine.errorRetryQueue['soma_2d_cc'];
+  if(due==null || due < 10+RETRY_MIN_GAP || due > 10+RETRY_MAX_GAP){
+    throw new Error('retry pós-erro não agendou a família dentro da janela esperada (due='+due+')');
+  }
+}catch(e){
+  globalThis.__TEST_RESULTS__.retryQueueError = e.message;
+}
+
+// IMPULSE_FLOOR: um erro digitado rápido demais para ter sido raciocínio real não pode
+// contaminar a janela pontuada (acerto/meta/domínio/peso de padrão) nem agendar retry.
+try{
+  Store.data = Store.defaults();
+  Store.data.settings.selectedSkills = ['soma_2d_cc'];
+  Engine.recentKeys = []; Engine.errorRetryQueue = {}; Engine.itemCounter = 0;
+  const p = Engine.profile('soma_2d_cc');
+  for(let i=0;i<CALIBRATION_ITEMS;i++) Engine.registerResult(Engine.generateItem('soma_2d_cc',{isCalibration:true}), 1000, true, false);
+  Engine.registerResult(Engine.generateItem('soma_2d_cc'), 1200, true, false); // 1 acerto real na janela
+  const scoredBefore = Engine.scoredWindow(p).length;
+  Engine.registerResult(Engine.generateItem('soma_2d_cc'), 200, false, false); // lapso: 200ms < IMPULSE_FLOOR
+  const scoredAfter = Engine.scoredWindow(p).length;
+  if(scoredAfter!==scoredBefore) throw new Error('lapso (erro < IMPULSE_FLOOR) entrou na janela pontuada');
+  if(Engine.errorRetryQueue['soma_2d_cc']!=null) throw new Error('lapso agendou retry pós-erro indevidamente');
+}catch(e){
+  globalThis.__TEST_RESULTS__.impulseFloorError = e.message;
+}
+
+// Prazo do modo Ultimate: targetMs × multiplicador por fase, com piso de segurança; nos
+// demais modos (ou fora de sessão), continua usando o ajuste manual em Opções.
+try{
+  Store.data = Store.defaults();
+  Store.data.settings.selectedSkills = ['soma_2d_cc'];
+  const p = Engine.profile('soma_2d_cc');
+  p.targetMs = 2000;
+  Session.mode = 'ultimate';
+  const stage = Engine.stage(p);
+  const expectedMult = ULTIMATE_TIMEOUT_MULT[stage] || ULTIMATE_TIMEOUT_MULT.acquisition;
+  const expected = Math.max(ULTIMATE_TIMEOUT_FLOOR_MS, Math.round(2000*expectedMult));
+  const item = Engine.generateItem('soma_2d_cc');
+  if(item.timeoutMs!==expected) throw new Error('prazo do Ultimate não bateu com targetMs×multiplicador ('+item.timeoutMs+' vs '+expected+')');
+  Session.mode = null;
+  if(Engine.generateItem('soma_2d_cc').timeoutMs !== Store.data.settings.answerTimeoutSeconds*1000){
+    throw new Error('fora do Ultimate, o prazo deveria voltar a usar answerTimeoutSeconds');
+  }
+}catch(e){
+  globalThis.__TEST_RESULTS__.ultimateTimeoutError = e.message;
+}
+
+// Peso por padrão (seç. 3): um peso bem mais alto num bucket desloca a geração pra ele,
+// mas nunca elimina a chance dos outros (piso de aleatoriedade).
+try{
+  Store.data = Store.defaults();
+  const p = Engine.profile('pct_basico');
+  p.patternWeights = {'pct:50':PATTERN_WEIGHT_MAX, 'pct:10':PATTERN_WEIGHT_MIN, 'pct:20':PATTERN_WEIGHT_MIN, 'pct:25':PATTERN_WEIGHT_MIN};
+  let count50=0; const total=300;
+  for(let i=0;i<total;i++){ if(Engine.weightedBucket(p,'pct',[10,20,50,25])===50) count50++; }
+  if(count50/total < 0.4) throw new Error('peso por padrão não deslocou a geração como esperado (pct 50 saiu em '+count50+'/'+total+')');
+  if(count50===total) throw new Error('peso por padrão eliminou o piso de aleatoriedade');
+}catch(e){
+  globalThis.__TEST_RESULTS__.patternWeightError = e.message;
+}
+
+// Geradores com viés de padrão continuam sempre válidos (resposta inteira e finita),
+// agora recebendo profile como segundo argumento.
+try{
+  const biasedFamilies = ['soma_2d_cc','sub_2d_ce','soma_3_4d','sub_3_4d','pct_basico','pct_intermediario','pct_avancado'];
+  Store.data = Store.defaults();
+  biasedFamilies.forEach(key=>{
+    const profile = Engine.profile(key);
+    for(let i=0;i<30;i++){
+      const g = KC_DEFS[key].gen(U.clamp(0.2+i*0.02,0,1), profile);
+      if(!Number.isFinite(g.answer) || !Number.isInteger(g.answer)) throw new Error(key+': viés de padrão gerou resposta inválida');
+    }
+  });
+}catch(e){
+  globalThis.__TEST_RESULTS__.patternGenError = e.message;
 }
 
 try{
@@ -287,6 +398,12 @@ ok(RESULTS.speedEngineError===null, 'calibração, foco e recordes do motor de v
 ok(RESULTS.adaptiveFlowError===null, 'fluxo adaptativo (domínio e revisão por retenção): '+RESULTS.adaptiveFlowError);
 ok(RESULTS.timingFlowError===null, 'fluxo de temporização (fim de bloco e descanso): '+RESULTS.timingFlowError);
 ok(RESULTS.confirmFlowError===null, 'fluxo de confirmação da resposta: '+RESULTS.confirmFlowError);
+ok(RESULTS.sequencingError===null, 'sequenciamento (interleaving ponderado, anti-repetição): '+RESULTS.sequencingError);
+ok(RESULTS.retryQueueError===null, 'retry pós-erro (modelo C): '+RESULTS.retryQueueError);
+ok(RESULTS.impulseFloorError===null, 'IMPULSE_FLOOR (lapso não contamina janela pontuada): '+RESULTS.impulseFloorError);
+ok(RESULTS.ultimateTimeoutError===null, 'prazo do modo Ultimate (targetMs×multiplicador): '+RESULTS.ultimateTimeoutError);
+ok(RESULTS.patternWeightError===null, 'peso por padrão desloca geração sem eliminar aleatoriedade: '+RESULTS.patternWeightError);
+ok(RESULTS.patternGenError===null, 'geradores com viés de padrão continuam válidos: '+RESULTS.patternGenError);
 
 console.log(`\n${passed} verificações passaram, ${failures} falharam.`);
 if(failures>0){

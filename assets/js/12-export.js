@@ -25,9 +25,9 @@ const Export = {
         (Engine.targetRate(p)*100).toFixed(1)+'%', p.bestMs||'', p.lastPracticeAt?new Date(p.lastPracticeAt).toISOString():'']);
     });
     rows.push([]);
-    rows.push(['sessao_data','modo','estilo','habilidades','total_contas','precisao','mediana_cognitiva_ms','dentro_da_meta']);
+    rows.push(['sessao_data','modo','habilidades','total_contas','precisao','mediana_cognitiva_ms','dentro_da_meta']);
     Store.data.history.forEach(h=>{
-      rows.push([new Date(h.date).toISOString(), h.mode, h.drillMode||'', (h.selectedSkills||[]).join('|'), h.total,
+      rows.push([new Date(h.date).toISOString(), h.mode, (h.selectedSkills||[]).join('|'), h.total,
         (h.accuracy*100).toFixed(1)+'%', Math.round(h.median||h.avgTime||0), (h.targetRate==null?'':(h.targetRate*100).toFixed(1)+'%')]);
     });
     const csv = rows.map(r=>r.map(v=>`"${String(v).replace(/"/g,'""')}"`).join(',')).join('\n');

@@ -12,7 +12,6 @@ const UI = {
   init(){
     applyI18N();
     this.buildSkillChips();
-    this.buildDrillModeChips();
     this.buildModeChips();
     this.buildSessionOptions();
     this.buildAppSettings();
@@ -89,19 +88,9 @@ const UI = {
       wrap.appendChild(chip);
     });
   },
-  buildDrillModeChips(){
-    const wrap=document.getElementById('drillModeChips'); wrap.innerHTML='';
-    [{k:'foco',l:t('drill_focus_l'),d:t('drill_focus_d'),ic:'🎯'},{k:'misto',l:t('drill_mix_l'),d:t('drill_mix_d'),ic:'↔'}].forEach(m=>{
-      const card=document.createElement('div'); card.className='mode-card'+(Store.data.settings.drillMode===m.k?' active':'');
-      card.innerHTML=`<div class="ic">${m.ic}</div><div class="l">${m.l}</div><div class="d">${m.d}</div>`;
-      card.onclick=()=>{ Store.data.settings.drillMode=m.k; Store.save(); this.buildDrillModeChips(); };
-      wrap.appendChild(card);
-    });
-  },
   buildModeChips(){
     const modes = [
-      {k:'sprint', l:t('mode_sprint_l'), d:t('mode_sprint_d'), ic:'⚡'},
-      {k:'resistencia', l:t('mode_resistencia_l'), d:t('mode_resistencia_d'), ic:'🏃'},
+      {k:'ultimate', l:t('mode_ultimate_l'), d:t('mode_ultimate_d'), ic:'✦'},
       {k:'intervalado', l:t('mode_intervalado_l'), d:t('mode_intervalado_d'), ic:'◷'},
       {k:'hiit', l:t('mode_hiit_l'), d:t('mode_hiit_d'), ic:'🔥'}
     ];
@@ -137,18 +126,17 @@ const UI = {
       row.appendChild(inp);
       box.appendChild(row);
     };
-    if(s.mode==='sprint'){
-      numField(t('duration_sec'), 'sprintSeconds', 15, 300);
-      const p=document.createElement('p'); p.textContent=t('sprint_desc'); box.appendChild(p);
-    }
-    else if(s.mode==='intervalado'){
+    if(s.mode==='intervalado'){
       numField(t('work_s'), 'intWork', 10, 120);
       numField(t('rest_s'), 'intRest', 5, 60);
       numField(t('cycles'), 'intCycles', 1, 12);
     } else if(s.mode==='hiit'){
       const p=document.createElement('p'); p.textContent=t('hiit_desc'); box.appendChild(p);
-    } else if(s.mode==='resistencia'){
-      const p=document.createElement('p'); p.textContent=t('resistencia_desc'); box.appendChild(p);
+    } else if(s.mode==='ultimate'){
+      // Modo com pouca customização de propósito (seç. 2 da revisão do motor) — o prazo de
+      // resposta e as pausas são 100% calculados pelo algoritmo. A meta de duração (só
+      // orientativa, nunca corta a sessão) é perguntada ao tocar em "Iniciar treino".
+      const p=document.createElement('p'); p.textContent=t('ultimate_desc'); box.appendChild(p);
     }
   },
   // Helper único de linha "toggle" (switch) — reutilizado por buildSessionOptions() e
@@ -247,7 +235,7 @@ const UI = {
     ], ()=>{
       // Idioma do app (textos da interface) — independente do idioma da VOZ (TTS).
       applyI18N();
-      this.buildSkillChips(); this.buildDrillModeChips(); this.buildModeChips(); this.buildSessionOptions(); this.buildAppSettings();
+      this.buildSkillChips(); this.buildModeChips(); this.buildSessionOptions(); this.buildAppSettings();
       this.renderHome(); this.renderStats();
     });
     addSelect(t('theme'), 'theme', [
@@ -478,6 +466,21 @@ const UI = {
     const circle = document.getElementById('ringFg');
     const label = document.getElementById('ringLabel');
     const C = 138;
+    // Ultimate não é uma contagem regressiva — é uma sessão aberta com uma meta apenas
+    // orientativa. O anel mostra progresso (tempo decorrido/meta) em vez de tempo
+    // restante, e nunca força o fim ao chegar em 100%.
+    if(session.mode==='ultimate'){
+      const elapsed = Math.max(0, U.now() - session.ultimateStartedAt - (session.ultimatePausedAccumMs||0));
+      const mins = Math.floor(elapsed/60000);
+      if(session.ultimateGoalMs){
+        const frac = U.clamp(elapsed/session.ultimateGoalMs, 0, 1);
+        circle.style.strokeDashoffset = C*(1-frac);
+      } else {
+        circle.style.strokeDashoffset = 0;
+      }
+      label.textContent = mins+'m';
+      return;
+    }
     if(session.endsAt==null){
       circle.style.strokeDashoffset = 0;
       label.textContent = '∞';
@@ -486,8 +489,7 @@ const UI = {
     const remaining = Math.max(0, session.endsAt - U.now());
     label.textContent = Math.ceil(remaining/1000);
     let total;
-    if(session.mode==='sprint') total = Store.data.settings.sprintSeconds*1000;
-    else if(session.mode==='intervalado') total = (session.phase==='work'?Store.data.settings.intWork:Store.data.settings.intRest)*1000;
+    if(session.mode==='intervalado') total = (session.phase==='work'?Store.data.settings.intWork:Store.data.settings.intRest)*1000;
     else if(session.mode==='hiit') total = (session.phase==='work'?40:20)*1000;
     else total = 1;
     const frac = U.clamp(remaining/total, 0, 1);

@@ -22,3 +22,33 @@ const MASTERY_MIN_TARGET_RATE = 0.75;
 const RETENTION_REVIEW_ITEMS = 3;
 const RETENTION_INTERVALS = [ONE_DAY, 3*ONE_DAY, 7*ONE_DAY, 14*ONE_DAY, 30*ONE_DAY];
 
+/* ---------- 2c. MOTOR DE SEQUÊNCIA v2 (revisão "Ultimate") ----------
+   Constantes nomeadas de propósito — são pontos de partida razoáveis, não valores
+   testados com dados reais. Ajustar aqui sem precisar caçar magic numbers no meio
+   das funções. */
+// Prazo de resposta no modo Ultimate = targetMs da habilidade × multiplicador por fase
+// (mais folga enquanto o perfil ainda está se firmando, mais justo quando já é hábito).
+const ULTIMATE_TIMEOUT_MULT = {calibrating:4, acquisition:4, consolidating:3.3, mastered:3, review_due:3};
+const ULTIMATE_TIMEOUT_FLOOR_MS = 1200; // nunca menos que isso, mesmo com targetMs baixo/ruidoso
+const ULTIMATE_PAUSE_FRUSTRACAO_MS = 13000; // pausa curta ao detectar frustração (seç. 13)
+const ULTIMATE_PAUSE_FADIGA_MS = 35000;     // pausa mais longa ao detectar fadiga acumulada
+const ULTIMATE_POST_PAUSE_COOLDOWN_ITEMS = 3; // itens após a pausa que não podem disparar outra
+
+// Elo contínuo (substitui o ajuste em lote de 8 respostas): cada resposta pontuada move
+// difficulty/targetMs em um passo pequeno, escalado por um K-factor que decai conforme
+// mais amostras se acumulam na fase atual — alto no começo (acha o nível rápido), baixo
+// depois de estabilizado (resistente a uma sequência ruim isolada).
+const K_BASE = 0.05, K_MIN = 0.008, K_MAX = 0.05;
+
+// Sequenciamento (substitui Foco/Misto): nunca repete a mesma família 2x seguidas; nenhuma
+// família passa de ANTI_CLUMP_MAX_SHARE das últimas ANTI_CLUMP_WINDOW escolhas; pool de
+// sorteio ponderado; erro recente reaparece dentro de RETRY_MIN_GAP–RETRY_MAX_GAP itens.
+const ANTI_CLUMP_WINDOW = 10, ANTI_CLUMP_MAX_SHARE = 0.4;
+const SEQUENCING_POOL = 5;
+const RETRY_MIN_GAP = 3, RETRY_MAX_GAP = 6;
+
+// Peso por padrão dentro da família (seç. 3 da revisão): nunca repete um enunciado
+// específico — só torna mais provável gerar o atributo (vai-um, empréstimo, grupo de %)
+// onde a pessoa é mais lenta/erra mais. Piso/teto evitam que um atributo vire 0% ou 100%.
+const PATTERN_WEIGHT_NUDGE = 0.06, PATTERN_WEIGHT_MIN = 0.2, PATTERN_WEIGHT_MAX = 3;
+

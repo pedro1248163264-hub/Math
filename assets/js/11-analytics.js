@@ -27,7 +27,7 @@ const Analytics = {
     let evolution=null;
     skillList.forEach(s=>{ const previous=this.historicalSkillMedian(s.key); if(previous&&s.median){ const delta=previous-s.median; if(!evolution||delta>evolution.delta) evolution={key:s.key,delta,prevAvg:previous,newAvg:s.median}; } });
     const bottleneck=[...skillList].filter(s=>s.n).sort((a,b)=>(a.targetRate-b.targetRate)||(b.median-a.median))[0]||null;
-    return {id:U.uid(),date:Date.now(),mode:Session.mode,drillMode:Store.data.settings.drillMode,selectedSkills:Engine.selectedKeys(),
+    return {id:U.uid(),date:Date.now(),mode:Session.mode,selectedSkills:Engine.selectedKeys(),
       ops:Object.keys(byOp),total,accuracy:total?correct.length/total:0,avgTime:U.mean(times),cogAvg:U.mean(records.map(r=>r.cognitiveMs)),
       motorAvg:U.mean(records.map(r=>r.motorMs)),median:U.median(times),p90:U.percentile(times,90),targetRate:total?records.filter(r=>r.targetHit).length/total:0,
       byOp,bySkill,evolution,bottleneck,kcFocus:skillList.sort((a,b)=>a.targetRate-b.targetRate).slice(0,6)};

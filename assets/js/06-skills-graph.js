@@ -24,15 +24,32 @@ const KC_DEFS = {
       let a=aT*10+aU, b=bT*10+bU; if(Math.random()<0.5)[a,b]=[b,a];
       return {a,b,answer:a+b,features:{carries:0}}; } },
   soma_2d_cc:{ label:'Soma — 2 dígitos (com reagrupamento)', op:'soma', prereqs:['soma_2d_sc'], eloBounds:[950,1300],
-    gen(t){ const maxVal=20+Math.round(t*79); let a,b,tries=0;
-      do{ a=U.rint(10,maxVal); b=U.rint(10,maxVal); tries++; } while(countCarries(a,b)===0 && tries<15);
+    // Peso por padrão (seç. 3 da revisão do motor): dentro desta família, sempre há pelo
+    // menos 1 vai-um por definição — o que varia é "1 vai-um" vs "2 vai-uns". Busca um par
+    // no bucket para onde o perfil pesa mais (mais lento/erra mais), mas nunca deixa de
+    // garantir carries>0 (a garantia original da família), mesmo se o bucket-alvo não for
+    // encontrado a tempo.
+    gen(t, profile){
+      const maxVal=20+Math.round(t*79);
+      const target = profile ? Engine.weightedBucket(profile,'carries',['um','varios']) : null;
+      let a,b,c,tries=0,fbA,fbB,fbC;
+      do{
+        a=U.rint(10,maxVal); b=U.rint(10,maxVal); c=countCarries(a,b); tries++;
+        if(c>0 && fbA===undefined){ fbA=a; fbB=b; fbC=c; }
+      } while((c===0 || (target && Engine.bucketFromCount('carries',c)!==target)) && tries<20);
+      if(c===0 && fbA!==undefined){ a=fbA; b=fbB; c=fbC; }
       if(Math.random()<0.5)[a,b]=[b,a];
-      return {a,b,answer:a+b,features:{carries:countCarries(a,b)}}; } },
+      return {a,b,answer:a+b,features:{carries:c}}; } },
   soma_3_4d:{ label:'Soma — 3 e 4 dígitos', op:'soma', prereqs:['soma_2d_cc'], eloBounds:[1200,1600],
-    gen(t){ const four=t>0.45;
-      const a = four ? U.rint(1000,1000+Math.round(t*8999)) : U.rint(100,100+Math.round(t*899));
-      const b = four ? U.rint(1000,1000+Math.round(t*8999)) : U.rint(100,100+Math.round(t*899));
-      return {a,b,answer:a+b,features:{carries:countCarries(a,b)}}; } },
+    gen(t, profile){ const four=t>0.45;
+      const target = profile ? Engine.weightedBucket(profile,'carries',['sem','um','varios']) : null;
+      let a,b,c,tries=0;
+      do{
+        a = four ? U.rint(1000,1000+Math.round(t*8999)) : U.rint(100,100+Math.round(t*899));
+        b = four ? U.rint(1000,1000+Math.round(t*8999)) : U.rint(100,100+Math.round(t*899));
+        c = countCarries(a,b); tries++;
+      } while(target && Engine.bucketFromCount('carries',c)!==target && tries<20);
+      return {a,b,answer:a+b,features:{carries:c}}; } },
 
   sub_1d:{ label:'Subtração — unidades', op:'subtracao', prereqs:[], eloBounds:[500,850],
     gen(t){ const hi=4+Math.round(t*5); let a=U.rint(2,hi+9), b=U.rint(1,Math.min(9,a-1)||1);
@@ -45,17 +62,31 @@ const KC_DEFS = {
       if(a<=b){ a=b+U.rint(1,9); }
       return {a,b,answer:a-b,features:{borrows:0}}; } },
   sub_2d_ce:{ label:'Subtração — 2 dígitos (com empréstimo)', op:'subtracao', prereqs:['sub_2d_se'], eloBounds:[950,1300],
-    gen(t){ const maxVal=20+Math.round(t*79); let a,b,tries=0;
-      do{ a=U.rint(11,maxVal); b=U.rint(10,maxVal-1); tries++; }
-      while((a<=b || countBorrows(a,b)===0) && tries<15);
-      if(a<=b){ [a,b]=[Math.max(a,b)+1, Math.min(a,b)]; }
-      return {a,b,answer:a-b,features:{borrows:countBorrows(a,b)}}; } },
+    // Mesmo espírito de soma_2d_cc acima: a família sempre tem empréstimo (>0); o que
+    // varia é "1 empréstimo" vs "2 empréstimos", enviesado pelo peso do perfil.
+    gen(t, profile){
+      const maxVal=20+Math.round(t*79);
+      const target = profile ? Engine.weightedBucket(profile,'borrows',['um','varios']) : null;
+      let a,b,bc,tries=0,fbA,fbB,fbBc;
+      do{
+        a=U.rint(11,maxVal); b=U.rint(10,maxVal-1);
+        if(a<=b){ [a,b]=[Math.max(a,b)+1, Math.min(a,b)]; }
+        bc=countBorrows(a,b); tries++;
+        if(bc>0 && fbA===undefined){ fbA=a; fbB=b; fbBc=bc; }
+      } while((bc===0 || (target && Engine.bucketFromCount('borrows',bc)!==target)) && tries<20);
+      if(bc===0 && fbA!==undefined){ a=fbA; b=fbB; bc=fbBc; }
+      return {a,b,answer:a-b,features:{borrows:bc}}; } },
   sub_3_4d:{ label:'Subtração — 3 e 4 dígitos', op:'subtracao', prereqs:['sub_2d_ce'], eloBounds:[1200,1600],
-    gen(t){ const four=t>0.45;
-      let a = four ? U.rint(1000,1000+Math.round(t*8999)) : U.rint(100,100+Math.round(t*899));
-      let b = four ? U.rint(1000,a) : U.rint(100,a);
-      if(a<=b) a=b+U.rint(1,50);
-      return {a,b,answer:a-b,features:{borrows:countBorrows(a,b)}}; } },
+    gen(t, profile){ const four=t>0.45;
+      const target = profile ? Engine.weightedBucket(profile,'borrows',['sem','um','varios']) : null;
+      let a,b,bc,tries=0;
+      do{
+        a = four ? U.rint(1000,1000+Math.round(t*8999)) : U.rint(100,100+Math.round(t*899));
+        b = four ? U.rint(1000,a) : U.rint(100,a);
+        if(a<=b) a=b+U.rint(1,50);
+        bc = countBorrows(a,b); tries++;
+      } while(target && Engine.bucketFromCount('borrows',bc)!==target && tries<20);
+      return {a,b,answer:a-b,features:{borrows:bc}}; } },
 
   mult_tabuada:{ label:'Multiplicação — tabuada (2 a 9)', op:'multiplicacao', prereqs:[], eloBounds:[700,1000],
     gen(t){ const hi=4+Math.round(t*5); let a=U.rint(2,hi+3), b=U.rint(2,hi+3);
@@ -80,18 +111,27 @@ const KC_DEFS = {
       return {a:dividend,b:divisor,answer:quotient,features:{exact:true}}; } },
 
   pct_basico:{ label:'Porcentagem — básica', op:'porcentagem', prereqs:['mult_tabuada'], eloBounds:[750,1050],
-    gen(t){ const opts=[10,20,50,25]; const pct=U.choice(opts); let base=U.rint(2,2+Math.round(t*18))*10;
+    // Peso por padrão: cada valor de % já era escolhido por U.choice — trocado por sorteio
+    // ponderado pelo peso do perfil (grupos de % onde a pessoa é mais lenta/erra mais saem
+    // com mais frequência; nunca 100% determinístico, sempre há piso de aleatoriedade).
+    gen(t, profile){ const opts=[10,20,50,25];
+      const pct = profile ? Engine.weightedBucket(profile,'pct',opts) : U.choice(opts);
+      let base=U.rint(2,2+Math.round(t*18))*10;
       // BUGFIX: "25%" sobre uma base que não é múltiplo de 20 dava resultado decimal (25% de 30 = 7,5),
       // e o Math.round abaixo mascarava isso aceitando o inteiro arredondado. Ajusta a base até a
       // porcentagem ser exata, como os geradores intermediário/avançado já fazem.
       let result=pct*base/100, tries=0; while(!Number.isInteger(result)&&tries<10){ base+=10; result=pct*base/100; tries++; }
       base=Math.round(base); return {a:pct,b:base,answer:Math.round(pct*base/100),features:{pct}}; } },
   pct_intermediario:{ label:'Porcentagem — intermediária', op:'porcentagem', prereqs:['pct_basico'], eloBounds:[1000,1300],
-    gen(t){ const opts=[15,25,75,5,30]; const pct=U.choice(opts); let base=U.rint(4,4+Math.round(t*56))*10;
+    gen(t, profile){ const opts=[15,25,75,5,30];
+      const pct = profile ? Engine.weightedBucket(profile,'pct',opts) : U.choice(opts);
+      let base=U.rint(4,4+Math.round(t*56))*10;
       let result=pct*base/100, tries=0; while(!Number.isInteger(result)&&tries<10){ base+=5; result=pct*base/100; tries++; }
       base=Math.round(base); return {a:pct,b:base,answer:Math.round(pct*base/100),features:{pct}}; } },
   pct_avancado:{ label:'Porcentagem — avançada', op:'porcentagem', prereqs:['pct_intermediario','mult_2d'], eloBounds:[1250,1600],
-    gen(t){ const opts=[12,18,35,45,65,8]; const pct=U.choice(opts); let base=U.rint(4,4+Math.round(t*196))*5;
+    gen(t, profile){ const opts=[12,18,35,45,65,8];
+      const pct = profile ? Engine.weightedBucket(profile,'pct',opts) : U.choice(opts);
+      let base=U.rint(4,4+Math.round(t*196))*5;
       let result=pct*base/100, tries=0; while(!Number.isInteger(result)&&tries<10){ base+=5; result=pct*base/100; tries++; }
       base=Math.round(base); return {a:pct,b:base,answer:Math.round(pct*base/100),features:{pct}}; } },
 

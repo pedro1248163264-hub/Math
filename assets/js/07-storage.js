@@ -9,7 +9,7 @@
 
 /* ---------- 5. STORAGE LOCAL (localStorage, tudo offline) ---------- */
 const DB_KEY = 'calcrapido_db_v2';
-const SETTINGS_VERSION = 4;
+const SETTINGS_VERSION = 5;
 const CALIBRATION_ITEMS = 8;
 const DEFAULT_SELECTED_SKILLS = ['soma_2d_cc','sub_2d_ce','mult_11_19','mult_2d','pct_intermediario','potencia_basica','radical_quad'];
 const Store = {
@@ -18,9 +18,9 @@ const Store = {
     return {
       settings:{
         ops:defaultOpsMap(),
-        mode:'sprint',
-        sprintSeconds:60,
+        mode:'ultimate',
         intWork:30, intRest:10, intCycles:4,
+        ultimateGoalMinutes:20,
         tts:false, hideDuringTts:false,
         vibration:true, sounds:true,
         gapMs:400, correctAnswerShowMs:900,
@@ -29,7 +29,6 @@ const Store = {
         theme:'dark', fontScale:1,
         appLang:'pt', stopClockOnFirstKey:true,
         confirmBeforeAccept:true,
-        drillMode:'foco',
         selectedSkills:[...DEFAULT_SELECTED_SKILLS],
         selectAllSkills:false
       },
@@ -59,6 +58,16 @@ const Store = {
       // (como "expressao") ficaria invisível para quem já tinha dados salvos. Mesclamos
       // o nível de "ops" também, preservando as escolhas do usuário para as já existentes.
       this.data.settings.ops = Object.assign({}, d.settings.ops, this.data.settings.ops||{});
+      // BUGFIX/revisão v2: os modos "Rapidez" (sprint) e "Resistência" (resistencia) foram
+      // removidos (substituídos pelo modo único "ultimate"). Uma instalação antiga com um
+      // desses salvo em settings.mode cairia num modo que não existe mais no seletor —
+      // migra silenciosamente para "ultimate" em vez de deixar a sessão sem iniciar.
+      if(!['ultimate','intervalado','hiit'].includes(this.data.settings.mode)){
+        this.data.settings.mode = 'ultimate';
+      }
+      const savedGoal = Number(this.data.settings.ultimateGoalMinutes);
+      this.data.settings.ultimateGoalMinutes = Number.isFinite(savedGoal)
+        ? U.clamp(Math.round(savedGoal), 0, 180) : d.settings.ultimateGoalMinutes;
       const savedAnswerTimeout = Number(this.data.settings.answerTimeoutSeconds);
       this.data.settings.answerTimeoutSeconds = Number.isFinite(savedAnswerTimeout)
         ? U.clamp(Math.round(savedAnswerTimeout), 3, 60)
@@ -94,6 +103,11 @@ const Store = {
         p.masteredAt=Number.isFinite(p.masteredAt)?p.masteredAt:0;
         p.nextReviewAt=Number.isFinite(p.nextReviewAt)?p.nextReviewAt:0;
         p.lastReviewAt=Number.isFinite(p.lastReviewAt)?p.lastReviewAt:0;
+        // Revisão v2: novos campos por perfil — Elo contínuo (samplesInStage, ver K-factor
+        // em 08-speed-engine.js) e peso por padrão interno (patternWeights, seç. 3, nunca
+        // exposto em tela). Perfis salvos antes desta versão simplesmente começam neutros.
+        p.samplesInStage=Number.isFinite(p.samplesInStage)?p.samplesInStage:0;
+        p.patternWeights=(p.patternWeights&&typeof p.patternWeights==='object')?p.patternWeights:{};
       });
       if(!Array.isArray(this.data.settings.selectedSkills) || !this.data.settings.selectedSkills.length){
         this.data.settings.selectedSkills = [...DEFAULT_SELECTED_SKILLS];
@@ -102,7 +116,10 @@ const Store = {
       // Se "todas as contas" estava ativo, garante que famílias novas (adicionadas em
       // atualizações do app) também entrem na seleção, e não fiquem de fora silenciosamente.
       if(this.data.settings.selectAllSkills) this.data.settings.selectedSkills = [...KC_ORDER];
-      if(!['foco','misto'].includes(this.data.settings.drillMode)) this.data.settings.drillMode = 'foco';
+      // BUGFIX/revisão v2: "drillMode" (Foco/Misto) foi removido — o motor de sequência
+      // único (interleaving ponderado + retry pós-erro) substitui os dois. Instalações
+      // antigas podem ter o campo salvo; ele simplesmente não é mais lido em lugar nenhum.
+      delete this.data.settings.drillMode;
       this.data.history = this.data.history || [];
       this.data.bestStreak = this.data.bestStreak || 0;
       this.data.settingsVersion = SETTINGS_VERSION;

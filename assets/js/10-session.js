@@ -1,8 +1,8 @@
 /* =====================================================================
    assets/js/10-session.js — controlador de sessão (Session): fluxo de uma
-   sessão de treino do início ao fim (sprint, resistência, intervalado,
-   HIIT), incluindo temporização de cada resposta e registro de
-   resultados no Engine.
+   sessão de treino do início ao fim (Ultimate, Intervalado, HIIT),
+   incluindo temporização de cada resposta e registro de resultados no
+   Engine.
    Depende de: 01, 02(indireto via Engine), 03(i18n), 07(Store),
    08(Engine), 09(TTS/Sound/Haptics).
    Usado por: 13-ui.js.
@@ -30,25 +30,49 @@ const Session = {
   answering:false, inputLocked:false, phaseEndPending:false,
   state:'aquecimento',  // aquecimento | fluxo | fadiga | frustracao (seç. 13)
   touchedKcs:new Set(),
+  // ---- Modo Ultimate (revisão v2): sessão aberta com pausas automáticas por estado ----
+  ultimateStartedAt:0, ultimatePausedAccumMs:0, _ultimatePauseStartedAt:0,
+  ultimateGoalMs:0, ultimatePauseCooldownUntilCount:0, _ultimateResumeHandle:null,
 
+  // Ponto de entrada público (chamado pelos botões da UI). No modo Ultimate, primeiro
+  // pergunta quanto tempo a pessoa pretende treinar — só orientativo, nunca corta a
+  // sessão à força — antes de entrar de fato em _startCore().
   start(){
+    const s = Store.data.settings;
+    if(s.mode==='ultimate'){ this.promptUltimateGoal(); return; }
+    this._startCore();
+  },
+  promptUltimateGoal(){
+    const s = Store.data.settings;
+    let raw;
+    try{ raw = prompt(t('ultimate_goal_prompt'), s.ultimateGoalMinutes || ''); }
+    catch(e){ raw = null; } // ambiente sem prompt() (ex.: alguns wrappers de PWA) — segue sem meta
+    if(raw===null){ this._startCore(); return; } // cancelado: dispensável, sessão sem meta desta vez
+    const mins = parseInt(raw,10);
+    s.ultimateGoalMinutes = Number.isFinite(mins) && mins>0 ? U.clamp(mins,1,180) : 0;
+    Store.save();
+    this._startCore();
+  },
+  _startCore(){
     const s = Store.data.settings;
     this.mode = s.mode;
     clearInterval(this.timerHandle); clearInterval(this.restHandle);
-    clearTimeout(this.itemTimeoutHandle); clearTimeout(this.nextQuestionHandle);
+    clearTimeout(this.itemTimeoutHandle); clearTimeout(this.nextQuestionHandle); clearTimeout(this._ultimateResumeHandle);
     this.records = [];
     this.answering = false;
     this.phaseEndPending = false;
     this.active = true; this.paused = false;
     this.state = 'aquecimento';
     this.touchedKcs = new Set();
-    Engine.recentKeys = [];
+    this.ultimatePauseCooldownUntilCount = 0;
+    Engine.recentKeys = []; Engine.errorRetryQueue = {}; Engine.itemCounter = 0;
     UI.showScreen('training');
-    if(this.mode==='sprint'){
-      this.endsAt = U.now() + s.sprintSeconds*1000;
-      this.startTimerLoop();
-    } else if(this.mode==='resistencia'){
+    if(this.mode==='ultimate'){
       this.endsAt = null;
+      this.ultimateStartedAt = U.now();
+      this.ultimatePausedAccumMs = 0;
+      this._ultimatePauseStartedAt = 0;
+      this.ultimateGoalMs = s.ultimateGoalMinutes>0 ? s.ultimateGoalMinutes*60000 : 0;
       this.startTimerLoop();
     } else if(this.mode==='intervalado'){
       this.phase='work'; this.cyclesLeft = s.intCycles;
@@ -74,8 +98,10 @@ const Session = {
   },
   onPhaseEnd(){
     const s = Store.data.settings;
-    if(this.mode==='sprint'){ this.finish(); return; }
-    if(this.mode==='resistencia'){ return; }
+    // Ultimate nunca chega aqui de verdade: endsAt fica null (tick() retorna antes de
+    // chamar onPhaseEnd), e o fim de sessão é sempre por saída manual (Session.exit()).
+    // As pausas automáticas são tratadas à parte, em maybeUltimatePause()/nextQuestion().
+    if(this.mode==='ultimate'){ return; }
     if(this.mode==='intervalado' || this.mode==='hiit'){
       if(this.phase==='work'){
         // Já estamos esperando a última conta do bloco terminar — não faz nada de novo.
@@ -133,10 +159,17 @@ const Session = {
       // terminou de ler, ou TTS estava desativado). Se ainda estava lendo, não há nada
       // a preservar aqui — TTS.pause() cuida da fala em si.
       this._itemPauseRemaining = this.itemDeadline!=null ? Math.max(0, this.itemDeadline - U.now()) : null;
+      // Ultimate mede tempo decorrido/meta contra o relógio real — sem isso, cada pausa
+      // manual contaria como progresso, distorcendo a exibição da meta informativa.
+      if(this.mode==='ultimate') this._ultimatePauseStartedAt = U.now();
       clearTimeout(this.itemTimeoutHandle);
       try{ speechSynthesis && speechSynthesis.pause && speechSynthesis.pause(); }catch(e){}
     } else {
       if(this._pauseRemaining!=null) this.endsAt = U.now() + this._pauseRemaining;
+      if(this.mode==='ultimate' && this._ultimatePauseStartedAt){
+        this.ultimatePausedAccumMs += (U.now() - this._ultimatePauseStartedAt);
+        this._ultimatePauseStartedAt = 0;
+      }
       // BUGFIX: retomar precisa reagendar o timeout do item — antes ele ficava
       // cancelado para sempre após uma pausa, e a pergunta nunca mais expirava sozinha.
       if(this._itemPauseRemaining!=null && this.current){
@@ -170,6 +203,33 @@ const Session = {
     this.state = 'fluxo';
   },
 
+  // Pausas automáticas do modo Ultimate (seç. 1 da revisão do motor): em vez de bloco
+  // fixo de trabalho/descanso, usa o estado de sessão já calculado em updateState() —
+  // frustração dispara uma pausa curta (quebra o ciclo de erro em cascata), fadiga
+  // dispara uma pausa mais longa (descanso de verdade). Depois da pausa, um cooldown de
+  // alguns itens evita que a lentidão natural de "voltar a engrenar" dispare outra pausa
+  // na sequência. Chamado no início de nextQuestion(), no lugar de uma pergunta nova.
+  maybeUltimatePause(){
+    if(this.mode!=='ultimate') return false;
+    if(this.records.length < this.ultimatePauseCooldownUntilCount) return false;
+    if(this.state==='frustracao'){ this.startUltimatePause(ULTIMATE_PAUSE_FRUSTRACAO_MS); return true; }
+    if(this.state==='fadiga'){ this.startUltimatePause(ULTIMATE_PAUSE_FADIGA_MS); return true; }
+    return false;
+  },
+  startUltimatePause(ms){
+    clearTimeout(this.itemTimeoutHandle); clearTimeout(this.nextQuestionHandle);
+    this.itemDeadline = null; this.current = null; this.answering = true; this.typed = '';
+    try{ speechSynthesis && speechSynthesis.cancel && speechSynthesis.cancel(); }catch(e){}
+    UI.showScreen('rest');
+    this.restCountdown(Math.round(ms/1000));
+    this._ultimateResumeHandle = setTimeout(()=>{
+      if(!this.active) return;
+      this.ultimatePauseCooldownUntilCount = this.records.length + ULTIMATE_POST_PAUSE_COOLDOWN_ITEMS;
+      UI.showScreen('training');
+      this.nextQuestion();
+    }, ms);
+  },
+
   nextQuestion(){
     if(!this.active || this.paused) return;
     this.answering = false;
@@ -179,6 +239,7 @@ const Session = {
       this.endWorkPhase();
       return;
     }
+    if(this.maybeUltimatePause()) return;
     this.current = Engine.next();
     if(!this.current){ UI.toast(t('no_op_selected')); return; }
     const item = this.current;
@@ -302,7 +363,7 @@ const Session = {
     this.answering = false;
     this.phaseEndPending = false;
     clearInterval(this.timerHandle); clearInterval(this.restHandle);
-    clearTimeout(this.itemTimeoutHandle); clearTimeout(this.nextQuestionHandle);
+    clearTimeout(this.itemTimeoutHandle); clearTimeout(this.nextQuestionHandle); clearTimeout(this._ultimateResumeHandle);
     this._saveSession();
   },
   // Salva o resumo da sessão, atualiza o recorde de sequência e mostra a tela de
@@ -317,7 +378,7 @@ const Session = {
     UI.renderSummary(summary);
     UI.showScreen('summary');
   },
-  // Sai do treino atual sem esperar o fim do sprint/série. Pede confirmação para evitar
+  // Sai do treino atual sem esperar o fim da sessão/série. Pede confirmação para evitar
   // toque acidental, e some com o estado da sessão em vez de deixá-la "pendurada" —
   // antes disso a única forma de sair era fechar e reabrir o app inteiro.
   exit(){
@@ -327,7 +388,7 @@ const Session = {
     this.answering = false;
     this.phaseEndPending = false;
     clearInterval(this.timerHandle); clearInterval(this.restHandle);
-    clearTimeout(this.itemTimeoutHandle); clearTimeout(this.nextQuestionHandle);
+    clearTimeout(this.itemTimeoutHandle); clearTimeout(this.nextQuestionHandle); clearTimeout(this._ultimateResumeHandle);
     try{ speechSynthesis && speechSynthesis.cancel && speechSynthesis.cancel(); }catch(e){}
     document.getElementById('btnPause').textContent = '⏸';
     if(this.records.length){
