@@ -32,6 +32,10 @@ html[data-theme="light"]{
   --shadow: 0 8px 24px rgba(30,41,59,0.08);
 }
 *{box-sizing:border-box; -webkit-tap-highlight-color: transparent;}
+/* touch-action:manipulation elimina a espera por double-tap-zoom nos botões (alguns
+   navegadores seguram o primeiro toque ~300ms só para decidir se é um duplo toque) —
+   crítico para o teclado numérico responder no instante do toque. */
+button{touch-action:manipulation;}
 html,body{height:100%;}
 body{
   margin:0; background:var(--bg); color:var(--text);

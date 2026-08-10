@@ -127,10 +127,34 @@ const Store = {
     }catch(e){ this.data = this.defaults(); }
     return this.data;
   },
+  // Persistência não-bloqueante: gravar no localStorage é síncrono e acontece no caminho
+  // de cada resposta (o Engine salva a cada conta fechada). No celular esse write no meio
+  // do handler do teclado congela a thread principal por alguns ms — é o "teclado lento".
+  // save() agora adia e consolida: chamadas seguidas geram UMA escrita, numa tarefa
+  // separada, fora do caminho do toque. Para não perder dados ao fechar/enviar a aba a
+  // background logo depois, um flush final acontece em visibilitychange/pagehide.
   save(){
+    if(this._saveTimer) clearTimeout(this._saveTimer);
+    this._saveTimer = setTimeout(()=>{ this._saveTimer=null; this._persist(); }, 200);
+    this._bindFlush();
+  },
+  _persist(){
     try{ localStorage.setItem(DB_KEY, JSON.stringify(this.data)); }
     catch(e){ console.warn('Falha ao salvar localmente', e); }
   },
-  reset(){ this.data = this.defaults(); this.save(); }
+  _bindFlush(){
+    if(this._flushBound) return;
+    this._flushBound = true;
+    const flush = ()=>{
+      if(this._saveTimer){ clearTimeout(this._saveTimer); this._saveTimer=null; this._persist(); }
+    };
+    if(typeof document!=='undefined' && document.addEventListener){
+      document.addEventListener('visibilitychange', ()=>{ if(document.visibilityState==='hidden') flush(); });
+    }
+    if(typeof window!=='undefined' && typeof window.addEventListener==='function'){
+      window.addEventListener('pagehide', flush);
+    }
+  },
+  reset(){ this.data = this.defaults(); this._persist(); }
 };
 

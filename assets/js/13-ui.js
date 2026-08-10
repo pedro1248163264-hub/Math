@@ -289,6 +289,18 @@ const UI = {
     document.documentElement.setAttribute('data-theme', theme);
     document.querySelector('meta[name=theme-color]').setAttribute('content', theme==='dark' ? '#0F172A' : '#F4F6FB');
   },
+  // No toque, 'click' só dispara quando o dedo sai do botão — e em alguns navegadores
+  // após esperar por um possível double-tap. O teclado é a peça que mais pede reatividade
+  // no app: bindar no 'pointerdown' registra a tecla no instante em que o dedo toca.
+  // preventDefault() suprime o 'click' sintético que viria depois (senão o dígito entraria
+  // duas vezes). Sem PointerEvent (navegadores antigos), cai no 'click' normal.
+  pressKey(btn, handler){
+    if(window.PointerEvent){
+      btn.addEventListener('pointerdown', (e)=>{ e.preventDefault(); handler(); });
+    } else {
+      btn.addEventListener('click', handler);
+    }
+  },
   buildKeypad(){
     const grid = document.getElementById('keypad');
     grid.innerHTML='';
@@ -297,11 +309,11 @@ const UI = {
       const btn = document.createElement('button');
       btn.className='key'+(k==='←'||k==='±' ? ' func':'');
       btn.textContent = k;
-      btn.onclick = ()=>{
+      this.pressKey(btn, ()=>{
         if(k==='←') Session.submitDigit('back');
         else if(k==='±') Session.submitDigit('sign');
         else Session.submitDigit(k);
-      };
+      });
       grid.appendChild(btn);
     });
     // Tecla de vírgula/ponto decimal — usada só pelas famílias com vírgula, mas fica
@@ -309,11 +321,11 @@ const UI = {
     // igual digitar qualquer outro caractere fora do esperado).
     const decBtn = document.createElement('button');
     decBtn.className='key func wide3'; decBtn.textContent = U.decimalSep();
-    decBtn.onclick = ()=>Session.submitDigit('dec');
+    this.pressKey(decBtn, ()=>Session.submitDigit('dec'));
     grid.appendChild(decBtn);
     const okBtn = document.createElement('button');
     okBtn.className='key func wide3'; okBtn.dataset.ok='1'; okBtn.textContent='✓';
-    okBtn.onclick = ()=>Session.evaluate(false);
+    this.pressKey(okBtn, ()=>Session.evaluate(false));
     grid.appendChild(okBtn);
   },
   bindTraining(){
@@ -460,14 +472,26 @@ const UI = {
   pushPulse(cls){
     this.pulseHistory.push(cls); if(this.pulseHistory.length>16) this.pulseHistory.shift();
     const strip = document.getElementById('pulseStrip');
-    strip.innerHTML='';
-    this.pulseHistory.forEach(c=>{
+    const heights = {target:34, slow:15, err:8};
+    // Reaproveita as barras existentes em vez de destruir/recriar o <div> inteiro a cada
+    // resposta. Recriar o innerHTML no mesmo frame da avaliação causava reflow/layout
+    // desnecessário (com transição de height por cima), somando lag logo após a tecla.
+    while(strip.children.length < this.pulseHistory.length){
       const bar = document.createElement('div');
-      bar.className = 'pulse-bar '+c;
-      const heights = {target:34, slow:15, err:8};
-      bar.style.height = heights[c]+'px';
+      bar.className = 'pulse-bar';
       strip.appendChild(bar);
-    });
+    }
+    while(strip.children.length > this.pulseHistory.length){
+      strip.removeChild(strip.lastChild);
+    }
+    for(let i=0;i<this.pulseHistory.length;i++){
+      const c = this.pulseHistory[i];
+      const bar = strip.children[i];
+      if(bar.className !== 'pulse-bar '+c){
+        bar.className = 'pulse-bar '+c;
+        bar.style.height = heights[c]+'px';
+      }
+    }
   },
   updateHud(){},
   updateRing(session){
