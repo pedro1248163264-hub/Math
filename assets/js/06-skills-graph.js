@@ -13,6 +13,17 @@
    pontos Elo) que aquela família cobre; dentro dela, a dificuldade do
    item é 100% controlada pelo rating contínuo do usuário no KC (seç. 11).
    "prereqs" define o DAG de pré-requisitos (seç. 1, camada 1). */
+// Decide 1 ou 2 casas decimais para o próximo item de uma família decimal. Sem perfil (ou
+// sem pesos ainda), usa só t: começa quase sempre em 1 casa, ganhando chance de 2 casas
+// conforme a dificuldade sobe — sempre com uma chance mínima da outra (nunca 100/0).
+// Com perfil, usa o mesmo sorteio ponderado por peso das demais famílias com atributo
+// categórico (carries/borrows/pct — seç. 3 do motor), então o algoritmo pode enviesar para
+// a quantidade de casas onde a pessoa está mais lenta ou errando mais.
+function decideDecimalPlaces(t, profile){
+  if(profile) return Engine.weightedBucket(profile,'decimalPlaces',[1,2]);
+  const p2 = U.clamp(t*0.85, 0, 0.8);
+  return Math.random()<p2 ? 2 : 1;
+}
 const KC_DEFS = {
   soma_1d:{ label:'Soma — unidades', op:'soma', prereqs:[], eloBounds:[500,850],
     gen(t){ const hi=4+Math.round(t*5); let a=U.rint(1,hi), b=U.rint(1,Math.max(1,9-a));
@@ -87,6 +98,52 @@ const KC_DEFS = {
         bc = countBorrows(a,b); tries++;
       } while(target && Engine.bucketFromCount('borrows',bc)!==target && tries<20);
       return {a,b,answer:a-b,features:{borrows:bc}}; } },
+
+  // ---- Decimais (seç. "Contas com vírgula") ----
+  // A dificuldade nova aqui não é o tamanho do número — é raciocinar com a vírgula junto
+  // (alinhar casas decimais de cabeça). Por isso os operandos ficam pequenos (mesma ordem
+  // de grandeza das famílias inteiras "irmãs" definidas em DECIMAL_PAIR_KC), e tudo é
+  // construído em domínio inteiro (centavos) para a resposta ser sempre exata — nunca dízima.
+  // "decimalPlaces" (1 ou 2 casas) usa o mesmo mecanismo de peso por padrão que carries/
+  // borrows/pct (seç. 3 do motor): a próxima geração fica enviesada para a quantidade de
+  // casas onde a pessoa está mais lenta/errando mais, sem nunca eliminar a outra.
+  soma_decimal:{ label:'Soma — com vírgula (1 a 2 casas)', op:'soma', prereqs:['soma_2d_cc'], eloBounds:[1000,1350], decimal:true,
+    gen(t, profile){
+      const dp = decideDecimalPlaces(t, profile);
+      const scale = Math.pow(10,dp);
+      const maxInt = 1+Math.round(t*8);
+      const aCents = U.rint(1*scale, maxInt*scale+scale-1);
+      const bCents = U.rint(1*scale, maxInt*scale+scale-1);
+      const a=aCents/scale, b=bCents/scale, answer=(aCents+bCents)/scale;
+      return {a,b,answer,features:{decimalPlaces:dp}}; } },
+  sub_decimal:{ label:'Subtração — com vírgula (1 a 2 casas)', op:'subtracao', prereqs:['sub_2d_ce'], eloBounds:[1000,1350], decimal:true,
+    gen(t, profile){
+      const dp = decideDecimalPlaces(t, profile);
+      const scale = Math.pow(10,dp);
+      const maxInt = 1+Math.round(t*8);
+      let aCents=U.rint(1*scale, maxInt*scale+scale-1), bCents=U.rint(1*scale, maxInt*scale+scale-1);
+      if(aCents<=bCents) [aCents,bCents]=[bCents,aCents];
+      if(aCents===bCents) aCents+=U.rint(1,scale);
+      const a=aCents/scale, b=bCents/scale, answer=(aCents-bCents)/scale;
+      return {a,b,answer,features:{decimalPlaces:dp}}; } },
+  mult_decimal:{ label:'Multiplicação — decimal × inteiro', op:'multiplicacao', prereqs:['mult_tabuada'], eloBounds:[950,1300], decimal:true,
+    gen(t, profile){
+      const dp = decideDecimalPlaces(t, profile);
+      const scale = Math.pow(10,dp);
+      const maxInt = 1+Math.round(t*3);
+      const aCents = U.rint(1*scale, maxInt*scale+scale-1);
+      const mult = U.rint(2, 4+Math.round(t*8));
+      const a=aCents/scale, b=mult, answer=(aCents*mult)/scale;
+      return {a,b,answer,features:{decimalPlaces:dp}}; } },
+  div_decimal:{ label:'Divisão — decimal ÷ inteiro', op:'divisao', prereqs:['div_tabuada'], eloBounds:[1000,1350], decimal:true,
+    gen(t, profile){
+      const dp = decideDecimalPlaces(t, profile);
+      const scale = Math.pow(10,dp);
+      const divisor = U.rint(2, 4+Math.round(t*8));
+      const quotientCents = U.rint(1*scale, (1+Math.round(t*3))*scale+scale-1);
+      const dividendCents = quotientCents*divisor;
+      const a=dividendCents/scale, b=divisor, answer=quotientCents/scale;
+      return {a,b,answer,features:{decimalPlaces:dp,exact:true}}; } },
 
   mult_tabuada:{ label:'Multiplicação — tabuada (2 a 9)', op:'multiplicacao', prereqs:[], eloBounds:[700,1000],
     gen(t){ const hi=4+Math.round(t*5); let a=U.rint(2,hi+3), b=U.rint(2,hi+3);
@@ -285,6 +342,10 @@ const KC_LABELS_EN = {
   sub_2d_se:'Subtraction — 2 digits (no borrowing)',
   sub_2d_ce:'Subtraction — 2 digits (with borrowing)',
   sub_3_4d:'Subtraction — 3 and 4 digits',
+  soma_decimal:'Addition — decimals (1–2 places)',
+  sub_decimal:'Subtraction — decimals (1–2 places)',
+  mult_decimal:'Multiplication — decimal × integer',
+  div_decimal:'Division — decimal ÷ integer',
   mult_tabuada:'Multiplication — times tables (2–9)',
   mult_11_19:'Multiplication — by 11–19',
   mult_2d:'Multiplication — 2 digits × 2 digits',
@@ -311,6 +372,7 @@ function kcLabel(key, fallback){
 const KC_ORDER = ['soma_1d','sub_1d','mult_tabuada','div_tabuada','pct_basico',
   'soma_2d_sc','sub_2d_se','mult_11_19','div_2d','pct_intermediario',
   'soma_2d_cc','sub_2d_ce','mult_2d','div_3d','pct_avancado',
+  'soma_decimal','sub_decimal','mult_decimal','div_decimal',
   'soma_3_4d','sub_3_4d','expr_par_simples','expr_par_dupla',
   'fracao_simples','potencia_basica','radical_quad','expr_encadeada','equacao_linear','log_basico'];
 

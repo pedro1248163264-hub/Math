@@ -296,16 +296,27 @@ const Session = {
       UI.updateAnswerDisplay(this.typed);
       return;
     }
+    if(d==='dec'){
+      // Só uma vírgula/ponto por resposta — apertos repetidos são ignorados, não acumulam.
+      if(this.typed.includes(',') || this.typed.includes('.')) return;
+      this.typed += U.decimalSep();
+      UI.updateAnswerDisplay(this.typed);
+      return;
+    }
     this.typed += d;
     UI.updateAnswerDisplay(this.typed);
     const digitsOnly = this.typed.replace('-','');
     const expectedLen = String(Math.abs(this.current.answer)).length;
     // "Confirmar resposta" ligado: nunca envia sozinho, sempre espera toque em ✓/Enter.
     // Desligado (padrão): envia assim que a quantidade de dígitos bate — exceto quando a
-    // resposta pode ser negativa, caso em que ainda é preciso confirmar manualmente (o
-    // usuário pode não ter terminado de tocar em "±" ainda).
+    // resposta pode ser negativa (± ainda pode não ter sido tocado) ou quando o item é de
+    // uma família com vírgula. Neste último caso, o auto-envio é desligado pela FAMÍLIA
+    // (features.decimalPlaces), não pelo valor específico — um item decimal cujas casas
+    // por acaso se cancelam (ex.: 1,1 + 0,9 = 2,0) ainda tem Number.isInteger(answer)===
+    // true, e sem essa checagem o auto-envio dispararia antes da vírgula ser digitada.
+    const isDecimalItem = !!(this.current.features && this.current.features.decimalPlaces);
     if(Store.data.settings.confirmBeforeAccept) return;
-    if(this.current.answer >= 0 && digitsOnly.length >= expectedLen){ this.evaluate(false); }
+    if(this.current.answer >= 0 && Number.isInteger(this.current.answer) && !isDecimalItem && digitsOnly.length >= expectedLen){ this.evaluate(false); }
   },
   evaluate(timedOut){
     // O botão ✓/Enter só confirma uma resposta de fato. Sem esta guarda, um toque
@@ -339,7 +350,10 @@ const Session = {
     // contrário, usa o tempo total da questão. O tempo total permanece salvo à parte
     // como métrica motora secundária, quando aplicável.
     const effectiveMs = cognitiveMs;
-    const correct = !timedOut && this.typed.length>0 && (+this.typed === item.answer);
+    // Aceita tanto vírgula quanto ponto como separador decimal na hora de comparar,
+    // independente de qual dos dois a tecla decimal inseriu (idioma do app).
+    const typedNormalized = this.typed.replace(',', '.');
+    const correct = !timedOut && this.typed.length>0 && (+typedNormalized === item.answer);
     const result = Engine.registerResult(item, effectiveMs, correct, !!timedOut);
     this.touchedKcs.add(item.key);
     this.records.push({op:item.op, key:item.key, kcLabel:item.kcLabel, ms:effectiveMs, totalMs, cognitiveMs, motorMs,

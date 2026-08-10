@@ -10,7 +10,7 @@ O Mental Math é um PWA local: funciona diretamente no navegador, pode usar o ca
 
 Tudo funciona offline, com **uma única exceção**: as fontes do Google Fonts carregadas no `index.html`. Elas dependem da rede. Depois da primeira visita online elas ficam em cache (como resposta opaca do service worker), então as aberturas seguintes já usam as fontes reais mesmo sem conexão. Apenas a primeira abertura offline logo após instalar o app cai para as fontes de fallback locais. O restante — HTML, CSS, JS, dados — nunca depende da rede.
 
-O treino é organizado por **famílias de cálculo** (habilidades), e não por uma conta específica. Há 25 famílias, cobrindo somas, subtrações, multiplicações, divisões, porcentagens, expressões, frações, potências, radicais, logaritmos e equações. Na configuração, a pessoa pode escolher uma ou mais delas, ou marcar **Treinar todas as contas**. Todas as famílias ficam selecionáveis desde o início; os pré-requisitos são usados apenas como um sinal de prioridade, não como bloqueio.
+O treino é organizado por **famílias de cálculo** (habilidades), e não por uma conta específica. Há 29 famílias, cobrindo somas, subtrações, multiplicações, divisões, porcentagens, expressões, frações, potências, radicais, logaritmos, equações e contas com vírgula. Na configuração, a pessoa pode escolher uma ou mais delas, ou marcar **Treinar todas as contas**. Todas as famílias ficam selecionáveis desde o início; os pré-requisitos são usados apenas como um sinal de prioridade, não como bloqueio.
 
 O botão **Iniciar treino** começa imediatamente com a configuração salva. Para alterá-la, acesse **Ajustes** e toque em **Configurar treino** para abrir a tela de configuração; as alterações são salvas na hora. Durante a sessão, o cabeçalho mostra apenas o tempo restante.
 
@@ -30,7 +30,17 @@ Não existe mais um estilo "Foco" ou "Misto" configurável — há um único mot
 
 Se só houver uma habilidade selecionada, ela é sempre usada.
 
-Depois de escolher a família, o gerador cria uma conta compatível com ela. A dificuldade individual parte do perfil da habilidade e recebe uma pequena variação aleatória; o motor tenta evitar repetir os últimos 24 enunciados daquela família. Os geradores produzem respostas inteiras e, quando aplicável, divisões exatas, resultados de frações inteiros e expressões válidas.
+Depois de escolher a família, o gerador cria uma conta compatível com ela. A dificuldade individual parte do perfil da habilidade e recebe uma pequena variação aleatória; o motor tenta evitar repetir os últimos 24 enunciados daquela família. Os geradores produzem respostas inteiras e, quando aplicável, divisões exatas, resultados de frações inteiros e expressões válidas — exceto as quatro famílias com vírgula (seção abaixo), cuja resposta é sempre um decimal exato de 1 ou 2 casas, nunca dízima.
+
+### Contas com vírgula
+
+Além das famílias inteiras, há quatro famílias com números decimais (1 a 2 casas) — `soma_decimal`, `sub_decimal`, `mult_decimal`, `div_decimal` — uma para cada operação básica. Cada uma tem como pré-requisito a família inteira equivalente (soma/subtração de 2 dígitos com reagrupamento, tabuada) e é tratada pelo motor como uma habilidade própria, com seu próprio perfil de Elo/meta de tempo — não é uma variação de exibição das famílias inteiras.
+
+A dificuldade extra da vírgula em si (raciocinar com casas decimais, não o tamanho do número) é tratada como um atributo próprio: assim como o motor já pesa vai-um/empréstimo/grupo de porcentagem dentro de uma família (seção "Escolha da próxima conta" acima), ele também pesa 1 vs. 2 casas decimais, enviesando a próxima geração para a quantidade onde a pessoa está mais lenta ou errando mais — sem nunca eliminar a outra.
+
+**Comparação interna (ainda não exposta em tela):** o motor consegue calcular, a qualquer momento, o quanto a vírgula pesa de fato — comparando tempo e acerto de cada família decimal com os da família inteira "irmã" (`soma_decimal` ↔ `soma_2d_cc`, `sub_decimal` ↔ `sub_2d_ce`, `mult_decimal` ↔ `mult_tabuada`, `div_decimal` ↔ `div_tabuada`) e checando se a diferença está dentro do que já era esperado (até ~25% mais lento, até 5 p.p. a menos de acerto) ou desproporcional. Isso vive em `Engine.decimalComparison(key)` / `Engine.allDecimalComparisons()` (`assets/js/08-speed-engine.js`) e não altera dificuldade, sequenciamento nem é mostrado em nenhuma tela hoje — a tela de estatísticas precisa de uma revisão à parte antes de exibir esse tipo de dado.
+
+No teclado numérico da sessão, uma tecla extra (vírgula ou ponto, conforme o idioma do app) fica sempre disponível; nas famílias sem vírgula ela simplesmente não se aplica. Respostas decimais sempre exigem toque em ✓ (nunca são enviadas sozinhas por contagem de dígitos), pelo mesmo motivo que respostas negativas já exigiam.
 
 ### Adaptação, metas e domínio
 

@@ -52,3 +52,21 @@ const RETRY_MIN_GAP = 3, RETRY_MAX_GAP = 6;
 // onde a pessoa é mais lenta/erra mais. Piso/teto evitam que um atributo vire 0% ou 100%.
 const PATTERN_WEIGHT_NUDGE = 0.06, PATTERN_WEIGHT_MIN = 0.2, PATTERN_WEIGHT_MAX = 3;
 
+/* ---------- 2d. FAMÍLIAS COM VÍRGULA (decimais) ----------
+   Cada família decimal tem uma família inteira "irmã" — mesma operação, mesma faixa de
+   magnitude — usada como referência para medir o quanto a vírgula em si (e não a conta em
+   si) pesa na dificuldade. Isso não é exposto em nenhuma tela (a pessoa pediu para não
+   colocar no analytics agora); é só um dado que o motor consegue calcular internamente
+   via Engine.decimalComparison()/Engine.allDecimalComparisons(), em 08-speed-engine.js.
+   EXPECTED_DECIMAL_* são a "régua" de comparação: o quanto mais lento/impreciso já é
+   esperado só por causa da vírgula, antes de considerar que a família está desproporcional. */
+const DECIMAL_PAIR_KC = {
+  soma_decimal: 'soma_2d_cc',
+  sub_decimal: 'sub_2d_ce',
+  mult_decimal: 'mult_tabuada',
+  div_decimal: 'div_tabuada'
+};
+const EXPECTED_DECIMAL_TIME_MULT = 1.25; // esperado até ~25% mais lento que a versão inteira equivalente
+const EXPECTED_DECIMAL_ACC_DROP = 0.05;  // esperado até 5 p.p. a menos de acerto
+const DECIMAL_COMPARISON_MIN_SAMPLES = 6; // amostras pontuadas mínimas em cada perfil para comparar com confiança
+

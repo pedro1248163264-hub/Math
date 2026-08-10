@@ -33,8 +33,17 @@ function speakEquation(item, w){
     : `${item.d}`;
   return `${left} ${w.equals} ${right}`;
 }
+// Lê um decimal como "parte inteira <vírgula/point> parte decimal" em vez de deixar o
+// motor de fala tentar adivinhar "12.5" sozinho — evita leituras estranhas/inconsistentes
+// entre navegadores. Números inteiros não são afetados.
+function spokenNum(n, voiceLang){
+  if(Number.isInteger(n)) return String(n);
+  const sepWord = voiceLang==='en-US' ? 'point' : 'vírgula';
+  const [intPart, decPart] = String(n).split('.');
+  return `${intPart} ${sepWord} ${decPart}`;
+}
 function spokenPhrase(item, voiceLang){
-  const a = item.a, b = item.b;
+  const a = spokenNum(item.a, voiceLang), b = spokenNum(item.b, voiceLang);
   const w = EXPR_WORDS[voiceLang] || EXPR_WORDS['pt-BR'];
   if(item.op==='equacao') return speakEquation(item, w);
   if(item.terms && item.ops) return speakChain(item.terms, item.ops, w);

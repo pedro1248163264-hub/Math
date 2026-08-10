@@ -22,5 +22,18 @@ const U = {
   fmtSec(ms){ if(ms==null||isNaN(ms)) return '-'; return (ms/1000).toFixed(2)+'s'; },
   fmtPct(v){ if(v==null||isNaN(v)) return '-'; return Math.round(v*100)+'%'; },
   uid(){ return Date.now().toString(36)+Math.random().toString(36).slice(2,7); },
+  // Formata um número para exibição/fala respeitando o separador decimal do idioma do
+  // app (vírgula em pt, ponto em en) — usado pelas famílias com vírgula (seç. "Decimais").
+  // Números inteiros nunca ganham separador.
+  fmtNum(n){
+    if(!Number.isFinite(n)) return String(n);
+    const lang = (typeof Store!=='undefined' && Store.data && Store.data.settings.appLang) || 'pt';
+    const s = String(n);
+    return lang==='en' ? s : s.replace('.', ',');
+  },
+  decimalSep(){
+    const lang = (typeof Store!=='undefined' && Store.data && Store.data.settings.appLang) || 'pt';
+    return lang==='en' ? '.' : ',';
+  },
 };
 

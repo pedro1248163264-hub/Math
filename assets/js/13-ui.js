@@ -304,6 +304,13 @@ const UI = {
       };
       grid.appendChild(btn);
     });
+    // Tecla de vírgula/ponto decimal — usada só pelas famílias com vírgula, mas fica
+    // sempre disponível (inofensiva nas demais: digitá-la lá só torna a resposta errada,
+    // igual digitar qualquer outro caractere fora do esperado).
+    const decBtn = document.createElement('button');
+    decBtn.className='key func wide3'; decBtn.textContent = U.decimalSep();
+    decBtn.onclick = ()=>Session.submitDigit('dec');
+    grid.appendChild(decBtn);
     const okBtn = document.createElement('button');
     okBtn.className='key func wide3'; okBtn.dataset.ok='1'; okBtn.textContent='✓';
     okBtn.onclick = ()=>Session.evaluate(false);
@@ -315,6 +322,7 @@ const UI = {
       if(/^[0-9]$/.test(e.key)) Session.submitDigit(e.key);
       else if(e.key==='Backspace') Session.submitDigit('back');
       else if(e.key==='-') Session.submitDigit('sign');
+      else if(e.key==='.'||e.key===',') Session.submitDigit('dec');
       else if(e.key==='Enter') Session.evaluate(false);
     });
   },
@@ -410,7 +418,7 @@ const UI = {
     } else {
       const text = item.exprText ? item.exprText
         : item.op==='porcentagem' ? `${item.a}% ${t('pct_of')} ${item.b}`
-        : `${item.a} ${item.symbol} ${item.b}`;
+        : `${U.fmtNum(item.a)} ${item.symbol} ${U.fmtNum(item.b)}`;
       row.textContent = text;
     }
     eqEl.append(row);
@@ -446,7 +454,7 @@ const UI = {
     document.getElementById('feedbackAnswer').textContent='';
   },
   showCorrectAnswer(answer){
-    document.getElementById('feedbackAnswer').textContent = t('answer_label')+': '+answer;
+    document.getElementById('feedbackAnswer').textContent = t('answer_label')+': '+U.fmtNum(answer);
   },
   pulseHistory:[],
   pushPulse(cls){

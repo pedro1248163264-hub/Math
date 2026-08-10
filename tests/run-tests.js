@@ -12,8 +12,12 @@
 
    O QUE ESTE TESTE COBRE:
      - Todo gen(t) de KC_DEFS, para vários níveis de dificuldade (t),
-       produz sempre um `answer` inteiro, finito e dentro de uma faixa
-       plausível — nunca NaN, Infinity, ou fração quebrada.
+       produz sempre um `answer` finito e dentro de uma faixa plausível —
+       nunca NaN, Infinity, ou fração quebrada. Para a maioria das
+       famílias isso significa inteiro; para as famílias marcadas
+       `decimal:true` (seç. "Decimais"), significa um valor com
+       exatamente 1 ou 2 casas decimais (features.decimalPlaces) e
+       matematicamente exato a partir de a/b — nunca dízima.
      - spokenPhrase() nunca lança exceção para nenhuma família, em
        pt-BR/en-US.
      - Um "smoke test" do motor completo (Engine.next / registerResult)
@@ -95,7 +99,8 @@ const VOICES = ['pt-BR','en-US'];
 const T_SAMPLES = [0, 0.25, 0.5, 0.75, 1, ...Array.from({length:200}, ()=>Math.random())];
 
 globalThis.__TEST_RESULTS__ = { perFamily: {}, engineSmokeError: null, speedEngineError: null, adaptiveFlowError: null, timingFlowError: null, confirmFlowError: null,
-  sequencingError: null, retryQueueError: null, impulseFloorError: null, ultimateTimeoutError: null, patternWeightError: null, patternGenError: null };
+  sequencingError: null, retryQueueError: null, impulseFloorError: null, ultimateTimeoutError: null, patternWeightError: null, patternGenError: null,
+  decimalInputError: null, decimalComparisonError: null };
 
 Object.keys(KC_DEFS).forEach(key=>{
   const def = KC_DEFS[key];
@@ -110,7 +115,15 @@ Object.keys(KC_DEFS).forEach(key=>{
       stats.examples.push('gen() lançou exceção: '+e.message);
       return;
     }
-    const answerOk = Number.isFinite(g.answer) && Number.isInteger(g.answer) && Math.abs(g.answer) < 1e6;
+    let answerOk;
+    if(def.decimal){
+      const dp = g.features && g.features.decimalPlaces;
+      const scale = Math.pow(10, dp);
+      answerOk = Number.isFinite(g.answer) && Math.abs(g.answer) < 1e6 && (dp===1||dp===2) &&
+        Math.abs(Math.round(g.answer*scale) - g.answer*scale) < 1e-6;
+    } else {
+      answerOk = Number.isFinite(g.answer) && Number.isInteger(g.answer) && Math.abs(g.answer) < 1e6;
+    }
     if(!answerOk){
       stats.badAnswer++;
       stats.examples.push('answer inválido: '+JSON.stringify(g));
@@ -123,6 +136,19 @@ Object.keys(KC_DEFS).forEach(key=>{
       if(!Number.isInteger(trueValue) || trueValue !== g.answer){
         stats.badAnswer++;
         stats.examples.push('porcentagem com resposta arredondada: '+JSON.stringify(g));
+      }
+    }
+    // Famílias decimais: confere que a/b combinados pela operação básica batem exatamente
+    // com o answer (mesmo espírito do bugfix de porcentagem acima).
+    if(def.decimal){
+      let trueValue;
+      if(def.op==='soma') trueValue = g.a+g.b;
+      else if(def.op==='subtracao') trueValue = g.a-g.b;
+      else if(def.op==='multiplicacao') trueValue = g.a*g.b;
+      else if(def.op==='divisao') trueValue = g.a/g.b;
+      if(Math.abs(trueValue-g.answer) > 1e-6){
+        stats.badAnswer++;
+        stats.examples.push('decimal com resposta incorreta: '+JSON.stringify(g));
       }
     }
     const fakeItem = Object.assign({op:def.op, key, kcLabel:def.label, symbol:(OPS[def.op]||{}).symbol}, g);
@@ -260,6 +286,17 @@ try{
       if(!Number.isFinite(g.answer) || !Number.isInteger(g.answer)) throw new Error(key+': viés de padrão gerou resposta inválida');
     }
   });
+  const biasedDecimalFamilies = ['soma_decimal','sub_decimal','mult_decimal','div_decimal'];
+  biasedDecimalFamilies.forEach(key=>{
+    const profile = Engine.profile(key);
+    for(let i=0;i<30;i++){
+      const g = KC_DEFS[key].gen(U.clamp(0.2+i*0.02,0,1), profile);
+      const dp = g.features && g.features.decimalPlaces, scale = Math.pow(10,dp);
+      if(!Number.isFinite(g.answer) || (dp!==1&&dp!==2) || Math.abs(Math.round(g.answer*scale)-g.answer*scale) > 1e-6){
+        throw new Error(key+': viés de padrão gerou resposta decimal inválida');
+      }
+    }
+  });
 }catch(e){
   globalThis.__TEST_RESULTS__.patternGenError = e.message;
 }
@@ -378,6 +415,64 @@ try{
 }catch(e){
   globalThis.__TEST_RESULTS__.confirmFlowError = e.message;
 }
+
+// Entrada decimal: a tecla "dec" insere o separador certo, ignora toques repetidos, exige
+// confirmação manual (não envia sozinha por contagem de dígitos) e aceita tanto vírgula
+// quanto ponto na comparação final.
+try{
+  UI.updateAnswerDisplay=()=>{}; UI.toast=()=>{}; UI.flashAnswer=()=>{};
+  UI.pushPulse=()=>{}; UI.updateHud=()=>{}; UI.showCorrectAnswer=()=>{};
+  UI.clearAnswerFeedback=()=>{};
+  Sound.correct=()=>{}; Sound.wrong=()=>{}; Haptics.correct=()=>{}; Haptics.wrong=()=>{};
+  Store.data = Store.defaults();
+  Store.data.settings.confirmBeforeAccept = false;
+  const item = Engine.generateItem('soma_decimal');
+  Session.active=true; Session.paused=false; Session.current=item; Session.inputLocked=false;
+  Session.typed=''; Session.records=[]; Session.answering=false;
+  Session.qShownAt=U.now(); Session.firstKeyAt=0;
+  Session.submitDigit('1'); Session.submitDigit('dec'); Session.submitDigit('dec'); Session.submitDigit('5');
+  if((Session.typed.match(/[,.]/g)||[]).length!==1) throw new Error('tecla decimal repetida inseriu mais de um separador');
+  if(Session.records.length!==0) throw new Error('resposta decimal foi enviada sozinha sem confirmação manual');
+  Session.evaluate(false);
+  if(Session.records.length!==1) throw new Error('✓ não confirmou a resposta decimal digitada');
+  clearTimeout(Session.nextQuestionHandle);
+  // Mesma família, mas digitando a resposta certa de fato (via helper), com ',' e com '.'.
+  [',','.'].forEach(sep=>{
+    Store.data = Store.defaults();
+    const it = Engine.generateItem('sub_decimal');
+    Session.current=it; Session.typed=String(it.answer).replace('.', sep);
+    Session.records=[]; Session.answering=false; Session.qShownAt=U.now(); Session.firstKeyAt=U.now();
+    Session.evaluate(false);
+    if(!Session.records[0] || !Session.records[0].correct) throw new Error('separador "'+sep+'" não foi aceito como decimal válido');
+    clearTimeout(Session.nextQuestionHandle);
+  });
+  Session.active=false;
+}catch(e){
+  globalThis.__TEST_RESULTS__.decimalInputError = e.message;
+}
+
+// Comparação decimal vs. inteiro (dado interno, seç. "Decimais"): só responde com amostra
+// suficiente nos dois perfis, e classifica corretamente dentro/fora do esperado.
+try{
+  Store.data = Store.defaults();
+  if(Engine.decimalComparison('soma_decimal')!==null){
+    throw new Error('comparação decimal respondeu sem amostra suficiente');
+  }
+  const dProfile = Engine.profile('soma_decimal'), rProfile = Engine.profile('soma_2d_cc');
+  for(let i=0;i<DECIMAL_COMPARISON_MIN_SAMPLES+2;i++){
+    dProfile.window.push({ms:1000, correct:true, targetHit:true, calibration:false, lapse:false, at:Date.now()});
+    rProfile.window.push({ms:1000, correct:true, targetHit:true, calibration:false, lapse:false, at:Date.now()});
+  }
+  const withinCmp = Engine.decimalComparison('soma_decimal');
+  if(!withinCmp || !withinCmp.withinExpected) throw new Error('comparação decimal não reconheceu desempenho equivalente como esperado');
+  dProfile.window = dProfile.window.map(w=>({...w, ms:1000*(EXPECTED_DECIMAL_TIME_MULT+0.5)}));
+  const slowCmp = Engine.decimalComparison('soma_decimal');
+  if(!slowCmp || slowCmp.withinExpected) throw new Error('comparação decimal não sinalizou lentidão desproporcional');
+  const all = Engine.allDecimalComparisons();
+  if(!Array.isArray(all) || !all.some(c=>c.key==='soma_decimal')) throw new Error('allDecimalComparisons() não incluiu soma_decimal');
+}catch(e){
+  globalThis.__TEST_RESULTS__.decimalComparisonError = e.message;
+}
 `;
 
 eval(harness);
@@ -404,6 +499,8 @@ ok(RESULTS.impulseFloorError===null, 'IMPULSE_FLOOR (lapso não contamina janela
 ok(RESULTS.ultimateTimeoutError===null, 'prazo do modo Ultimate (targetMs×multiplicador): '+RESULTS.ultimateTimeoutError);
 ok(RESULTS.patternWeightError===null, 'peso por padrão desloca geração sem eliminar aleatoriedade: '+RESULTS.patternWeightError);
 ok(RESULTS.patternGenError===null, 'geradores com viés de padrão continuam válidos: '+RESULTS.patternGenError);
+ok(RESULTS.decimalInputError===null, 'entrada decimal (tecla de vírgula, confirmação manual, vírgula/ponto): '+RESULTS.decimalInputError);
+ok(RESULTS.decimalComparisonError===null, 'comparação de dificuldade decimal vs. inteiro (dado interno): '+RESULTS.decimalComparisonError);
 
 console.log(`\n${passed} verificações passaram, ${failures} falharam.`);
 if(failures>0){

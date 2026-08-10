@@ -40,8 +40,13 @@ const Engine = {
   patternAttrs:{
     soma_2d_cc:['carries'], soma_3_4d:['carries'],
     sub_2d_ce:['borrows'], sub_3_4d:['borrows'],
-    pct_basico:['pct'], pct_intermediario:['pct'], pct_avancado:['pct']
+    pct_basico:['pct'], pct_intermediario:['pct'], pct_avancado:['pct'],
+    soma_decimal:['decimalPlaces'], sub_decimal:['decimalPlaces'],
+    mult_decimal:['decimalPlaces'], div_decimal:['decimalPlaces']
   },
+  // Atributos cujo valor bruto (não uma contagem sem/um/vários) já é a própria chave do
+  // bucket — pct (10/20/25...) e decimalPlaces (1/2 casas) funcionam assim.
+  directBucketAttrs:['pct','decimalPlaces'],
   bucketFromCount(attr, count){
     if(count<=0) return 'sem';
     if(count===1) return 'um';
@@ -64,13 +69,47 @@ const Engine = {
     attrs.forEach(attr=>{
       const raw = item.features[attr];
       if(raw===undefined) return;
-      const bucket = (attr==='pct') ? String(raw) : this.bucketFromCount(attr, raw);
+      const bucket = this.directBucketAttrs.includes(attr) ? String(raw) : this.bucketFromCount(attr, raw);
       const wKey = attr+':'+bucket;
       const cur = profile.patternWeights[wKey]!=null ? profile.patternWeights[wKey] : 1;
       const good = correct && targetHit;
       const next = good ? cur - PATTERN_WEIGHT_NUDGE : cur + PATTERN_WEIGHT_NUDGE;
       profile.patternWeights[wKey] = U.clamp(next, PATTERN_WEIGHT_MIN, PATTERN_WEIGHT_MAX);
     });
+  },
+  // ---------- Comparação decimal vs. inteiro (dado interno, não exposto em tela) ----------
+  // Mede o quanto a vírgula em si pesa: compara tempo/acerto da família decimal com os da
+  // família inteira "irmã" (DECIMAL_PAIR_KC, seç. 2d das constantes) e confere se a
+  // diferença está dentro do que já era esperado (EXPECTED_DECIMAL_*) ou se está
+  // desproporcional — sinal de que vale treinar vírgula separadamente. Não decide nada
+  // sozinho (não muda dificuldade/sequenciamento); é só um dado que a tela de estatísticas
+  // poderá exibir depois de revisada.
+  decimalComparison(key){
+    const refKey = DECIMAL_PAIR_KC[key];
+    if(!refKey || !KC_DEFS[refKey]) return null;
+    const dProfile = this.profile(key), rProfile = this.profile(refKey);
+    const dWindow = this.scoredWindow(dProfile, 20), rWindow = this.scoredWindow(rProfile, 20);
+    if(dWindow.length < DECIMAL_COMPARISON_MIN_SAMPLES || rWindow.length < DECIMAL_COMPARISON_MIN_SAMPLES) return null;
+    const dCorrectMs = dWindow.filter(x=>x.correct).map(x=>x.ms), rCorrectMs = rWindow.filter(x=>x.correct).map(x=>x.ms);
+    if(!dCorrectMs.length || !rCorrectMs.length) return null;
+    const decimalMedianMs = U.median(dCorrectMs), refMedianMs = U.median(rCorrectMs);
+    const decimalAcc = U.mean(dWindow.map(x=>x.correct?1:0)), refAcc = U.mean(rWindow.map(x=>x.correct?1:0));
+    const timeRatio = refMedianMs>0 ? decimalMedianMs/refMedianMs : null;
+    const accDrop = refAcc - decimalAcc; // positivo = decimal pior que a versão inteira
+    const timeWithinExpected = timeRatio==null ? true : timeRatio <= EXPECTED_DECIMAL_TIME_MULT;
+    const accWithinExpected = accDrop <= EXPECTED_DECIMAL_ACC_DROP;
+    return {
+      key, refKey,
+      decimalMedianMs, refMedianMs, timeRatio, expectedTimeRatio:EXPECTED_DECIMAL_TIME_MULT,
+      decimalAcc, refAcc, accDrop, expectedAccDrop:EXPECTED_DECIMAL_ACC_DROP,
+      withinExpected: timeWithinExpected && accWithinExpected,
+      sampleSize:{decimal:dWindow.length, ref:rWindow.length}
+    };
+  },
+  // Roda decimalComparison() para todas as famílias decimais com par definido; ignora as
+  // que ainda não têm dado suficiente (retorna null em decimalComparison).
+  allDecimalComparisons(){
+    return Object.keys(DECIMAL_PAIR_KC).map(key=>this.decimalComparison(key)).filter(Boolean);
   },
   recentAccuracy(profile){ const w=this.scoredWindow(profile); return w.length ? U.mean(w.map(x=>x.correct?1:0)) : 1; },
   targetRate(profile){ const w=this.scoredWindow(profile); return w.length ? U.mean(w.map(x=>x.targetHit?1:0)) : 0; },
