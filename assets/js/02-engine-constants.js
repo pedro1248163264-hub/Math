@@ -52,6 +52,21 @@ const RETRY_MIN_GAP = 3, RETRY_MAX_GAP = 6;
 // onde a pessoa é mais lenta/erra mais. Piso/teto evitam que um atributo vire 0% ou 100%.
 const PATTERN_WEIGHT_NUDGE = 0.06, PATTERN_WEIGHT_MIN = 0.2, PATTERN_WEIGHT_MAX = 3;
 
+// Cascata de dificuldade (seç. "Cascata"): quando uma família está bem abaixo do nível
+// (acerto recente < CASCADE_ACC_FLOOR, com pelo menos CASCADE_MIN_ITEMS pontuados), o motor
+// dá um boost forte de score ao pré-requisito mais fraco ainda não dominado — em vez de só
+// baixar o tamanho dos números no lugar, ele "puxa o alicerce" de volta ao treino.
+const CASCADE_ACC_FLOOR = 0.6;
+const CASCADE_MIN_ITEMS = 5;
+const CASCADE_BOOST = 0.5;
+
+// Calibração adaptativa (seç. "Calibração"): CALIBRATION_ITEMS (8, em 07-storage.js) vira um
+// teto — a calibração pode encerrar antes (mín. CALIBRATION_MIN_ITEMS acertos) se os tempos
+// estiverem consistentes (CV <= CALIBRATION_CONSISTENT_CV). Sem isso, "Treinar todas as
+// contas" (29 famílias × 8 acertos) ficava inviável antes de qualquer adaptação real.
+const CALIBRATION_MIN_ITEMS = 4;
+const CALIBRATION_CONSISTENT_CV = 0.18;
+
 /* ---------- 2d. FAMÍLIAS COM VÍRGULA (decimais) ----------
    Cada família decimal tem uma família inteira "irmã" — mesma operação, mesma faixa de
    magnitude — usada como referência para medir o quanto a vírgula em si (e não a conta em

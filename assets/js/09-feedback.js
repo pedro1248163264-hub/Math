@@ -115,19 +115,21 @@ const TTS = {
 const Sound = {
   ctx: null,
   ensure(){ if(!this.ctx){ try{ this.ctx = new (window.AudioContext||window.webkitAudioContext)(); }catch(e){} } return this.ctx; },
-  beep(freq, dur){
+  beep(freq, dur, gain=0.18){
     if(!Store.data.settings.sounds) return;
     const ctx = this.ensure(); if(!ctx) return;
-    const osc = ctx.createOscillator(); const gain = ctx.createGain();
+    const osc = ctx.createOscillator(); const g = ctx.createGain();
     osc.frequency.value = freq; osc.type='sine';
-    gain.gain.setValueAtTime(0.0001, ctx.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.18, ctx.currentTime+0.01);
-    gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime+dur);
-    osc.connect(gain); gain.connect(ctx.destination);
+    g.gain.setValueAtTime(0.0001, ctx.currentTime);
+    g.gain.exponentialRampToValueAtTime(gain, ctx.currentTime+0.01);
+    g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime+dur);
+    osc.connect(g); g.connect(ctx.destination);
     osc.start(); osc.stop(ctx.currentTime+dur);
   },
   correct(){ this.beep(880, 0.12); },
-  wrong(){ this.beep(180, 0.22); }
+  // Erro mais suave, mas ainda claramente "erro": tom mais baixo, curto e com volume menor
+  // — mantém o feedback de falha sem estourar o ritmo/ouvido no meio da sessão.
+  wrong(){ this.beep(250, 0.15, 0.12); }
 };
 
 const Haptics = {

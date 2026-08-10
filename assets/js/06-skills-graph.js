@@ -146,18 +146,36 @@ const KC_DEFS = {
       return {a,b,answer,features:{decimalPlaces:dp,exact:true}}; } },
 
   mult_tabuada:{ label:'Multiplicação — tabuada (2 a 9)', op:'multiplicacao', prereqs:[], eloBounds:[700,1000],
-    gen(t){ const hi=4+Math.round(t*5); let a=U.rint(2,hi+3), b=U.rint(2,hi+3);
-      if(Math.random()<0.5)[a,b]=[b,a]; return {a,b,answer:a*b,features:{}}; } },
+    // Fatos fracos (seç. "Fatos fracos"): o par é sorteado ponderado pelos factWeights do
+    // perfil (errou/foi lento em 7×8, 7×8 volta com mais frequência), sempre com piso de
+    // aleatoriedade. O enunciado específico continua nunca repetido (recentPairs no Engine).
+    gen(t, profile){
+      const hi=4+Math.round(t*5);
+      let a,b;
+      if(profile){ [a,b] = Engine.weightedFactPair(profile, 2, hi+3, 2, hi+3); }
+      else { a=U.rint(2,hi+3); b=U.rint(2,hi+3); if(Math.random()<0.5)[a,b]=[b,a]; }
+      return {a,b,answer:a*b,features:{factKey:'fact:'+Math.min(a,b)+'x'+Math.max(a,b)}}; } },
   mult_11_19:{ label:'Multiplicação — por 11 a 19', op:'multiplicacao', prereqs:['mult_tabuada'], eloBounds:[950,1250],
-    gen(t){ let a=U.rint(11,11+Math.round(t*8)), b=U.rint(2,9);
-      if(Math.random()<0.4)[a,b]=[b,a]; return {a,b,answer:a*b,features:{}}; } },
+    gen(t, profile){
+      let a,b;
+      if(profile){ [a,b] = Engine.weightedFactPair(profile, 11, 11+Math.round(t*8), 2, 9); }
+      else { a=U.rint(11,11+Math.round(t*8)); b=U.rint(2,9); if(Math.random()<0.4)[a,b]=[b,a]; }
+      return {a,b,answer:a*b,features:{factKey:'fact:'+Math.min(a,b)+'x'+Math.max(a,b)}}; } },
   mult_2d:{ label:'Multiplicação — 2 dígitos × 2 dígitos', op:'multiplicacao', prereqs:['mult_11_19'], eloBounds:[1200,1650],
     gen(t){ const hi=Math.round(29+t*70); let a=U.rint(11,hi), b=U.rint(11,Math.min(hi,29+Math.round(t*40)));
       return {a,b,answer:a*b,features:{}}; } },
 
   div_tabuada:{ label:'Divisão — tabuada (2 a 9)', op:'divisao', prereqs:['mult_tabuada'], eloBounds:[750,1050],
-    gen(t){ const hi=4+Math.round(t*5); const divisor=U.rint(2,hi+3), quotient=U.rint(2,hi+3);
-      return {a:divisor*quotient,b:divisor,answer:quotient,features:{exact:true}}; } },
+    // Na divisão o usuário calcula divisor×quociente de cabeça — por isso o "fato" rastreado
+    // é o par (divisor, quociente), não os operandos exibidos (dividendo, divisor).
+    gen(t, profile){
+      const hi=4+Math.round(t*5);
+      let x,y;
+      if(profile){ [x,y] = Engine.weightedFactPair(profile, 2, hi+3, 2, hi+3); }
+      else { x=U.rint(2,hi+3); y=U.rint(2,hi+3); }
+      const divisor=x, quotient=y;
+      return {a:divisor*quotient,b:divisor,answer:quotient,
+        features:{exact:true,factKey:'fact:'+Math.min(divisor,quotient)+'x'+Math.max(divisor,quotient)}}; } },
   div_2d:{ label:'Divisão — resultado de 2 dígitos', op:'divisao', prereqs:['div_tabuada','mult_11_19'], eloBounds:[1000,1350],
     gen(t){ const divisor=U.rint(2,2+Math.round(t*10)), quotient=U.rint(6,6+Math.round(t*14));
       return {a:divisor*quotient,b:divisor,answer:quotient,features:{exact:true}}; } },

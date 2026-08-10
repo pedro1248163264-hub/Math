@@ -27,8 +27,9 @@ const Store = {
         answerTimeoutSeconds:10,
         voiceRate:1.0, voiceLang:'pt-BR',
         theme:'dark', fontScale:1,
-        appLang:'pt', stopClockOnFirstKey:true,
+        appLang:'pt',         stopClockOnFirstKey:true,
         confirmBeforeAccept:true,
+        focusMode:false,
         selectedSkills:[...DEFAULT_SELECTED_SKILLS],
         selectAllSkills:false
       },
@@ -108,6 +109,10 @@ const Store = {
         // exposto em tela). Perfis salvos antes desta versão simplesmente começam neutros.
         p.samplesInStage=Number.isFinite(p.samplesInStage)?p.samplesInStage:0;
         p.patternWeights=(p.patternWeights&&typeof p.patternWeights==='object')?p.patternWeights:{};
+        // Fatos fracos da tabuada (seç. "Fatos fracos"): pesos por par (a,b) das famílias de
+        // tabuada — mesma mecânica do patternWeights, aplicada a pares específicos em vez de
+        // atributos categóricos. Perfis salvos antes desta versão começam neutros.
+        p.factWeights=(p.factWeights&&typeof p.factWeights==='object')?p.factWeights:{};
       });
       if(!Array.isArray(this.data.settings.selectedSkills) || !this.data.settings.selectedSkills.length){
         this.data.settings.selectedSkills = [...DEFAULT_SELECTED_SKILLS];

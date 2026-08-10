@@ -38,6 +38,11 @@ const UI = {
     document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
     document.getElementById('screen-'+name).classList.add('active');
     document.querySelector('.tabbar').style.display = this.tabScreens.includes(name) ? 'flex' : 'none';
+    // Modo foco: durante a conta o treino esconde o anel e a faixa de pulso (só apresentação,
+    // o motor não muda). Reaplicado a cada entrada na tela de treino (início e retomada).
+    if(name==='training'){
+      document.getElementById('screen-training').classList.toggle('focus', !!Store.data.settings.focusMode);
+    }
   },
   setTab(name){
     document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('active', t.dataset.tab===name));
@@ -257,6 +262,7 @@ const UI = {
     addRange(t('answer_timeout'), t('answer_timeout_sub'), 'answerTimeoutSeconds', 3, 60, 1, v=>v+' s');
     addRange(t('gap_time'), t('gap_time_sub'), 'gapMs', 100, 1200, 50, v=>v+' ms');
     addRange(t('correct_show'), t('correct_show_sub'), 'correctAnswerShowMs', 500, 2000, 50, v=>v+' ms');
+    addSwitch(t('focus_mode'), t('focus_mode_sub'), 'focusMode');
 
     section(t('section_data'));
     const rowExp = document.createElement('div'); rowExp.className='row';

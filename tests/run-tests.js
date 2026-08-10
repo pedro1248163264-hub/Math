@@ -100,7 +100,7 @@ const T_SAMPLES = [0, 0.25, 0.5, 0.75, 1, ...Array.from({length:200}, ()=>Math.r
 
 globalThis.__TEST_RESULTS__ = { perFamily: {}, engineSmokeError: null, speedEngineError: null, adaptiveFlowError: null, timingFlowError: null, confirmFlowError: null,
   sequencingError: null, retryQueueError: null, impulseFloorError: null, ultimateTimeoutError: null, patternWeightError: null, patternGenError: null,
-  decimalInputError: null, decimalComparisonError: null };
+  decimalInputError: null, decimalComparisonError: null, factWeightError: null, cascadeError: null, adaptiveCalibrationError: null };
 
 Object.keys(KC_DEFS).forEach(key=>{
   const def = KC_DEFS[key];
@@ -305,11 +305,16 @@ try{
   Store.data = Store.defaults();
   Store.data.settings.selectedSkills = ['soma_2d_cc'];
   const p = Engine.profile('soma_2d_cc');
-  for(let i=0;i<CALIBRATION_ITEMS;i++){
+  let calibrationItems=0;
+  for(let i=0;i<CALIBRATION_ITEMS && !p.calibratedAt;i++){
     const item = Engine.next();
-    if(!item.isCalibration) throw new Error('calibração terminou cedo');
+    if(!item.isCalibration) throw new Error('calibração concluiu sem calibratedAt');
     Engine.registerResult(item, 1000+i*10, true, false);
+    calibrationItems++;
   }
+  // Calibração adaptativa: tempos consistentes encerram antes do teto (>= CALIBRATION_MIN_ITEMS).
+  if(!p.calibratedAt) throw new Error('calibração não concluiu com amostras consistentes');
+  if(calibrationItems < CALIBRATION_MIN_ITEMS || calibrationItems > CALIBRATION_ITEMS) throw new Error('calibração terminou com número inválido de itens ('+calibrationItems+')');
   const postCalibration = Engine.next();
   if(postCalibration.isCalibration) throw new Error('calibração não terminou');
   if(!Number.isFinite(p.targetMs) || p.targetMs>=p.baselineMs) throw new Error('meta não foi criada a partir da calibração');
@@ -473,6 +478,89 @@ try{
 }catch(e){
   globalThis.__TEST_RESULTS__.decimalComparisonError = e.message;
 }
+
+// Fatos fracos da tabuada (seç. "Fatos fracos"): peso alto num par desloca a geração pra ele,
+// mas nunca elimina a chance dos outros (piso de aleatoriedade); o fato registrado no item
+// alimenta o nudge em registerResult; a divisão rastreia o par divisor×quociente.
+try{
+  Store.data = Store.defaults();
+  const p = Engine.profile('mult_tabuada');
+  // 7×8 no peso máximo; todos os demais pares da faixa em peso mínimo — o deslocamento deve
+  // aparecer (share muito acima do uniforme) sem nunca virar 100% (piso preservado).
+  p.factWeights['fact:7x8'] = PATTERN_WEIGHT_MAX;
+  for(let a=2;a<=10;a++) for(let b=a;b<=10;b++) p.factWeights['fact:'+a+'x'+b] = PATTERN_WEIGHT_MIN;
+  p.factWeights['fact:7x8'] = PATTERN_WEIGHT_MAX;
+  let count78=0; const total=300;
+  for(let i=0;i<total;i++){
+    const g = KC_DEFS.mult_tabuada.gen(0.5, p);
+    if(g.features.factKey==='fact:7x8') count78++;
+  }
+  const uniformShare = 1/45; // faixa 2..10 no t=0.5
+  if(count78/total < uniformShare*2) throw new Error('fato fraco não deslocou a geração acima do uniforme (7×8 saiu em '+count78+'/'+total+')');
+  if(count78===total) throw new Error('fato fraco eliminou o piso de aleatoriedade');
+  const gd = KC_DEFS.div_tabuada.gen(0.5, p);
+  const divisor=gd.b, quotient=gd.a/gd.b;
+  const expectedFact = 'fact:'+Math.min(divisor,quotient)+'x'+Math.max(divisor,quotient);
+  if(gd.features.factKey!==expectedFact) throw new Error('div_tabuada: factKey não reflete divisor×quociente');
+  // Nudge em perfil limpo (o mapa de pesos acima contamina o perfil 'mult_tabuada').
+  Store.data = Store.defaults();
+  const nudgeProfile = Engine.profile('mult_tabuada');
+  const item = {key:'mult_tabuada', features:{factKey:'fact:6x7'}, isCalibration:false};
+  Engine.nudgeFactWeight(nudgeProfile, item, false, false);
+  if(!(nudgeProfile.factWeights['fact:6x7'] > 1)) throw new Error('nudgeFactWeight não subiu após erro');
+  const afterUp = nudgeProfile.factWeights['fact:6x7'];
+  Engine.nudgeFactWeight(nudgeProfile, item, true, true);
+  if(nudgeProfile.factWeights['fact:6x7'] >= afterUp) throw new Error('nudgeFactWeight não reduziu após acerto na meta');
+}catch(e){
+  globalThis.__TEST_RESULTS__.factWeightError = e.message;
+}
+
+// Cascata de dificuldade (seç. "Cascata"): família sofrendo (acerto < CASCADE_ACC_FLOOR com
+// amostra suficiente) dá boost ao pré-requisito mais fraco ainda não dominado; sem amostra
+// suficiente (ruído), não há boost.
+try{
+  Store.data = Store.defaults();
+  const child = Engine.profile('soma_2d_cc');
+  for(let i=0;i<CASCADE_MIN_ITEMS;i++) child.window.push({ms:1500, correct:false, targetHit:false, calibration:false, lapse:false, at:Date.now()});
+  if(Engine.prereqReadiness('soma_2d_cc').key!=='soma_2d_sc') throw new Error('prereqReadiness não apontou o pré-requisito mais fraco');
+  const scored = [{key:'soma_2d_sc', score:0.5},{key:'soma_2d_cc', score:0.8}];
+  Engine.applyCascadeBoost(scored);
+  const boosted = scored.find(x=>x.key==='soma_2d_sc').score;
+  if(boosted < 0.5 + CASCADE_BOOST - 1e-9) throw new Error('pré-requisito não recebeu o boost de cascata');
+  if(scored.find(x=>x.key==='soma_2d_cc').score!==0.8) throw new Error('cascata mexeu no score da própria família');
+  const scored2 = [{key:'sub_2d_se', score:0.5},{key:'sub_2d_ce', score:0.8}];
+  Engine.applyCascadeBoost(scored2);
+  if(scored2.find(x=>x.key==='sub_2d_se').score!==0.5) throw new Error('cascata reagiu a ruído sem amostra suficiente');
+}catch(e){
+  globalThis.__TEST_RESULTS__.cascadeError = e.message;
+}
+
+// Calibração adaptativa (seç. "Calibração"): tempos consistentes encerram a calibração antes
+// do teto (mín. CALIBRATION_MIN_ITEMS, sem chegar em CALIBRATION_ITEMS); tempos inconsistentes
+// seguem até o teto.
+try{
+  Store.data = Store.defaults();
+  Store.data.settings.selectedSkills = ['soma_2d_cc'];
+  const p1 = Engine.profile('soma_2d_cc');
+  for(let i=0;i<CALIBRATION_ITEMS;i++){
+    Engine.registerResult(Engine.generateItem('soma_2d_cc',{isCalibration:true}), 1000+i*5, true, false);
+    if(p1.calibratedAt) break;
+  }
+  if(!p1.calibratedAt) throw new Error('calibração consistente não encerrou cedo');
+  if(p1.calibration.length < CALIBRATION_MIN_ITEMS) throw new Error('calibração consistente encerrou abaixo do mínimo');
+  if(p1.calibration.length >= CALIBRATION_ITEMS) throw new Error('calibração consistente não usou a conclusão antecipada');
+  if(!Number.isFinite(p1.targetMs) || p1.targetMs>=p1.baselineMs) throw new Error('baseline/meta não criados na conclusão antecipada');
+
+  Store.data = Store.defaults();
+  Store.data.settings.selectedSkills = ['sub_2d_ce'];
+  const p2 = Engine.profile('sub_2d_ce');
+  for(let i=0;i<CALIBRATION_ITEMS;i++){
+    Engine.registerResult(Engine.generateItem('sub_2d_ce',{isCalibration:true}), 500 + (i%2)*2000, true, false);
+  }
+  if(p2.calibration.length!==CALIBRATION_ITEMS || !p2.calibratedAt) throw new Error('calibração inconsistente não seguiu até o teto');
+}catch(e){
+  globalThis.__TEST_RESULTS__.adaptiveCalibrationError = e.message;
+}
 `;
 
 eval(harness);
@@ -501,6 +589,9 @@ ok(RESULTS.patternWeightError===null, 'peso por padrão desloca geração sem el
 ok(RESULTS.patternGenError===null, 'geradores com viés de padrão continuam válidos: '+RESULTS.patternGenError);
 ok(RESULTS.decimalInputError===null, 'entrada decimal (tecla de vírgula, confirmação manual, vírgula/ponto): '+RESULTS.decimalInputError);
 ok(RESULTS.decimalComparisonError===null, 'comparação de dificuldade decimal vs. inteiro (dado interno): '+RESULTS.decimalComparisonError);
+ok(RESULTS.factWeightError===null, 'fatos fracos da tabuada (deslocamento de geração, factKey na divisão, nudge): '+RESULTS.factWeightError);
+ok(RESULTS.cascadeError===null, 'cascata de dificuldade (boost ao pré-requisito, guarda de ruído): '+RESULTS.cascadeError);
+ok(RESULTS.adaptiveCalibrationError===null, 'calibração adaptativa (consistente encerra cedo, inconsistente até o teto): '+RESULTS.adaptiveCalibrationError);
 
 console.log(`\n${passed} verificações passaram, ${failures} falharam.`);
 if(failures>0){

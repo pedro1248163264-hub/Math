@@ -19,14 +19,16 @@ O botão **Iniciar treino** começa imediatamente com a configuração salva. Pa
 Para cada pergunta, o motor considera somente as famílias selecionadas e segue esta ordem:
 
 1. **Revisão de retenção:** se alguma habilidade já dominada chegou à data de revisão, ela tem prioridade. Entre elas, vem primeiro a que está mais atrasada; em empate, a que tem menos respostas na revisão atual.
-2. **Calibração:** habilidades novas recebem oito respostas corretas de calibração. Enquanto houver famílias nessa fase, o motor distribui as perguntas de forma equilibrada, escolhendo aleatoriamente entre as que têm menos calibrações (ou no máximo uma a mais), em um grupo de até quatro habilidades.
+2. **Calibração:** habilidades novas recebem respostas corretas de calibração — **até oito** (`CALIBRATION_ITEMS` vira teto): a calibração pode encerrar antes, a partir de **quatro** acertos, se os tempos estiverem consistentes (coeficiente de variação baixo), o que torna "Treinar todas as contas" viável sem ~230 contas de aquecimento. Enquanto houver famílias nessa fase, o motor distribui as perguntas de forma equilibrada, escolhendo aleatoriamente entre as que têm menos calibrações (ou no máximo uma a mais), em um grupo de até quatro habilidades.
 3. **Treino adaptativo:** terminada a calibração, cada família recebe uma pontuação de prioridade. Ela aumenta quando a pessoa está lenta em relação à meta, erra mais ou fica menos vezes dentro da meta, e recebe uma pequena penalidade se seus pré-requisitos ainda não foram dominados.
 
 Não existe mais um estilo "Foco" ou "Misto" configurável — há um único motor de sequência, usado em todos os modos:
 
 - **Interleaving ponderado:** em vez de sempre repetir a família de maior pontuação, o motor sorteia entre as até cinco maiores, com peso proporcional à pontuação de cada uma. A mesma família nunca é escolhida duas vezes seguidas, e nenhuma família passa de 40% das últimas 10 escolhas — mistura de verdade, não só evita repetição imediata.
 - **Retry pós-erro:** ao errar uma conta de uma família, ela reaparece dentro de 3 a 6 itens depois (nunca no item seguinte, por causa da regra acima) — fecha o ciclo de correção sem virar repetição espaçada de item específico.
+- **Cascata de dificuldade:** quando uma família está bem abaixo do nível (acerto recente < 0.6, com amostra suficiente), o motor dá um boost forte ao pré-requisito mais fraco ainda não dominado — em vez de só baixar o tamanho dos números no lugar, ele puxa o alicerce de volta ao treino.
 - **Peso por padrão dentro da família:** para famílias com um atributo categórico conhecido (vai-um em somas, empréstimo em subtrações, grupo de porcentagem), o motor guarda internamente um peso por atributo — sobe quando a pessoa é mais lenta/erra mais nele, desce quando está rápida. A próxima geração fica enviesada para esse atributo, mas **nunca** repete um enunciado específico, e nunca fica 100% previsível (sempre há piso de aleatoriedade). Isso não é exposto em nenhuma tela — é só um ajuste interno de geração.
+- **Fatos fracos da tabuada:** o mesmo mecanismo de peso vale para **pares específicos** (ex.: `7×8`) nas famílias de tabuada (`mult_tabuada`, `mult_11_19`) e divisão (`div_tabuada`, onde o fato rastreado é `divisor×quociente`). Errou/foi lento num fato, ele reaparece com mais frequência — sempre com piso de aleatoriedade e sem repetir enunciado.
 
 Se só houver uma habilidade selecionada, ela é sempre usada.
 

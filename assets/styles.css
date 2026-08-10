@@ -161,6 +161,22 @@ input[type=range]{width:100%; accent-color:var(--accent);}
 .ring-label{position:absolute; inset:0; display:flex; align-items:center; justify-content:center; font-family:var(--font-num); font-weight:700; font-size:0.7rem;}
 .pause-btn{width:40px; height:40px; border-radius:10px; border:1px solid var(--border); background:var(--surface); color:var(--text); font-size:0.95rem; display:flex; align-items:center; justify-content:center;}
 
+/* Modo foco: durante a conta, esconde o anel de progresso e a faixa de pulso — os elementos
+   que mais se movem — e reduz os botões de pausa/sair a um controle discreto (opacidade
+   baixa, mas ainda tocável; :active volta ao estado normal). Só apresentação; o motor
+   não muda. */
+#screen-training.focus .ring-wrap,
+#screen-training.focus .training-time-spacer{display:none;}
+#screen-training.focus .pause-btn{
+  width:34px; height:34px; font-size:0.82rem; opacity:0.42;
+  background:transparent; border-color:transparent;
+}
+#screen-training.focus .pause-btn:active{opacity:1; background:var(--surface); border-color:var(--border);}
+#screen-training.focus .pulse-strip{display:none;}
+@media (max-height:720px){
+  #screen-training.focus .equation-zone{padding-top:12px;}
+}
+
 .equation-zone{flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:8px; padding-top:10px; text-align:center; width:100%;}
 .math-card{
   width:100%; min-height:130px; display:flex; align-items:center; justify-content:center;

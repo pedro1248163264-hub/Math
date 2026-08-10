@@ -26,11 +26,11 @@ const Engine = {
       const baseline = this.defaultBaseline(KC_DEFS[key].op);
       profiles[key] = {key, calibration:[], baselineMs:baseline, targetMs:Math.round(baseline*0.85), difficulty:0.3, level:0, window:[], bestMs:null, lastPracticeAt:0,
         retentionPasses:0, reviewResults:[], masteredAt:0, nextReviewAt:0, lastReviewAt:0,
-        samplesInStage:0, patternWeights:{}};
+        samplesInStage:0, patternWeights:{}, factWeights:{}};
     }
     return profiles[key];
   },
-  isCalibrating(profile){ return (profile.calibration||[]).length < CALIBRATION_ITEMS; },
+  isCalibrating(profile){ return !profile.calibratedAt && (profile.calibration||[]).length < CALIBRATION_ITEMS; },
   scoredWindow(profile, size=12){ return (profile.window||[]).filter(x=>!x.calibration && !x.lapse).slice(-size); },
   // ---------- Peso por padrão dentro da família (seç. 3 da revisão do motor) ----------
   // Nunca repete um enunciado específico (isso continua garantido só por recentPairs, sem
@@ -76,6 +76,37 @@ const Engine = {
       const next = good ? cur - PATTERN_WEIGHT_NUDGE : cur + PATTERN_WEIGHT_NUDGE;
       profile.patternWeights[wKey] = U.clamp(next, PATTERN_WEIGHT_MIN, PATTERN_WEIGHT_MAX);
     });
+  },
+  // ---------- Fatos fracos da tabuada (seç. "Fatos fracos") ----------
+  // Mesma mecânica do peso por padrão, aplicada a pares específicos (ex.: 7×8) nas famílias
+  // de tabuada — onde a pessoa erra/demora mais, o par aparece mais na próxima geração, sem
+  // nunca eliminar a aleatoriedade (piso PATTERN_WEIGHT_MIN). O par é sempre tratado como
+  // não-ordenado (a×b === b×a), então o peso é compartilhado entre as duas ordens.
+  weightedFactPair(profile, minA, maxA, minB, maxB){
+    const seen=new Set(); const pairs=[];
+    for(let a=minA; a<=maxA; a++){
+      for(let b=minB; b<=maxB; b++){
+        const lo=Math.min(a,b), hi=Math.max(a,b);
+        const key='fact:'+lo+'x'+hi;
+        if(seen.has(key)) continue;
+        seen.add(key);
+        const w = (profile && profile.factWeights && profile.factWeights[key]!=null) ? profile.factWeights[key] : 1;
+        pairs.push({lo,hi,w});
+      }
+    }
+    const total=pairs.reduce((s,x)=>s+x.w,0);
+    let r=Math.random()*total;
+    for(const x of pairs){ if(r<x.w) return Math.random()<0.5 ? [x.hi,x.lo] : [x.lo,x.hi]; r-=x.w; }
+    const last=pairs[pairs.length-1];
+    return Math.random()<0.5 ? [last.hi,last.lo] : [last.lo,last.hi];
+  },
+  nudgeFactWeight(profile, item, correct, targetHit){
+    const fk = item.features && item.features.factKey;
+    if(!fk) return;
+    profile.factWeights = profile.factWeights || {};
+    const cur = profile.factWeights[fk]!=null ? profile.factWeights[fk] : 1;
+    const next = (correct && targetHit) ? cur - PATTERN_WEIGHT_NUDGE : cur + PATTERN_WEIGHT_NUDGE;
+    profile.factWeights[fk] = U.clamp(next, PATTERN_WEIGHT_MIN, PATTERN_WEIGHT_MAX);
   },
   // ---------- Comparação decimal vs. inteiro (dado interno, não exposto em tela) ----------
   // Mede o quanto a vírgula em si pesa: compara tempo/acerto da família decimal com os da
@@ -129,6 +160,38 @@ const Engine = {
     return w.length>=ACQ_MIN_ITEMS && this.recentAccuracy(profile)>=0.80 ? 'consolidating' : 'acquisition';
   },
   prereqsReady(key){ return (KC_DEFS[key].prereqs||[]).every(prereq=>!!this.profile(prereq).masteredAt); },
+  // Cascata de dificuldade (seç. "Cascata"): pontua cada pré-requisito NÃO dominado por
+  // quão longe está de dominar (1 = nada feito, 0 = dominado). Retorna o mais fraco deles e
+  // se já não resta nenhum (mastered=true). Usado pelo sequenciador para puxar o alicerce
+  // de volta quando a família filha está afundando.
+  prereqReadiness(key){
+    const prereqs = KC_DEFS[key].prereqs || [];
+    let weakest=null, weakestScore=Infinity;
+    prereqs.forEach(pk=>{
+      if(this.profile(pk).masteredAt) return;
+      const p=this.profile(pk);
+      const acc=this.recentAccuracy(p), rate=this.targetRate(p);
+      const score = 1 - (0.6*acc + 0.4*rate);
+      if(score<weakestScore){ weakestScore=score; weakest=pk; }
+    });
+    return {key:weakest, weakestScore: weakest===null ? 0 : weakestScore, mastered:weakest===null};
+  },
+  // Aplica o boost de cascata a um array de {key, score} já computado: para cada família que
+  // está sofrendo (acerto recente < CASCADE_ACC_FLOOR, com pelo menos CASCADE_MIN_ITEMS
+  // pontuados), soma CASCADE_BOOST ao score do pré-requisito mais fraco ainda não dominado,
+  // quando ele estiver presente no array. Separado do chooseKey só para o teste verificar o
+  // efeito diretamente.
+  applyCascadeBoost(scored){
+    scored.forEach(s=>{
+      const p=this.profile(s.key);
+      const w=this.scoredWindow(p);
+      if(w.length<CASCADE_MIN_ITEMS || this.recentAccuracy(p)>=CASCADE_ACC_FLOOR) return;
+      const rd=this.prereqReadiness(s.key);
+      if(!rd || rd.mastered || !rd.key) return;
+      const target=scored.find(x=>x.key===rd.key);
+      if(target) target.score += CASCADE_BOOST;
+    });
+  },
   chooseKey(){
     const keys=this.selectedKeys();
     const now=Date.now();
@@ -162,6 +225,10 @@ const Engine = {
       if(retryDue!=null && this.itemCounter>=retryDue) score+=0.6;
       return {key, score};
     });
+    // Cascata de dificuldade: família sofrendo (acerto recente baixo, com amostra suficiente)
+    // dá boost forte ao pré-requisito mais fraco ainda não dominado — o interleaving passa a
+    // puxar o alicerce em vez de só baixar a dificuldade da própria família.
+    this.applyCascadeBoost(scored);
     if(lastKey!=null && scored.length>1) scored=scored.filter(s=>s.key!==lastKey);
     scored.sort((a,b)=>b.score-a.score);
     const pool=scored.slice(0,Math.min(SEQUENCING_POOL,scored.length));
@@ -215,12 +282,19 @@ const Engine = {
     const result={ms:cognitiveMs, correct:!!correct, targetHit, calibration:!!item.isCalibration, lapse:isLapse, at:now};
     p.window.push(result); if(p.window.length>30) p.window.shift();
     if(item.isCalibration && correct) p.calibration.push(cognitiveMs);
-    if(this.isCalibrating(p)===false && p.calibration.length===CALIBRATION_ITEMS && !p.calibratedAt){
-      const initial=U.median(p.calibration);
-      p.baselineMs=Math.round(initial);
-      p.targetMs=Math.round(U.clamp(initial*0.85, 450, 10000));
-      p.calibratedAt=now;
-      p.samplesInStage=0;
+    // Calibração adaptativa (seç. "Calibração"): CALIBRATION_ITEMS vira teto — encerra antes
+    // (mín. CALIBRATION_MIN_ITEMS acertos) quando os tempos estão consistentes (CV baixo),
+    // tornando "Treinar todas as contas" viável; senão segue até o teto. O resto do fluxo
+    // (baseline/meta a partir da mediana) não muda.
+    if(!p.calibratedAt && p.calibration.length>=CALIBRATION_MIN_ITEMS){
+      const consistent = p.calibration.length>=CALIBRATION_ITEMS || this.cv(p.calibration)<=CALIBRATION_CONSISTENT_CV;
+      if(consistent){
+        const initial=U.median(p.calibration);
+        p.baselineMs=Math.round(initial);
+        p.targetMs=Math.round(U.clamp(initial*0.85, 450, 10000));
+        p.calibratedAt=now;
+        p.samplesInStage=0;
+      }
     }
     const accuracy=this.recentAccuracy(p), hitRate=this.targetRate(p);
     // Elo contínuo (substitui o ajuste em lote de 8 — seç. 4 da revisão do motor): cada
@@ -245,7 +319,11 @@ const Engine = {
     }
     // Peso por padrão (seç. 3): só famílias com atributo categórico mapeado em
     // patternAttrs; nunca expõe nada em tela, só influencia a próxima geração.
-    if(!item.isCalibration && !isLapse) this.nudgePatternWeight(p, item, correct, targetHit);
+    // Fatos fracos da tabuada: mesmo espírito, para pares específicos (features.factKey).
+    if(!item.isCalibration && !isLapse){
+      this.nudgePatternWeight(p, item, correct, targetHit);
+      this.nudgeFactWeight(p, item, correct, targetHit);
+    }
     // Retry pós-erro (modelo C, seç. 2): um erro real (não lapso, não calibração) agenda
     // a família para reaparecer dentro de RETRY_MIN_GAP–RETRY_MAX_GAP itens.
     if(!item.isCalibration && !correct && !isLapse){
