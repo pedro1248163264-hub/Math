@@ -31,7 +31,7 @@ const Store = {
         confirmBeforeAccept:true,
         focusMode:false,
         selectedSkills:[...DEFAULT_SELECTED_SKILLS],
-        selectAllSkills:false
+        selectAllSkills:true
       },
       settingsVersion:SETTINGS_VERSION,
       kc:{},
@@ -109,10 +109,11 @@ const Store = {
         // exposto em tela). Perfis salvos antes desta versão simplesmente começam neutros.
         p.samplesInStage=Number.isFinite(p.samplesInStage)?p.samplesInStage:0;
         p.patternWeights=(p.patternWeights&&typeof p.patternWeights==='object')?p.patternWeights:{};
-        // Fatos fracos da tabuada (seç. "Fatos fracos"): pesos por par (a,b) das famílias de
-        // tabuada — mesma mecânica do patternWeights, aplicada a pares específicos em vez de
-        // atributos categóricos. Perfis salvos antes desta versão começam neutros.
-        p.factWeights=(p.factWeights&&typeof p.factWeights==='object')?p.factWeights:{};
+        // Peso por dígito/linha (substitui os "fatos fracos" da tabuada): pesos por dígito
+        // (2–9 / 11–19) das famílias de multiplicação/divisão de dígitos únicos — mede a
+        // dificuldade com o dígito, não com o produto exato. Perfis salvos antes desta versão
+        // começam neutros (factWeights antigos ficam inertes no objeto, sem serem lidos).
+        p.digitWeights=(p.digitWeights&&typeof p.digitWeights==='object')?p.digitWeights:{};
       });
       if(!Array.isArray(this.data.settings.selectedSkills) || !this.data.settings.selectedSkills.length){
         this.data.settings.selectedSkills = [...DEFAULT_SELECTED_SKILLS];

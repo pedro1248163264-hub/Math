@@ -24,9 +24,17 @@ const Engine = {
     const profiles = Store.data.speedProfiles || (Store.data.speedProfiles={});
     if(!profiles[key]){
       const baseline = this.defaultBaseline(KC_DEFS[key].op);
-      profiles[key] = {key, calibration:[], baselineMs:baseline, targetMs:Math.round(baseline*0.85), difficulty:0.3, level:0, window:[], bestMs:null, lastPracticeAt:0,
+      // Dificuldade inicial não é sempre 0.3: um perfil novo de família avançada já começa no
+      // nível dos pré-requisitos que a pessoa tem (média deles), evitando aquecer em contas
+      // triviais ao entrar em famílias de números maiores. Sem pré-requisitos ainda criados,
+      // cai no padrão 0.3.
+      const prereqDiffs = (KC_DEFS[key].prereqs||[])
+        .map(pk=>profiles[pk] && profiles[pk].difficulty)
+        .filter(Number.isFinite);
+      const difficulty = prereqDiffs.length ? U.mean(prereqDiffs) : 0.3;
+      profiles[key] = {key, calibration:[], baselineMs:baseline, targetMs:Math.round(baseline*0.85), difficulty, level:0, window:[], bestMs:null, lastPracticeAt:0,
         retentionPasses:0, reviewResults:[], masteredAt:0, nextReviewAt:0, lastReviewAt:0,
-        samplesInStage:0, patternWeights:{}, factWeights:{}};
+        samplesInStage:0, patternWeights:{}, digitWeights:{}};
     }
     return profiles[key];
   },
@@ -77,36 +85,43 @@ const Engine = {
       profile.patternWeights[wKey] = U.clamp(next, PATTERN_WEIGHT_MIN, PATTERN_WEIGHT_MAX);
     });
   },
-  // ---------- Fatos fracos da tabuada (seç. "Fatos fracos") ----------
-  // Mesma mecânica do peso por padrão, aplicada a pares específicos (ex.: 7×8) nas famílias
-  // de tabuada — onde a pessoa erra/demora mais, o par aparece mais na próxima geração, sem
-  // nunca eliminar a aleatoriedade (piso PATTERN_WEIGHT_MIN). O par é sempre tratado como
-  // não-ordenado (a×b === b×a), então o peso é compartilhado entre as duas ordens.
-  weightedFactPair(profile, minA, maxA, minB, maxB){
-    const seen=new Set(); const pairs=[];
-    for(let a=minA; a<=maxA; a++){
-      for(let b=minB; b<=maxB; b++){
-        const lo=Math.min(a,b), hi=Math.max(a,b);
-        const key='fact:'+lo+'x'+hi;
-        if(seen.has(key)) continue;
-        seen.add(key);
-        const w = (profile && profile.factWeights && profile.factWeights[key]!=null) ? profile.factWeights[key] : 1;
-        pairs.push({lo,hi,w});
-      }
-    }
-    const total=pairs.reduce((s,x)=>s+x.w,0);
-    let r=Math.random()*total;
-    for(const x of pairs){ if(r<x.w) return Math.random()<0.5 ? [x.hi,x.lo] : [x.lo,x.hi]; r-=x.w; }
-    const last=pairs[pairs.length-1];
-    return Math.random()<0.5 ? [last.hi,last.lo] : [last.lo,last.hi];
+  // ---------- Peso por dígito/linha (substitui os "fatos fracos" da tabuada) ----------
+  // Em vez de rastrear pares específicos (ex.: 7×8 — decoreba de resultado pronto), o motor
+  // rastreia a dificuldade por DÍGITO/linha (ex.: multiplicar por 7). Onde a pessoa erra ou
+  // demora mais, a próxima geração fica enviesada para a linha em que o dígito fraco aparece —
+  // sempre dentro da faixa da família, com piso de aleatoriedade (PATTERN_WEIGHT_MIN) e sem
+  // nunca repetir um enunciado (recentPairs já garante isso). O que se mede é "lidar com o
+  // dígito 7", não memorizar o produto 7×8.
+  // digitTrack diz quais dígitos de um item alimentam o peso de cada família.
+  digitTrack:{
+    mult_tabuada: item=>[item.a, item.b], // ambos os fatores são dígitos (2 a 9+)
+    mult_11_19: item=>[item.a],           // a "linha" é o fator 11–19; o outro é só o multiplicador
+    div_tabuada: item=>[item.b]           // a "linha" é o divisor (por quem a pessoa divide)
   },
-  nudgeFactWeight(profile, item, correct, targetHit){
-    const fk = item.features && item.features.factKey;
-    if(!fk) return;
-    profile.factWeights = profile.factWeights || {};
-    const cur = profile.factWeights[fk]!=null ? profile.factWeights[fk] : 1;
-    const next = (correct && targetHit) ? cur - PATTERN_WEIGHT_NUDGE : cur + PATTERN_WEIGHT_NUDGE;
-    profile.factWeights[fk] = U.clamp(next, PATTERN_WEIGHT_MIN, PATTERN_WEIGHT_MAX);
+  // Sorteio ponderado por dígito dentro da faixa [min,max]: cada dígito sempre tem alguma
+  // chance (piso PATTERN_WEIGHT_MIN), nunca fica 100% previsível mesmo com peso máximo.
+  pickRow(profile, key, min, max){
+    const weights = (profile && profile.digitWeights) || {};
+    const arr=[];
+    for(let d=min; d<=max; d++){
+      const w = weights[key+':d'+d]!=null ? weights[key+':d'+d] : 1;
+      arr.push({d,w});
+    }
+    const total=arr.reduce((s,x)=>s+x.w,0);
+    let r=Math.random()*total;
+    for(const x of arr){ if(r<x.w) return x.d; r-=x.w; }
+    return arr[arr.length-1].d;
+  },
+  nudgeDigits(profile, key, digits, correct, targetHit){
+    if(!digits || !digits.length) return;
+    profile.digitWeights = profile.digitWeights || {};
+    digits.forEach(d=>{
+      if(d===undefined || d===null) return;
+      const wKey = key+':d'+d;
+      const cur = profile.digitWeights[wKey]!=null ? profile.digitWeights[wKey] : 1;
+      const next = (correct && targetHit) ? cur - PATTERN_WEIGHT_NUDGE : cur + PATTERN_WEIGHT_NUDGE;
+      profile.digitWeights[wKey] = U.clamp(next, PATTERN_WEIGHT_MIN, PATTERN_WEIGHT_MAX);
+    });
   },
   // ---------- Comparação decimal vs. inteiro (dado interno, não exposto em tela) ----------
   // Mede o quanto a vírgula em si pesa: compara tempo/acerto da família decimal com os da
@@ -319,10 +334,12 @@ const Engine = {
     }
     // Peso por padrão (seç. 3): só famílias com atributo categórico mapeado em
     // patternAttrs; nunca expõe nada em tela, só influencia a próxima geração.
-    // Fatos fracos da tabuada: mesmo espírito, para pares específicos (features.factKey).
+    // Peso por dígito/linha: mesma ideia para dígitos (2–9 / 11–19) — mede a dificuldade
+    // em "multiplicar por 7", não a decoreba do par 7×8. Interno, não exposto em tela.
     if(!item.isCalibration && !isLapse){
       this.nudgePatternWeight(p, item, correct, targetHit);
-      this.nudgeFactWeight(p, item, correct, targetHit);
+      const track = this.digitTrack[item.key];
+      if(track) this.nudgeDigits(p, item.key, track(item), correct, targetHit);
     }
     // Retry pós-erro (modelo C, seç. 2): um erro real (não lapso, não calibração) agenda
     // a família para reaparecer dentro de RETRY_MIN_GAP–RETRY_MAX_GAP itens.

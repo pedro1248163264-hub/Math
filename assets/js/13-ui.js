@@ -499,7 +499,6 @@ const UI = {
       }
     }
   },
-  updateHud(){},
   updateRing(session){
     const circle = document.getElementById('ringFg');
     const label = document.getElementById('ringLabel');

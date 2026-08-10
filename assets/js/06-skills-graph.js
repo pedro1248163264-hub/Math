@@ -28,13 +28,13 @@ const KC_DEFS = {
   soma_1d:{ label:'Soma — unidades', op:'soma', prereqs:[], eloBounds:[500,850],
     gen(t){ const hi=4+Math.round(t*5); let a=U.rint(1,hi), b=U.rint(1,Math.max(1,9-a));
       if(Math.random()<0.5)[a,b]=[b,a]; return {a,b,answer:a+b,features:{carries:0}}; } },
-  soma_2d_sc:{ label:'Soma — 2 dígitos (sem reagrupamento)', op:'soma', prereqs:['soma_1d'], eloBounds:[750,1050],
+  soma_2d_sc:{ label:'Soma — 2 dígitos', op:'soma', prereqs:['soma_1d'], eloBounds:[750,1050],
     gen(t){ const maxTen=1+Math.round(t*7);
       let aT=U.rint(1,maxTen), bT=U.rint(1,Math.max(1,9-aT));
       let aU=U.rint(0,9), bU=U.rint(0,Math.max(0,9-aU));
       let a=aT*10+aU, b=bT*10+bU; if(Math.random()<0.5)[a,b]=[b,a];
       return {a,b,answer:a+b,features:{carries:0}}; } },
-  soma_2d_cc:{ label:'Soma — 2 dígitos (com reagrupamento)', op:'soma', prereqs:['soma_2d_sc'], eloBounds:[950,1300],
+  soma_2d_cc:{ label:'Soma — 2 dígitos (vai-um)', op:'soma', prereqs:['soma_2d_sc'], eloBounds:[950,1300],
     // Peso por padrão (seç. 3 da revisão do motor): dentro desta família, sempre há pelo
     // menos 1 vai-um por definição — o que varia é "1 vai-um" vs "2 vai-uns". Busca um par
     // no bucket para onde o perfil pesa mais (mais lento/erra mais), mas nunca deixa de
@@ -65,14 +65,14 @@ const KC_DEFS = {
   sub_1d:{ label:'Subtração — unidades', op:'subtracao', prereqs:[], eloBounds:[500,850],
     gen(t){ const hi=4+Math.round(t*5); let a=U.rint(2,hi+9), b=U.rint(1,Math.min(9,a-1)||1);
       if(a<=b) a=b+U.rint(1,3); return {a,b,answer:a-b,features:{borrows:0}}; } },
-  sub_2d_se:{ label:'Subtração — 2 dígitos (sem empréstimo)', op:'subtracao', prereqs:['sub_1d'], eloBounds:[750,1050],
+  sub_2d_se:{ label:'Subtração — 2 dígitos', op:'subtracao', prereqs:['sub_1d'], eloBounds:[750,1050],
     gen(t){ const maxTen=1+Math.round(t*7); let tries=0,a,b;
       do{ let aT=U.rint(1,maxTen), aU=U.rint(0,9); a=aT*10+aU;
           let bT=U.rint(0,aT), bU=U.rint(0,aU); b=bT*10+bU; tries++;
       } while((a<=b || countBorrows(a,b)>0) && tries<15);
       if(a<=b){ a=b+U.rint(1,9); }
       return {a,b,answer:a-b,features:{borrows:0}}; } },
-  sub_2d_ce:{ label:'Subtração — 2 dígitos (com empréstimo)', op:'subtracao', prereqs:['sub_2d_se'], eloBounds:[950,1300],
+  sub_2d_ce:{ label:'Subtração — 2 dígitos (empréstimo)', op:'subtracao', prereqs:['sub_2d_se'], eloBounds:[950,1300],
     // Mesmo espírito de soma_2d_cc acima: a família sempre tem empréstimo (>0); o que
     // varia é "1 empréstimo" vs "2 empréstimos", enviesado pelo peso do perfil.
     gen(t, profile){
@@ -145,37 +145,47 @@ const KC_DEFS = {
       const a=dividendCents/scale, b=divisor, answer=quotientCents/scale;
       return {a,b,answer,features:{decimalPlaces:dp,exact:true}}; } },
 
-  mult_tabuada:{ label:'Multiplicação — tabuada (2 a 9)', op:'multiplicacao', prereqs:[], eloBounds:[700,1000],
-    // Fatos fracos (seç. "Fatos fracos"): o par é sorteado ponderado pelos factWeights do
-    // perfil (errou/foi lento em 7×8, 7×8 volta com mais frequência), sempre com piso de
-    // aleatoriedade. O enunciado específico continua nunca repetido (recentPairs no Engine).
+  mult_tabuada:{ label:'Multiplicação — por 2 a 9', op:'multiplicacao', prereqs:[], eloBounds:[700,1000],
+    // Peso por dígito/linha (substitui "fatos fracos"): um dígito é sorteado ponderado pelos
+    // digitWeights do perfil (lento/erro com ×7 → mais pares contendo 7), o outro cai na faixa.
+    // O enunciado específico continua nunca repetido (recentPairs no Engine) e não existe "par
+    // pronto" rastreado — a dificuldade é operar com o dígito, não decorar o produto.
     gen(t, profile){
       const hi=4+Math.round(t*5);
+      const lo=2, hiD=hi+3;
       let a,b;
-      if(profile){ [a,b] = Engine.weightedFactPair(profile, 2, hi+3, 2, hi+3); }
-      else { a=U.rint(2,hi+3); b=U.rint(2,hi+3); if(Math.random()<0.5)[a,b]=[b,a]; }
-      return {a,b,answer:a*b,features:{factKey:'fact:'+Math.min(a,b)+'x'+Math.max(a,b)}}; } },
+      if(profile){
+        a = Engine.pickRow(profile,'mult_tabuada',lo,hiD);
+        b = U.rint(lo,hiD);
+      } else { a=U.rint(lo,hiD); b=U.rint(lo,hiD); if(Math.random()<0.5)[a,b]=[b,a]; }
+      return {a,b,answer:a*b,features:{}}; } },
   mult_11_19:{ label:'Multiplicação — por 11 a 19', op:'multiplicacao', prereqs:['mult_tabuada'], eloBounds:[950,1250],
     gen(t, profile){
+      const aMin=11, aMax=11+Math.round(t*8);
       let a,b;
-      if(profile){ [a,b] = Engine.weightedFactPair(profile, 11, 11+Math.round(t*8), 2, 9); }
-      else { a=U.rint(11,11+Math.round(t*8)); b=U.rint(2,9); if(Math.random()<0.4)[a,b]=[b,a]; }
-      return {a,b,answer:a*b,features:{factKey:'fact:'+Math.min(a,b)+'x'+Math.max(a,b)}}; } },
+      if(profile){
+        a = Engine.pickRow(profile,'mult_11_19',aMin,aMax);
+        b = U.rint(2,9);
+      } else { a=U.rint(aMin,aMax); b=U.rint(2,9); if(Math.random()<0.4)[a,b]=[b,a]; }
+      return {a,b,answer:a*b,features:{}}; } },
   mult_2d:{ label:'Multiplicação — 2 dígitos × 2 dígitos', op:'multiplicacao', prereqs:['mult_11_19'], eloBounds:[1200,1650],
     gen(t){ const hi=Math.round(29+t*70); let a=U.rint(11,hi), b=U.rint(11,Math.min(hi,29+Math.round(t*40)));
       return {a,b,answer:a*b,features:{}}; } },
 
-  div_tabuada:{ label:'Divisão — tabuada (2 a 9)', op:'divisao', prereqs:['mult_tabuada'], eloBounds:[750,1050],
-    // Na divisão o usuário calcula divisor×quociente de cabeça — por isso o "fato" rastreado
-    // é o par (divisor, quociente), não os operandos exibidos (dividendo, divisor).
+  div_tabuada:{ label:'Divisão — por 2 a 9', op:'divisao', prereqs:['mult_tabuada'], eloBounds:[750,1050],
+    // O usuário calcula divisor×quociente de cabeça — por isso a "linha" rastreada é o divisor
+    // (por quem se divide), sorteado ponderado pelos digitWeights do perfil; o quociente cai na
+    // faixa. Nunca há um par específico rastreado (ver mult_tabuada acima).
     gen(t, profile){
       const hi=4+Math.round(t*5);
+      const lo=2, hiD=hi+3;
       let x,y;
-      if(profile){ [x,y] = Engine.weightedFactPair(profile, 2, hi+3, 2, hi+3); }
-      else { x=U.rint(2,hi+3); y=U.rint(2,hi+3); }
+      if(profile){
+        x = Engine.pickRow(profile,'div_tabuada',lo,hiD);
+        y = U.rint(lo,hiD);
+      } else { x=U.rint(lo,hiD); y=U.rint(lo,hiD); }
       const divisor=x, quotient=y;
-      return {a:divisor*quotient,b:divisor,answer:quotient,
-        features:{exact:true,factKey:'fact:'+Math.min(divisor,quotient)+'x'+Math.max(divisor,quotient)}}; } },
+      return {a:divisor*quotient,b:divisor,answer:quotient,features:{exact:true}}; } },
   div_2d:{ label:'Divisão — resultado de 2 dígitos', op:'divisao', prereqs:['div_tabuada','mult_11_19'], eloBounds:[1000,1350],
     gen(t){ const divisor=U.rint(2,2+Math.round(t*10)), quotient=U.rint(6,6+Math.round(t*14));
       return {a:divisor*quotient,b:divisor,answer:quotient,features:{exact:true}}; } },
@@ -353,21 +363,21 @@ const KC_DEFS = {
 // Traduções (apresentação apenas) das famílias de habilidade — a lógica/seleção usa sempre a chave (key).
 const KC_LABELS_EN = {
   soma_1d:'Addition — single digits',
-  soma_2d_sc:'Addition — 2 digits (no carrying)',
-  soma_2d_cc:'Addition — 2 digits (with carrying)',
+  soma_2d_sc:'Addition — 2 digits',
+  soma_2d_cc:'Addition — 2 digits (carrying)',
   soma_3_4d:'Addition — 3 and 4 digits',
   sub_1d:'Subtraction — single digits',
-  sub_2d_se:'Subtraction — 2 digits (no borrowing)',
-  sub_2d_ce:'Subtraction — 2 digits (with borrowing)',
+  sub_2d_se:'Subtraction — 2 digits',
+  sub_2d_ce:'Subtraction — 2 digits (borrowing)',
   sub_3_4d:'Subtraction — 3 and 4 digits',
   soma_decimal:'Addition — decimals (1–2 places)',
   sub_decimal:'Subtraction — decimals (1–2 places)',
   mult_decimal:'Multiplication — decimal × integer',
   div_decimal:'Division — decimal ÷ integer',
-  mult_tabuada:'Multiplication — times tables (2–9)',
-  mult_11_19:'Multiplication — by 11–19',
+  mult_tabuada:'Multiplication — by 2 to 9',
+  mult_11_19:'Multiplication — by 11 to 19',
   mult_2d:'Multiplication — 2 digits × 2 digits',
-  div_tabuada:'Division — times tables (2–9)',
+  div_tabuada:'Division — by 2 to 9',
   div_2d:'Division — 2-digit result',
   div_3d:'Division — larger dividends',
   pct_basico:'Percentage — basic',

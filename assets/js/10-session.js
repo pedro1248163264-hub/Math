@@ -361,7 +361,6 @@ const Session = {
     this.updateState();
     UI.flashAnswer(correct);
     UI.pushPulse(classify(result));
-    UI.updateHud(this.records);
     if(correct){ Sound.correct(); Haptics.correct(); }
     else { Sound.wrong(); Haptics.wrong(); UI.showCorrectAnswer(item.answer); }
     const gap = Store.data.settings.gapMs;

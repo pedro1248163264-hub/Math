@@ -100,7 +100,7 @@ const T_SAMPLES = [0, 0.25, 0.5, 0.75, 1, ...Array.from({length:200}, ()=>Math.r
 
 globalThis.__TEST_RESULTS__ = { perFamily: {}, engineSmokeError: null, speedEngineError: null, adaptiveFlowError: null, timingFlowError: null, confirmFlowError: null,
   sequencingError: null, retryQueueError: null, impulseFloorError: null, ultimateTimeoutError: null, patternWeightError: null, patternGenError: null,
-  decimalInputError: null, decimalComparisonError: null, factWeightError: null, cascadeError: null, adaptiveCalibrationError: null };
+  decimalInputError: null, decimalComparisonError: null, digitWeightError: null, cascadeError: null, adaptiveCalibrationError: null };
 
 Object.keys(KC_DEFS).forEach(key=>{
   const def = KC_DEFS[key];
@@ -393,7 +393,7 @@ try{
 // vezes não pode contabilizar a mesma questão duas vezes.
 try{
   UI.updateAnswerDisplay=()=>{}; UI.toast=()=>{}; UI.flashAnswer=()=>{};
-  UI.pushPulse=()=>{}; UI.updateHud=()=>{}; UI.showCorrectAnswer=()=>{};
+  UI.pushPulse=()=>{}; UI.showCorrectAnswer=()=>{};
   UI.clearAnswerFeedback=()=>{};
   Sound.correct=()=>{}; Sound.wrong=()=>{}; Haptics.correct=()=>{}; Haptics.wrong=()=>{};
   Store.data = Store.defaults();
@@ -426,7 +426,7 @@ try{
 // quanto ponto na comparação final.
 try{
   UI.updateAnswerDisplay=()=>{}; UI.toast=()=>{}; UI.flashAnswer=()=>{};
-  UI.pushPulse=()=>{}; UI.updateHud=()=>{}; UI.showCorrectAnswer=()=>{};
+  UI.pushPulse=()=>{}; UI.showCorrectAnswer=()=>{};
   UI.clearAnswerFeedback=()=>{};
   Sound.correct=()=>{}; Sound.wrong=()=>{}; Haptics.correct=()=>{}; Haptics.wrong=()=>{};
   Store.data = Store.defaults();
@@ -479,40 +479,49 @@ try{
   globalThis.__TEST_RESULTS__.decimalComparisonError = e.message;
 }
 
-// Fatos fracos da tabuada (seç. "Fatos fracos"): peso alto num par desloca a geração pra ele,
-// mas nunca elimina a chance dos outros (piso de aleatoriedade); o fato registrado no item
-// alimenta o nudge em registerResult; a divisão rastreia o par divisor×quociente.
+// Peso por dígito/linha (substitui os "fatos fracos" da tabuada): um peso alto num dígito
+// desloca a geração para pares que contêm esse dígito, mas nunca elimina a aleatoriedade
+// (piso PATTERN_WEIGHT_MIN); não existe mais "par pronto" rastreado (sem factKey); e o nudge
+// em registerResult alimenta o peso a partir dos dígitos do item (a/b), não de um fato exato.
 try{
   Store.data = Store.defaults();
   const p = Engine.profile('mult_tabuada');
-  // 7×8 no peso máximo; todos os demais pares da faixa em peso mínimo — o deslocamento deve
-  // aparecer (share muito acima do uniforme) sem nunca virar 100% (piso preservado).
-  p.factWeights['fact:7x8'] = PATTERN_WEIGHT_MAX;
-  for(let a=2;a<=10;a++) for(let b=a;b<=10;b++) p.factWeights['fact:'+a+'x'+b] = PATTERN_WEIGHT_MIN;
-  p.factWeights['fact:7x8'] = PATTERN_WEIGHT_MAX;
-  let count78=0; const total=300;
+  p.digitWeights['mult_tabuada:d7'] = PATTERN_WEIGHT_MAX;
+  for(let d=2;d<=12;d++) p.digitWeights['mult_tabuada:d'+d] = PATTERN_WEIGHT_MIN;
+  p.digitWeights['mult_tabuada:d7'] = PATTERN_WEIGHT_MAX;
+  let count7=0; const total=300;
   for(let i=0;i<total;i++){
     const g = KC_DEFS.mult_tabuada.gen(0.5, p);
-    if(g.features.factKey==='fact:7x8') count78++;
+    if(g.a===7 || g.b===7) count7++;
   }
-  const uniformShare = 1/45; // faixa 2..10 no t=0.5
-  if(count78/total < uniformShare*2) throw new Error('fato fraco não deslocou a geração acima do uniforme (7×8 saiu em '+count78+'/'+total+')');
-  if(count78===total) throw new Error('fato fraco eliminou o piso de aleatoriedade');
+  if(count7/total < 0.4) throw new Error('peso por dígito não deslocou a geração (7 apareceu em '+count7+'/'+total+')');
+  if(count7===total) throw new Error('peso por dígito eliminou o piso de aleatoriedade');
+  // A geração nunca expõe um "fato rastreado" — a memorização de par específico acabou.
   const gd = KC_DEFS.div_tabuada.gen(0.5, p);
-  const divisor=gd.b, quotient=gd.a/gd.b;
-  const expectedFact = 'fact:'+Math.min(divisor,quotient)+'x'+Math.max(divisor,quotient);
-  if(gd.features.factKey!==expectedFact) throw new Error('div_tabuada: factKey não reflete divisor×quociente');
-  // Nudge em perfil limpo (o mapa de pesos acima contamina o perfil 'mult_tabuada').
+  if(gd.features && gd.features.factKey) throw new Error('div_tabuada ainda expõe factKey (memorização)');
+  if(!Number.isFinite(gd.answer) || gd.a%gd.b!==0) throw new Error('div_tabuada gerou resposta inválida');
+  // Nudge em perfil limpo: após erro, o peso dos dígitos presentes sobe; após acerto na meta,
+  // desce. mult_11_19 e div_tabuada ponderam só a "linha" (fator 11–19 / divisor).
   Store.data = Store.defaults();
   const nudgeProfile = Engine.profile('mult_tabuada');
-  const item = {key:'mult_tabuada', features:{factKey:'fact:6x7'}, isCalibration:false};
-  Engine.nudgeFactWeight(nudgeProfile, item, false, false);
-  if(!(nudgeProfile.factWeights['fact:6x7'] > 1)) throw new Error('nudgeFactWeight não subiu após erro');
-  const afterUp = nudgeProfile.factWeights['fact:6x7'];
-  Engine.nudgeFactWeight(nudgeProfile, item, true, true);
-  if(nudgeProfile.factWeights['fact:6x7'] >= afterUp) throw new Error('nudgeFactWeight não reduziu após acerto na meta');
+  const item = {key:'mult_tabuada', a:6, b:7, isCalibration:false};
+  Engine.nudgeDigits(nudgeProfile, 'mult_tabuada', Engine.digitTrack.mult_tabuada(item), false, false);
+  if(!(nudgeProfile.digitWeights['mult_tabuada:d6'] > 1)) throw new Error('nudgeDigits não subiu o peso do dígito 6 após erro');
+  if(!(nudgeProfile.digitWeights['mult_tabuada:d7'] > 1)) throw new Error('nudgeDigits não subiu o peso do dígito 7 após erro');
+  const afterUp = nudgeProfile.digitWeights['mult_tabuada:d6'];
+  Engine.nudgeDigits(nudgeProfile, 'mult_tabuada', Engine.digitTrack.mult_tabuada(item), true, true);
+  if(nudgeProfile.digitWeights['mult_tabuada:d6'] >= afterUp) throw new Error('nudgeDigits não reduziu o peso após acerto na meta');
+  const p19 = Engine.profile('mult_11_19');
+  const item19 = {key:'mult_11_19', a:17, b:6, isCalibration:false};
+  Engine.nudgeDigits(p19, 'mult_11_19', Engine.digitTrack.mult_11_19(item19), false, false);
+  if(!(p19.digitWeights['mult_11_19:d17'] > 1)) throw new Error('mult_11_19: linha 17 não foi ponderada após erro');
+  if(p19.digitWeights['mult_11_19:d6']) throw new Error('mult_11_19: multiplicador (2–9) não deveria ser ponderado');
+  const pdiv = Engine.profile('div_tabuada');
+  const itemDiv = {key:'div_tabuada', b:8, isCalibration:false};
+  Engine.nudgeDigits(pdiv, 'div_tabuada', Engine.digitTrack.div_tabuada(itemDiv), false, false);
+  if(!(pdiv.digitWeights['div_tabuada:d8'] > 1)) throw new Error('div_tabuada: divisor 8 não foi ponderado após erro');
 }catch(e){
-  globalThis.__TEST_RESULTS__.factWeightError = e.message;
+  globalThis.__TEST_RESULTS__.digitWeightError = e.message;
 }
 
 // Cascata de dificuldade (seç. "Cascata"): família sofrendo (acerto < CASCADE_ACC_FLOOR com
@@ -589,7 +598,7 @@ ok(RESULTS.patternWeightError===null, 'peso por padrão desloca geração sem el
 ok(RESULTS.patternGenError===null, 'geradores com viés de padrão continuam válidos: '+RESULTS.patternGenError);
 ok(RESULTS.decimalInputError===null, 'entrada decimal (tecla de vírgula, confirmação manual, vírgula/ponto): '+RESULTS.decimalInputError);
 ok(RESULTS.decimalComparisonError===null, 'comparação de dificuldade decimal vs. inteiro (dado interno): '+RESULTS.decimalComparisonError);
-ok(RESULTS.factWeightError===null, 'fatos fracos da tabuada (deslocamento de geração, factKey na divisão, nudge): '+RESULTS.factWeightError);
+ok(RESULTS.digitWeightError===null, 'peso por dígito/linha (deslocamento de geração, sem factKey, nudge por operando): '+RESULTS.digitWeightError);
 ok(RESULTS.cascadeError===null, 'cascata de dificuldade (boost ao pré-requisito, guarda de ruído): '+RESULTS.cascadeError);
 ok(RESULTS.adaptiveCalibrationError===null, 'calibração adaptativa (consistente encerra cedo, inconsistente até o teto): '+RESULTS.adaptiveCalibrationError);
 
