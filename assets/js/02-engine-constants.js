@@ -47,13 +47,23 @@ const K_BASE = 0.05, K_MIN = 0.008, K_MAX = 0.05;
 // com o piso de aleatoriedade usado nos demais pesos do motor); erro recente reaparece
 // dentro de RETRY_MIN_GAP–RETRY_MAX_GAP itens.
 const ANTI_CLUMP_WINDOW = 10, ANTI_CLUMP_MAX_SHARE = 0.4;
-// Temperatura do softmax de escolha de família. Quanto menor, mais concentrado no topo
-// (nas famílias mais fracas). Calibrada por simulação (média de runs de 30k escolhas):
-// com o anti-clump padrão intacto, T=0.4 põe as ~5 mais fracas em ~65% das escolhas quando
-// o spread de scores é típico (algumas famílias claramente fracas) — centro da meta de
-// 60–70% — e degrada graciosamente para quase-uniforme quando os scores estão empatados
-// (começo do app). O anti-clump limita qualquer família isolada a ~30–40% das escolhas.
-const SEQUENCING_SOFTMAX_TEMP = 0.4;
+// Sorteio softmax normalizado por min-max no próprio pool (seç. 2c da auditoria): em vez de
+// uma temperatura ABSOLUTA sobre o score bruto (que não escala quando o pool é grande — com
+// "todas as contas" ativas, ~26 das 29 famílias carregam a mesma penalidade fixa de
+// pré-requisito e o spread real de necessidade fica comprimido, diluindo a concentração no
+// sorteio), o score é primeiro normalizado para [0,1] em relação ao menor/maior do momento.
+// SEQUENCING_SPREAD_FLOOR é o piso desse spread: quando os scores estão quase-empate (spread
+// menor que o piso), a normalização degrada graciosamente para um sorteio quase-uniforme —
+// preserva o comportamento do começo do app, quando não há família claramente fraca ainda.
+// SEQUENCING_SOFTMAX_TEMP_REL é a temperatura RELATIVA ao spread normalizado. Quanto menor,
+// mais concentrado no topo (nas famílias mais fracas). Calibrada por simulação (média de
+// runs de 30k escolhas): com o anti-clump padrão intacto, T_rel=0.35 põe as ~5 mais fracas
+// em ~64% das escolhas num pool de 29 famílias com uma claramente fraca (meta de 60–70%),
+// e ~87% num pool de 6 — a mesma concentração que a calibração original de T=0.4 garantia
+// no regime "limpo", agora independente do tamanho do pool. O anti-clump limita qualquer
+// família isolada a ~30–40% das escolhas.
+const SEQUENCING_SPREAD_FLOOR = 0.2;
+const SEQUENCING_SOFTMAX_TEMP_REL = 0.35;
 const RETRY_MIN_GAP = 3, RETRY_MAX_GAP = 6;
 
 // Peso por padrão dentro da família (seç. 3 da revisão): nunca repete um enunciado

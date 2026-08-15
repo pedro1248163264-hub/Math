@@ -99,7 +99,8 @@ const VOICES = ['pt-BR','en-US'];
 const T_SAMPLES = [0, 0.25, 0.5, 0.75, 1, ...Array.from({length:200}, ()=>Math.random())];
 
 globalThis.__TEST_RESULTS__ = { perFamily: {}, engineSmokeError: null, speedEngineError: null, adaptiveFlowError: null, timingFlowError: null, confirmFlowError: null,
-  sequencingError: null, retryQueueError: null, softmaxError: null, impulseFloorError: null, ultimateTimeoutError: null, patternWeightError: null, patternGenError: null,
+  sequencingError: null, retryQueueError: null, softmaxError: null, softmaxLargePoolError: null, softmaxTieError: null,
+  impulseFloorError: null, ultimateTimeoutError: null, patternWeightError: null, patternGenError: null,
   decimalInputError: null, decimalComparisonError: null, digitWeightError: null, cascadeError: null, adaptiveCalibrationError: null };
 
 Object.keys(KC_DEFS).forEach(key=>{
@@ -246,6 +247,79 @@ try{
   }
 }catch(e){
   globalThis.__TEST_RESULTS__.softmaxError = e.message;
+}
+
+// Softmax em pool grande ("Treinar todas as contas", 29 famílias ativas): com ~26 das 29
+// famílias carregando a mesma penalidade fixa de pré-requisito, o spread real de necessidade
+// fica comprimido e um softmax de temperatura ABSOLUTA dilui a concentração (a fraca caía para
+// ~7%, perto do uniforme de ~3,4%). Com a normalização por min-max dentro do pool
+// (SEQUENCING_SOFTMAX_TEMP_REL), a família fraca precisa dominar bem acima do uniforme e as
+// ~5 mais fracas devem concentrar a maioria das escolhas — mesma calibração do pool pequeno.
+try{
+  Store.data = Store.defaults();
+  const keys = Object.keys(KC_DEFS);
+  Store.data.settings.selectedSkills = keys;
+  Store.data.settings.selectAllSkills = false;
+  Engine.recentKeys = []; Engine.errorRetryQueue = {}; Engine.itemCounter = 0;
+  keys.forEach(k=>{
+    const p = Engine.profile(k);
+    p.calibratedAt = Date.now();
+    const weak = k==='soma_2d_cc';
+    p.baselineMs = weak ? 1500 : 1000;
+    p.targetMs  = weak ? 1500 : 850;
+    p.window = [];
+    for(let j=0;j<20;j++){
+      const fast = weak ? (j%3!==0) : true;
+      p.window.push({ms: fast ? (weak?1400:600) : 3000, correct:fast, targetHit:fast, calibration:false, lapse:false, at:Date.now()});
+    }
+  });
+  const counts = {}; const N = 3000;
+  for(let i=0;i<N;i++){
+    const item = Engine.next();
+    counts[item.key]=(counts[item.key]||0)+1;
+  }
+  keys.forEach(k=>{
+    if(!counts[k]) throw new Error('pool grande deixou a família '+k+' com probabilidade zero em '+N+' escolhas');
+  });
+  const share = k=>counts[k]/N;
+  const sorted = keys.slice().sort((a,b)=>share(b)-share(a));
+  const weakShare = share('soma_2d_cc');
+  const top5 = sorted.slice(0,5).reduce((s,k)=>s+share(k),0);
+  if(weakShare < 0.15) throw new Error('pool grande: família fraca diluída pelo sorteio (fraca='+(weakShare*100).toFixed(1)+'%, uniforme='+(100/keys.length).toFixed(1)+'%)');
+  if(top5 < 0.50) throw new Error('pool grande: as 5 mais fracas não concentraram o sorteio (top5='+(top5*100).toFixed(1)+'%)');
+}catch(e){
+  globalThis.__TEST_RESULTS__.softmaxLargePoolError = e.message;
+}
+
+// Degradação graciosa em empate: com todas as famílias prontas (pré-requisitos dominados) e
+// desempenho igual, o sorteio precisa ficar perto do uniforme — é o comportamento do começo do
+// app, quando ainda não há família claramente fraca. Sem o piso SEQUENCING_SPREAD_FLOOR, a
+// normalização min-max amplificaria o ruído dos scores e concentraria numa família qualquer.
+try{
+  Store.data = Store.defaults();
+  const keys = ['soma_2d_cc','sub_2d_ce','mult_2d','pct_intermediario','potencia_basica','radical_quad'];
+  Store.data.settings.selectedSkills = keys;
+  Store.data.settings.selectAllSkills = false;
+  Engine.recentKeys = []; Engine.errorRetryQueue = {}; Engine.itemCounter = 0;
+  // Domina os pré-requisitos para que nenhuma família carregue a penalidade fixa — sem isso,
+  // as famílias-raiz ficariam estruturalmente acima das demais e não seria um empate de verdade.
+  keys.forEach(k=>{
+    (KC_DEFS[k].prereqs||[]).forEach(pk=>{ Engine.profile(pk).masteredAt = Date.now(); });
+    const p = Engine.profile(k);
+    p.calibratedAt = Date.now();
+    p.baselineMs = 1000; p.targetMs = 850; p.window = [];
+    for(let j=0;j<20;j++) p.window.push({ms:595, correct:true, targetHit:true, calibration:false, lapse:false, at:Date.now()});
+  });
+  const counts = {}; const N = 3000;
+  for(let i=0;i<N;i++){
+    const item = Engine.next();
+    counts[item.key]=(counts[item.key]||0)+1;
+  }
+  const maxShare = Math.max(...keys.map(k=>counts[k]/N));
+  const uniform = 1/keys.length;
+  if(maxShare > uniform*2.5) throw new Error('empate de scores concentrou demais o sorteio (max='+(maxShare*100).toFixed(1)+'%, uniforme='+(uniform*100).toFixed(1)+'%)');
+}catch(e){
+  globalThis.__TEST_RESULTS__.softmaxTieError = e.message;
 }
 
 // Retry pós-erro (modelo C): um erro real (não lapso) agenda a família para reaparecer
@@ -637,6 +711,8 @@ ok(RESULTS.confirmFlowError===null, 'fluxo de confirmação da resposta: '+RESUL
 ok(RESULTS.sequencingError===null, 'sequenciamento (interleaving ponderado, anti-repetição): '+RESULTS.sequencingError);
 ok(RESULTS.retryQueueError===null, 'retry pós-erro (modelo C): '+RESULTS.retryQueueError);
 ok(RESULTS.softmaxError===null, 'sorteio softmax (cauda não-zero, fraco domina): '+RESULTS.softmaxError);
+ok(RESULTS.softmaxLargePoolError===null, 'softmax em pool grande (todas ativas — fraca domina e top5 concentra): '+RESULTS.softmaxLargePoolError);
+ok(RESULTS.softmaxTieError===null, 'softmax em empate de scores (quase-uniforme, degradação graciosa): '+RESULTS.softmaxTieError);
 ok(RESULTS.impulseFloorError===null, 'IMPULSE_FLOOR (lapso não contamina janela pontuada): '+RESULTS.impulseFloorError);
 ok(RESULTS.ultimateTimeoutError===null, 'prazo do modo Ultimate (targetMs×multiplicador): '+RESULTS.ultimateTimeoutError);
 ok(RESULTS.patternWeightError===null, 'peso por padrão desloca geração sem eliminar aleatoriedade: '+RESULTS.patternWeightError);

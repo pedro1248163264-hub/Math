@@ -247,14 +247,22 @@ const Engine = {
     if(lastKey!=null && scored.length>1) scored=scored.filter(s=>s.key!==lastKey);
     scored.sort((a,b)=>b.score-a.score);
     // Sorteio softmax sobre TODAS as famílias selecionadas (sem corte duro): o score é
-    // centrado no mínimo — robusto a valores negativos e a "empate" de scores (todos
-    // iguais → pesos iguais → sorteio uniforme). A família mais fraca domina o peso, mas
-    // nenhuma fica com probabilidade zero (piso de aleatoriedade do motor).
+    // normalizado por min-max dentro do pool (min→0, max→1) e então ponderado por exp com
+    // temperatura RELATIVA (SEQUENCING_SOFTMAX_TEMP_REL). A normalização remove a dependência
+    // da escala absoluta dos scores — sem ela, num pool grande como "todas as contas" a
+    // maioria das famílias carrega a mesma penalidade fixa de pré-requisito e o spread real
+    // de necessidade fica comprimido, esvaziando a concentração. O piso de spread
+    // (SEQUENCING_SPREAD_FLOOR) faz o sorteio degradar graciosamente para quase-uniforme
+    // quando os scores estão quase-empate (começo do app). A família mais fraca domina o
+    // peso, mas nenhuma fica com probabilidade zero (piso de aleatoriedade do motor).
     const minScore = scored.length ? scored[scored.length-1].score : 0;
-    const totalW = scored.reduce((s,x)=>s+Math.exp((x.score-minScore)/SEQUENCING_SOFTMAX_TEMP),0);
+    const maxScore = scored.length ? scored[0].score : 0;
+    const denom = Math.max(maxScore - minScore, SEQUENCING_SPREAD_FLOOR);
+    const wOf = s => Math.exp(((s.score - minScore) / denom) / SEQUENCING_SOFTMAX_TEMP_REL);
+    const totalW = scored.reduce((s,x)=>s+wOf(x),0);
     let r=Math.random()*totalW, chosen=scored.length ? scored[scored.length-1].key : null;
     for(const x of scored){
-      const w=Math.exp((x.score-minScore)/SEQUENCING_SOFTMAX_TEMP);
+      const w=wOf(x);
       if(r<w){ chosen=x.key; break; } r-=w;
     }
     if(chosen!=null && this.errorRetryQueue[chosen]!=null && this.itemCounter>=this.errorRetryQueue[chosen]) delete this.errorRetryQueue[chosen];
