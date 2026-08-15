@@ -452,7 +452,10 @@ const UI = {
       if(s.hideDuringTts) eqEl.classList.add('hidden-eq');
       // BUGFIX: o cronômetro de resposta só deve começar depois que a voz terminar
       // de ler a pergunta — por isso repassamos onReady só para o callback de término.
-      TTS.speak(spoken, ()=>{ eqEl.classList.remove('hidden-eq'); if(onReady) onReady(); });
+      TTS.speak(spoken, ()=>{
+        if(!s.hideDuringTts) eqEl.classList.remove('hidden-eq');
+        if(onReady) onReady();
+      });
     } else {
       eqEl.classList.remove('hidden-eq');
       if(onReady) onReady();

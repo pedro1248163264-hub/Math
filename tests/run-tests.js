@@ -99,7 +99,7 @@ const VOICES = ['pt-BR','en-US'];
 const T_SAMPLES = [0, 0.25, 0.5, 0.75, 1, ...Array.from({length:200}, ()=>Math.random())];
 
 globalThis.__TEST_RESULTS__ = { perFamily: {}, engineSmokeError: null, speedEngineError: null, adaptiveFlowError: null, timingFlowError: null, confirmFlowError: null,
-  sequencingError: null, retryQueueError: null, impulseFloorError: null, ultimateTimeoutError: null, patternWeightError: null, patternGenError: null,
+  sequencingError: null, retryQueueError: null, softmaxError: null, impulseFloorError: null, ultimateTimeoutError: null, patternWeightError: null, patternGenError: null,
   decimalInputError: null, decimalComparisonError: null, digitWeightError: null, cascadeError: null, adaptiveCalibrationError: null };
 
 Object.keys(KC_DEFS).forEach(key=>{
@@ -202,6 +202,50 @@ try{
   if(repeats>0) throw new Error('sequenciamento repetiu a mesma família 2x seguidas '+repeats+' vez(es) em 200 escolhas');
 }catch(e){
   globalThis.__TEST_RESULTS__.sequencingError = e.message;
+}
+
+// Sorteio softmax (seç. 2 da revisão): TODAS as famílias selecionadas participam (nenhuma
+// fica com probabilidade zero — piso de aleatoriedade) e as mais fracas dominam o peso.
+try{
+  Store.data = Store.defaults();
+  const keys = ['soma_2d_cc','sub_2d_ce','mult_2d','pct_intermediario','potencia_basica','radical_quad'];
+  Store.data.settings.selectedSkills = keys;
+  Store.data.settings.selectAllSkills = false;
+  Engine.recentKeys = []; Engine.errorRetryQueue = {}; Engine.itemCounter = 0;
+  // Fabrica perfis: uma família fraca (erros/lenta) e as demais dominadas (rápidas e
+  // corretas). Cedo no motor (janelas fabricadas), nada aqui dispara revisão nem calibração.
+  keys.forEach(k=>{
+    const p = Engine.profile(k);
+    p.calibratedAt = Date.now();
+    const weak = k==='soma_2d_cc';
+    p.baselineMs = weak ? 1500 : 1000;
+    p.targetMs  = weak ? 1500 : 850;
+    p.window = [];
+    for(let j=0;j<20;j++){
+      const fast = weak ? (j%3!==0) : true; // fraca erra ~1/3; as demais nunca erram
+      p.window.push({ms: fast ? (weak?1400:600) : 3000, correct:fast, targetHit:fast, calibration:false, lapse:false, at:Date.now()});
+    }
+  });
+  const counts = {}; const N = 1500;
+  for(let i=0;i<N;i++){
+    const item = Engine.next();
+    counts[item.key]=(counts[item.key]||0)+1;
+    // Não registra resultados: janelas/perfis fabricados não podem ser contaminados.
+  }
+  keys.forEach(k=>{
+    if(!counts[k]) throw new Error('softmax deixou a família '+k+' com probabilidade zero em '+N+' escolhas');
+  });
+  const weakShare = counts['soma_2d_cc']/N;
+  const maxStrong = Math.max(...keys.filter(k=>k!=='soma_2d_cc').map(k=>counts[k]/N));
+  // O anti-clump (-0.9) limita QUALQUER família isolada a ~30–40% das escolhas (share>40% da
+  // janela dispara o corte), então não esperamos o fraco acima disso — mas ele deve sair bem
+  // acima do uniforme (1/6≈16.7%) e dominar claramente as famílias dominadas.
+  if(weakShare < 0.22) throw new Error('família fraca ficou perto do sorteio uniforme (fraca='+(weakShare*100).toFixed(1)+'%)');
+  if(weakShare < maxStrong*1.5){
+    throw new Error('família fraca não dominou o sorteio (fraca='+(weakShare*100).toFixed(1)+'%, mais forte entre as demais='+(maxStrong*100).toFixed(1)+'%)');
+  }
+}catch(e){
+  globalThis.__TEST_RESULTS__.softmaxError = e.message;
 }
 
 // Retry pós-erro (modelo C): um erro real (não lapso) agenda a família para reaparecer
@@ -592,6 +636,7 @@ ok(RESULTS.timingFlowError===null, 'fluxo de temporização (fim de bloco e desc
 ok(RESULTS.confirmFlowError===null, 'fluxo de confirmação da resposta: '+RESULTS.confirmFlowError);
 ok(RESULTS.sequencingError===null, 'sequenciamento (interleaving ponderado, anti-repetição): '+RESULTS.sequencingError);
 ok(RESULTS.retryQueueError===null, 'retry pós-erro (modelo C): '+RESULTS.retryQueueError);
+ok(RESULTS.softmaxError===null, 'sorteio softmax (cauda não-zero, fraco domina): '+RESULTS.softmaxError);
 ok(RESULTS.impulseFloorError===null, 'IMPULSE_FLOOR (lapso não contamina janela pontuada): '+RESULTS.impulseFloorError);
 ok(RESULTS.ultimateTimeoutError===null, 'prazo do modo Ultimate (targetMs×multiplicador): '+RESULTS.ultimateTimeoutError);
 ok(RESULTS.patternWeightError===null, 'peso por padrão desloca geração sem eliminar aleatoriedade: '+RESULTS.patternWeightError);

@@ -334,6 +334,8 @@ const Session = {
     this.answering = true;
     clearTimeout(this.itemTimeoutHandle);
     this.itemDeadline = null;
+    const eqEl = document.getElementById('equationText');
+    if(eqEl) eqEl.classList.remove('hidden-eq');
     const item = this.current;
     const now = U.now();
     const totalMs = timedOut ? item.timeoutMs : (now - this.qShownAt);

@@ -246,11 +246,18 @@ const Engine = {
     this.applyCascadeBoost(scored);
     if(lastKey!=null && scored.length>1) scored=scored.filter(s=>s.key!==lastKey);
     scored.sort((a,b)=>b.score-a.score);
-    const pool=scored.slice(0,Math.min(SEQUENCING_POOL,scored.length));
-    const totalW=pool.reduce((s,x)=>s+Math.max(0.01,x.score+1),0);
-    let r=Math.random()*totalW, chosen=pool[pool.length-1].key;
-    for(const x of pool){ const w=Math.max(0.01,x.score+1); if(r<w){ chosen=x.key; break; } r-=w; }
-    if(this.errorRetryQueue[chosen]!=null && this.itemCounter>=this.errorRetryQueue[chosen]) delete this.errorRetryQueue[chosen];
+    // Sorteio softmax sobre TODAS as famílias selecionadas (sem corte duro): o score é
+    // centrado no mínimo — robusto a valores negativos e a "empate" de scores (todos
+    // iguais → pesos iguais → sorteio uniforme). A família mais fraca domina o peso, mas
+    // nenhuma fica com probabilidade zero (piso de aleatoriedade do motor).
+    const minScore = scored.length ? scored[scored.length-1].score : 0;
+    const totalW = scored.reduce((s,x)=>s+Math.exp((x.score-minScore)/SEQUENCING_SOFTMAX_TEMP),0);
+    let r=Math.random()*totalW, chosen=scored.length ? scored[scored.length-1].key : null;
+    for(const x of scored){
+      const w=Math.exp((x.score-minScore)/SEQUENCING_SOFTMAX_TEMP);
+      if(r<w){ chosen=x.key; break; } r-=w;
+    }
+    if(chosen!=null && this.errorRetryQueue[chosen]!=null && this.itemCounter>=this.errorRetryQueue[chosen]) delete this.errorRetryQueue[chosen];
     return {key:chosen,isReview:false};
   },
   next(){

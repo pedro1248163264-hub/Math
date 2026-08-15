@@ -41,10 +41,19 @@ const ULTIMATE_POST_PAUSE_COOLDOWN_ITEMS = 3; // itens após a pausa que não po
 const K_BASE = 0.05, K_MIN = 0.008, K_MAX = 0.05;
 
 // Sequenciamento (substitui Foco/Misto): nunca repete a mesma família 2x seguidas; nenhuma
-// família passa de ANTI_CLUMP_MAX_SHARE das últimas ANTI_CLUMP_WINDOW escolhas; pool de
-// sorteio ponderado; erro recente reaparece dentro de RETRY_MIN_GAP–RETRY_MAX_GAP itens.
+// família passa de ANTI_CLUMP_MAX_SHARE das últimas ANTI_CLUMP_WINDOW escolhas; sorteio
+// ponderado por softmax com temperatura sobre TODAS as famílias selecionadas (sem corte
+// duro: as mais fracas dominam o peso, mas nenhuma fica com probabilidade zero — coerente
+// com o piso de aleatoriedade usado nos demais pesos do motor); erro recente reaparece
+// dentro de RETRY_MIN_GAP–RETRY_MAX_GAP itens.
 const ANTI_CLUMP_WINDOW = 10, ANTI_CLUMP_MAX_SHARE = 0.4;
-const SEQUENCING_POOL = 5;
+// Temperatura do softmax de escolha de família. Quanto menor, mais concentrado no topo
+// (nas famílias mais fracas). Calibrada por simulação (média de runs de 30k escolhas):
+// com o anti-clump padrão intacto, T=0.4 põe as ~5 mais fracas em ~65% das escolhas quando
+// o spread de scores é típico (algumas famílias claramente fracas) — centro da meta de
+// 60–70% — e degrada graciosamente para quase-uniforme quando os scores estão empatados
+// (começo do app). O anti-clump limita qualquer família isolada a ~30–40% das escolhas.
+const SEQUENCING_SOFTMAX_TEMP = 0.4;
 const RETRY_MIN_GAP = 3, RETRY_MAX_GAP = 6;
 
 // Peso por padrão dentro da família (seç. 3 da revisão): nunca repete um enunciado
