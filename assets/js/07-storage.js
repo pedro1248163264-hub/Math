@@ -30,6 +30,7 @@ const Store = {
         appLang:'pt',         stopClockOnFirstKey:true,
         confirmBeforeAccept:true,
         focusMode:false,
+        masteryFlash:true,
         selectedSkills:[...DEFAULT_SELECTED_SKILLS],
         selectAllSkills:true
       },
@@ -114,6 +115,10 @@ const Store = {
         // dificuldade com o dígito, não com o produto exato. Perfis salvos antes desta versão
         // começam neutros (factWeights antigos ficam inertes no objeto, sem serem lidos).
         p.digitWeights=(p.digitWeights&&typeof p.digitWeights==='object')?p.digitWeights:{};
+        // Hint por padrão de erro (Andaime): contador de erros SEGUIDOS por atributo/bucket
+        // (mesma chave usada em patternWeights) — usado só para decidir quando mostrar uma
+        // dica tática (PATTERN_HINT_STREAK), nunca persiste nada visível em tela.
+        p.patternErrorStreak=(p.patternErrorStreak&&typeof p.patternErrorStreak==='object')?p.patternErrorStreak:{};
       });
       if(!Array.isArray(this.data.settings.selectedSkills) || !this.data.settings.selectedSkills.length){
         this.data.settings.selectedSkills = [...DEFAULT_SELECTED_SKILLS];

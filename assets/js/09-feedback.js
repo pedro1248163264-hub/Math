@@ -45,6 +45,17 @@ function spokenNum(n, voiceLang){
 function spokenPhrase(item, voiceLang){
   const a = spokenNum(item.a, voiceLang), b = spokenNum(item.b, voiceLang);
   const w = EXPR_WORDS[voiceLang] || EXPR_WORDS['pt-BR'];
+  // Inversão de baixa frequência (Reverse Path, Pilar 3): fala o exprText literal em vez de
+  // a/b — senão a voz entregaria o número escondido lendo "a vezes b" na ordem normal.
+  if(item.isReversePath && item.exprText){
+    const unknownWord = voiceLang==='en-US' ? 'what number' : 'quanto';
+    let s = item.exprText
+      .split(' × ').join(` ${w.multiplicacao} `)
+      .split(' ÷ ').join(` ${w.divisao} `)
+      .split(' = ').join(` ${w.equals} `)
+      .split('?').join(unknownWord);
+    return s;
+  }
   if(item.op==='equacao') return speakEquation(item, w);
   if(item.terms && item.ops) return speakChain(item.terms, item.ops, w);
   if(item.op==='expressao'){

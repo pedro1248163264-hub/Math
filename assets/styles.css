@@ -188,7 +188,7 @@ input[type=range]{width:100%; accent-color:var(--accent);}
   font-size:clamp(2.35rem, 11vw, 3.4rem); line-height:1.15; letter-spacing:-0.025em;
   transition:opacity .15s ease, filter .15s ease; color:var(--text);
 }
-.equation.hidden-eq{filter:blur(14px); opacity:0.5;}
+.equation.hidden-eq, .equation.mastery-blur{filter:blur(14px); opacity:0.5;}
 .math-row{display:flex; align-items:center; justify-content:center; gap:0.24em; flex-wrap:wrap;}
 .math-operator{font-family:'STIX Two Text', 'Cambria Math', Cambria, serif; padding:0 0.04em;}
 .math-fraction{display:inline-flex; flex-direction:column; vertical-align:middle; min-width:1.1em; line-height:0.87; text-align:center; font-size:0.88em;}
@@ -211,6 +211,7 @@ input[type=range]{width:100%; accent-color:var(--accent);}
   .pulse-strip{height:22px; margin:4px 0 0 0;}
 }
 .feedback-answer{font-family:var(--font-num); font-size:1.2rem; color:var(--bad); font-weight:700; height:1.3em;}
+.feedback-hint{font-size:0.92rem; color:var(--dim); font-style:italic; min-height:1.2em; margin-top:-4px;}
 
 .pulse-strip{display:flex; align-items:flex-end; gap:3px; height:28px; margin:4px 0 0 0; width:100%; max-width:320px;}
 .pulse-bar{flex:1; border-radius:3px 3px 0 0; background:var(--border); min-height:4px; transition:height .2s ease;}

@@ -158,7 +158,25 @@ const KC_DEFS = {
         a = Engine.pickRow(profile,'mult_tabuada',lo,hiD);
         b = U.rint(lo,hiD);
       } else { a=U.rint(lo,hiD); b=U.rint(lo,hiD); if(Math.random()<0.5)[a,b]=[b,a]; }
-      return {a,b,answer:a*b,features:{}}; } },
+      const answer = a*b;
+      // Inversão de baixa frequência (Reverse Path, Pilar 3, stress test): em vez de "a×b=?",
+      // esconde um dos fatores — "? × b = produto" ou "a × ? = produto" — pra testar
+      // reconhecer o fato dentro de uma equação, não só recitar na ordem treinada. Sem
+      // profile (smoke test/geração fria), nunca entra aqui. Frequência sobe quando o
+      // perfil já não está mais calibrando/adquirindo (proxy de fluência no caminho direto
+      // — ver REVERSE_PATH_* em 02-engine-constants.js).
+      if(profile){
+        const fluent = Engine.stage(profile)!=='calibrating' && Engine.stage(profile)!=='acquisition';
+        const reverseChance = fluent ? REVERSE_PATH_FLUENT_RATE : REVERSE_PATH_BASE_RATE;
+        if(Math.random()<reverseChance){
+          const hideLeft = Math.random()<0.5;
+          const hidden = hideLeft ? a : b, shown = hideLeft ? b : a;
+          const sym = OPS.multiplicacao.symbol;
+          const exprText = hideLeft ? `? ${sym} ${shown} = ${answer}` : `${shown} ${sym} ? = ${answer}`;
+          return {a,b,answer:hidden,features:{},exprText,isReversePath:true};
+        }
+      }
+      return {a,b,answer,features:{}}; } },
   mult_11_19:{ label:'Multiplicação — por 11 a 19', op:'multiplicacao', prereqs:['mult_tabuada'], eloBounds:[950,1250],
     gen(t, profile){
       const aMin=11, aMax=11+Math.round(t*8);
@@ -184,8 +202,22 @@ const KC_DEFS = {
         x = Engine.pickRow(profile,'div_tabuada',lo,hiD);
         y = U.rint(lo,hiD);
       } else { x=U.rint(lo,hiD); y=U.rint(lo,hiD); }
-      const divisor=x, quotient=y;
-      return {a:divisor*quotient,b:divisor,answer:quotient,features:{exact:true}}; } },
+      const divisor=x, quotient=y, dividend=divisor*quotient;
+      // Inversão de baixa frequência (Reverse Path, Pilar 3): esconde o dividendo —
+      // "? ÷ divisor = quociente" — obrigando a multiplicar (divisor×quociente) pra achar
+      // o dividendo, uma recuperação em contexto de divisão em vez do caminho direto
+      // "dividendo ÷ divisor". a/b continuam sendo dividendo/divisor reais (dígitos
+      // rastreados normalmente); só a/exprText mudam o que é perguntado.
+      if(profile){
+        const fluent = Engine.stage(profile)!=='calibrating' && Engine.stage(profile)!=='acquisition';
+        const reverseChance = fluent ? REVERSE_PATH_FLUENT_RATE : REVERSE_PATH_BASE_RATE;
+        if(Math.random()<reverseChance){
+          const sym = OPS.divisao.symbol;
+          const exprText = `? ${sym} ${divisor} = ${quotient}`;
+          return {a:dividend,b:divisor,answer:dividend,features:{exact:true},exprText,isReversePath:true};
+        }
+      }
+      return {a:dividend,b:divisor,answer:quotient,features:{exact:true}}; } },
   div_2d:{ label:'Divisão — resultado de 2 dígitos', op:'divisao', prereqs:['div_tabuada','mult_11_19'], eloBounds:[1000,1350],
     gen(t){ const divisor=U.rint(2,2+Math.round(t*10)), quotient=U.rint(6,6+Math.round(t*14));
       return {a:divisor*quotient,b:divisor,answer:quotient,features:{exact:true}}; } },

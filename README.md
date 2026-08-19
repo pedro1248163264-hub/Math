@@ -50,9 +50,19 @@ A meta inicial de tempo de uma habilidade é 85% da mediana das oito respostas c
 
 O domínio e a passagem por revisão continuam exigindo evidência acumulada (não mudou): nas últimas 12 respostas pontuadas, pelo menos 90% de acerto, 75% dentro da meta e regularidade de tempo. Ao dominar uma habilidade, o app agenda revisões após 1, 3, 7, 14 e 30 dias. Cada revisão pede três respostas corretas; um erro remove o status de domínio, reduz a dificuldade e afrouxa a meta.
 
-Um erro digitado em menos de 350 ms (`IMPULSE_FLOOR`) é tratado como lapso motor (typo), não como falha de cálculo genuína — continua salvo no histórico, mas não entra nas contas de acerto/meta/domínio, no ajuste contínuo de dificuldade nem no peso por padrão.
+Um erro digitado em menos de 350 ms (`IMPULSE_FLOOR`) **ou** cujo padrão de dígitos aponta destreza de teclado — inverso do resultado (45 vs. 54) ou 1 dígito trocado na mesma posição (57 vs. 56), filtro Levenshtein-lite em `Engine.isTypoLapse()` — é tratado como lapso motor (typo), não como falha de cálculo genuína. Continua salvo no histórico, mas não entra nas contas de acerto/meta/domínio, no ajuste contínuo de dificuldade nem no peso por padrão.
 
 O tempo usado pelo motor é o tempo cognitivo: por padrão, vai da apresentação da conta até a primeira tecla digitada. Essa opção pode ser desligada para usar o tempo total até a confirmação. O prazo de resposta padrão é cancelado assim que a pessoa começa a digitar, evitando que uma resposta de vários dígitos expire no meio.
+
+### Fluência e memória de trabalho (pós-domínio)
+
+Estas três peças assumem que a base de fatos (o "o que é 7×8") já vem de fora do app (ex.: Anki) — o objetivo delas não é ensinar o fato, é forçar usá-lo sob pressão de tempo e memória. Nenhuma altera acerto/meta/domínio nem entra na cascata de dificuldade; são independentes do peso por padrão/dígito da seção anterior.
+
+- **Ocultação progressiva ("mastery flash"):** quando uma família já está *Mastered* (ou numa revisão de retenção — `Engine.stage()` retornando `'mastered'`/`'review_due'`), o enunciado fica visível por `MASTERY_FLASH_MS` (1,5 s) e depois borra (`UI.setMasteryBlur()`, reaproveitando o efeito CSS já usado para esconder a conta durante o TTS). Obriga reter os operandos de cabeça em vez de poder consultar a tela a qualquer momento. Tem um toggle em Ajustes (`masteryFlash`, ligado por padrão).
+- **Inversão de baixa frequência ("reverse path"):** só em `mult_tabuada`/`div_tabuada`. Em vez do caminho direto ("a × b = ?"), às vezes o enunciado esconde um operando — "? × 8 = 56" ou "? ÷ 8 = 7" — testando reconhecer o fato dentro de uma equação, não só recitá-lo na ordem treinada. Frequência baixa (`REVERSE_PATH_BASE_RATE`, 6%), mais alta (`REVERSE_PATH_FLUENT_RATE`, 10%) quando o perfil já não está mais calibrando/adquirindo — um proxy de "já é fluente no caminho direto" enquanto não existe um sinal mais fino por par específico (ver observação sobre o heatmap 10×10 abaixo). `spokenPhrase()` fala o `exprText` literal nesses itens, para o TTS não entregar o número escondido.
+- **Hint por padrão de erro ("andaime"):** o motor não ensina a técnica de graça — só depois de `PATTERN_HINT_STREAK` (3) erros **seguidos** no mesmo atributo/bucket já rastreado pelo peso por padrão (vai-um, empréstimo, grupo de %, casas decimais) é que `Engine.buildPatternHint()` monta uma dica tática pontual (ex.: para "52 − 18" errado 3x seguidas, "Tente 52 − 20 + 2"; para porcentagem, decomposição em torno de 10%). O contador zera nesse momento e em qualquer acerto, para a dica não repetir a cada erro novo.
+
+**Discutido e deixado de fora por ora:** um heatmap 10×10 por par específico (a,b) de `mult_tabuada`/`div_tabuada`, com prioridade de sorteio por tempo de reação da célula (Softmax). Isso é estruturalmente diferente do peso por dígito/linha acima (que existe justamente para *não* rastrear pares específicos — ver comentário em `KC_DEFS.mult_tabuada`) — fica para uma decisão de design própria antes de implementar.
 
 ### Sessões e dados
 

@@ -188,6 +188,7 @@ const UI = {
     addSwitch(t('sounds'), t('sounds_sub'), 'sounds');
     addSwitch(t('confirm_before_accept'), t('confirm_before_accept_sub'), 'confirmBeforeAccept');
     addSwitch(t('stop_clock'), t('stop_clock_sub'), 'stopClockOnFirstKey');
+    addSwitch(t('mastery_flash'), t('mastery_flash_sub'), 'masteryFlash');
   },
   buildAppSettings(){
     const root = document.getElementById('appSettingsList');
@@ -446,6 +447,8 @@ const UI = {
     this.renderMathQuestion(item, eqEl);
     this.updateAnswerDisplay('');
     document.getElementById('feedbackAnswer').textContent='';
+    const hintEl = document.getElementById('feedbackHint');
+    if(hintEl) hintEl.textContent='';
     const s = Store.data.settings;
     if(s.tts && TTS.supported()){
       const spoken = spokenPhrase(item, s.voiceLang);
@@ -473,9 +476,25 @@ const UI = {
   clearAnswerFeedback(){
     document.getElementById('answerDisplay').classList.remove('correct','wrong');
     document.getElementById('feedbackAnswer').textContent='';
+    const hintEl = document.getElementById('feedbackHint');
+    if(hintEl) hintEl.textContent='';
   },
   showCorrectAnswer(answer){
     document.getElementById('feedbackAnswer').textContent = t('answer_label')+': '+U.fmtNum(answer);
+  },
+  // Hint por padrão de erro (Andaime, Pilar 3): dica tática pontual, mostrada junto da
+  // resposta correta quando o motor decide que o padrão de erro insistiu o bastante.
+  showHint(text){
+    const hintEl = document.getElementById('feedbackHint');
+    if(hintEl) hintEl.textContent = text;
+  },
+  // Ocultação progressiva (Mastery Flash, Pilar 2): reaproveita o mesmo efeito visual de
+  // "hidden-eq" (já usado pra esconder a conta durante o TTS), só que acionado pelo timer
+  // de Session em vez da leitura por voz.
+  setMasteryBlur(active){
+    const eqEl = document.getElementById('equationText');
+    if(!eqEl) return;
+    eqEl.classList.toggle('mastery-blur', !!active);
   },
   pulseHistory:[],
   pushPulse(cls){

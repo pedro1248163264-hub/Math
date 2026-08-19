@@ -86,6 +86,37 @@ const CASCADE_BOOST = 0.5;
 const CALIBRATION_MIN_ITEMS = 4;
 const CALIBRATION_CONSISTENT_CV = 0.18;
 
+/* ---------- 2e. "CÂMARA DE HIPERGRAVIDADE" (revisão do motor, Pilares 1/2/3) ----------
+   Constantes dos três pilares implementados agora — ver README para a descrição completa.
+   O Pilar 1 (heatmap 10×10 por par específico, com Softmax por RT de célula) foi discutido
+   e fica de fora por ora; o que entra abaixo é: filtro de typo, ocultação progressiva
+   (mastery flash), inversão de baixa frequência e hint por padrão de erro (andaime). */
+// Filtro de typos (Levenshtein Lite, seç. Pilar 1): um erro cujo dígito(s) formam o
+// INVERSO do resultado (ex.: 45 vs 54) ou diferem em só 1 dígito na mesma posição (ex.:
+// 57 vs 56) é tratado como lapso motor — mesma categoria do IMPULSE_FLOOR (erro rápido
+// demais para ter sido raciocínio), só que detectado pelo padrão do erro em vez do tempo.
+// Continua salvo no histórico, mas não pune dificuldade/meta/domínio/peso de padrão.
+
+// Ocultação progressiva (Mastery Flash, seç. Pilar 2): quando a família já está Mastered
+// (ou em revisão de retenção), o enunciado fica visível por MASTERY_FLASH_MS antes de
+// borrar — força reter os operandos de cabeça (retentor visual-espacial) em vez de poder
+// consultar a tela a qualquer momento.
+const MASTERY_FLASH_MS = 1500;
+
+// Inversão de baixa frequência (Reverse Path, seç. Pilar 3): mult_tabuada/div_tabuada às
+// vezes viram "? × 8 = 56" / "? ÷ 8 = 7" em vez do caminho direto — testa reconhecer o
+// fato num contexto de equação, não só recitar na ordem treinada. Frequência baixa por
+// padrão; sobe quando o perfil já está fluente no caminho direto (proxy por estágio —
+// quando o heatmap por par entrar, pode virar um sinal mais fino de "viciado no direto").
+const REVERSE_PATH_BASE_RATE = 0.06;
+const REVERSE_PATH_FLUENT_RATE = 0.10;
+
+// Hint por padrão de erro (Andaime, seç. Pilar 3): não ensina a técnica de graça — só
+// depois de PATTERN_HINT_STREAK erros SEGUIDOS no mesmo atributo/bucket (o mesmo rastreado
+// pelo peso por padrão, seç. 3 do motor) é que uma dica tática pontual aparece; o contador
+// zera nesse momento e em qualquer acerto, para a dica não repetir a cada erro novo.
+const PATTERN_HINT_STREAK = 3;
+
 /* ---------- 2d. FAMÍLIAS COM VÍRGULA (decimais) ----------
    Cada família decimal tem uma família inteira "irmã" — mesma operação, mesma faixa de
    magnitude — usada como referência para medir o quanto a vírgula em si (e não a conta em

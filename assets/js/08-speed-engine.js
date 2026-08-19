@@ -34,7 +34,7 @@ const Engine = {
       const difficulty = prereqDiffs.length ? U.mean(prereqDiffs) : 0.3;
       profiles[key] = {key, calibration:[], baselineMs:baseline, targetMs:Math.round(baseline*0.85), difficulty, level:0, window:[], bestMs:null, lastPracticeAt:0,
         retentionPasses:0, reviewResults:[], masteredAt:0, nextReviewAt:0, lastReviewAt:0,
-        samplesInStage:0, patternWeights:{}, digitWeights:{}};
+        samplesInStage:0, patternWeights:{}, digitWeights:{}, patternErrorStreak:{}};
     }
     return profiles[key];
   },
@@ -72,8 +72,10 @@ const Engine = {
   },
   nudgePatternWeight(profile, item, correct, targetHit){
     const attrs = this.patternAttrs[item.key];
-    if(!attrs || !item.features) return;
+    if(!attrs || !item.features) return null;
     profile.patternWeights = profile.patternWeights || {};
+    profile.patternErrorStreak = profile.patternErrorStreak || {};
+    let hint = null;
     attrs.forEach(attr=>{
       const raw = item.features[attr];
       if(raw===undefined) return;
@@ -83,7 +85,52 @@ const Engine = {
       const good = correct && targetHit;
       const next = good ? cur - PATTERN_WEIGHT_NUDGE : cur + PATTERN_WEIGHT_NUDGE;
       profile.patternWeights[wKey] = U.clamp(next, PATTERN_WEIGHT_MIN, PATTERN_WEIGHT_MAX);
+      // ---------- Hint por padrão de erro (Andaime, Pilar 3) ----------
+      // Conta erros SEGUIDOS no mesmo atributo/bucket; zera em qualquer acerto. Ao bater
+      // PATTERN_HINT_STREAK, monta a dica (se houver uma pro atributo) e zera de novo —
+      // assim ela aparece só quando o padrão insiste, nunca em toda resposta errada.
+      if(correct){
+        profile.patternErrorStreak[wKey] = 0;
+      } else {
+        profile.patternErrorStreak[wKey] = (profile.patternErrorStreak[wKey]||0) + 1;
+        if(profile.patternErrorStreak[wKey] >= PATTERN_HINT_STREAK){
+          const built = this.buildPatternHint(attr, item);
+          if(built){ hint = built; profile.patternErrorStreak[wKey] = 0; }
+        }
+      }
     });
+    return hint;
+  },
+  // Estratégia de compensação por 10 (mesma lógica para vai-um e empréstimo — só muda o
+  // sinal): arredonda b para a dezena mais próxima acima e devolve o ajuste, pra virar
+  // "a ± bRound ∓ diff" — ex.: 52−18 → "Tente 52 − 20 + 2"; 47+38 → "Tente 47 + 40 − 2".
+  buildPatternHint(attr, item){
+    if(attr==='borrows'){
+      const a=item.a, b=item.b, bRound=Math.ceil(b/10)*10, diff=bRound-b;
+      if(diff<=0 || diff>=10) return null;
+      return tf('hint_borrow', {a, bRound, diff});
+    }
+    if(attr==='carries'){
+      const a=item.a, b=item.b, bRound=Math.ceil(b/10)*10, diff=bRound-b;
+      if(diff<=0 || diff>=10) return null;
+      return tf('hint_carry', {a, bRound, diff});
+    }
+    if(attr==='pct') return this.pctHint(item.a, item.b);
+    if(attr==='decimalPlaces') return t('hint_decimal');
+    return null;
+  },
+  // Dica de porcentagem: sempre ancora em "10% é só mover a vírgula" (Engine.pctHint usa
+  // item.a=pct, item.b=base — mesma convenção dos geradores de pct_*), com atalhos pros
+  // casos redondos (metade/quarto/três-quartos) e um fallback genérico pros valores ímpares.
+  pctHint(pct, base){
+    const ten = base/10;
+    if(pct===10) return tf('hint_pct_ten', {base, ten});
+    if(pct===50) return tf('hint_pct_half', {base});
+    if(pct===25) return tf('hint_pct_quarter', {base});
+    if(pct===75) return tf('hint_pct_three_quarter', {base});
+    if(pct===5) return tf('hint_pct_five', {base, ten, half:ten/2});
+    if(pct%10===0) return tf('hint_pct_tens', {pct, base, ten, mult:pct/10});
+    return tf('hint_pct_generic', {pct, base, ten});
   },
   // ---------- Peso por dígito/linha (substitui os "fatos fracos" da tabuada) ----------
   // Em vez de rastrear pares específicos (ex.: 7×8 — decoreba de resultado pronto), o motor
@@ -163,6 +210,26 @@ const Engine = {
     const w=this.scoredWindow(profile), correct=w.filter(x=>x.correct).map(x=>x.ms);
     return w.length>=MASTERY_MIN_ITEMS && correct.length>=MASTERY_MIN_ITEMS*MASTERY_MIN_ACC &&
       this.recentAccuracy(profile)>=MASTERY_MIN_ACC && this.targetRate(profile)>=MASTERY_MIN_TARGET_RATE && this.cv(correct)<=0.35;
+  },
+  // ---------- Filtro de typos (Levenshtein Lite, Pilar 1) ----------
+  // Compara só a sequência de dígitos (sinal e separador decimal fora): se o que foi
+  // digitado é o INVERSO da resposta (45 vs 54) ou difere em exatamente 1 dígito na mesma
+  // posição (57 vs 56 — tecla vizinha), é lapso motor, não erro de cálculo. Mesmo efeito do
+  // IMPULSE_FLOOR (não pune dificuldade/meta/domínio/peso de padrão), só que pelo padrão do
+  // erro em vez do tempo de resposta.
+  isTypoLapse(typedRaw, answer){
+    if(typedRaw==null) return false;
+    const typedNorm = String(typedRaw).replace(',', '.');
+    if(!typedNorm.length) return false;
+    const typedNum = +typedNorm;
+    if(!Number.isFinite(typedNum)) return false;
+    const digitsOf = v => String(Math.abs(v)).replace('.', '').replace(/^0+(?=\d)/, '');
+    const a = digitsOf(answer), b = digitsOf(typedNum);
+    if(a.length < 2 || a.length !== b.length) return false;
+    if(b === a.split('').reverse().join('')) return true;
+    let diff = 0;
+    for(let i=0; i<a.length; i++) if(a[i]!==b[i]) diff++;
+    return diff===1;
   },
   isReviewDue(profile, now=Date.now()){
     return !!(profile.masteredAt && profile.nextReviewAt && now>=profile.nextReviewAt);
@@ -283,12 +350,17 @@ const Engine = {
     this.recentKeys.push(key); if(this.recentKeys.length>ANTI_CLUMP_WINDOW) this.recentKeys.shift();
     this.itemCounter=(this.itemCounter||0)+1;
     const opDef=OPS[def.op], targetMs=profile.targetMs||this.defaultBaseline(def.op);
+    // Ocultação progressiva (Mastery Flash, Pilar 2): só entra quando a família já está
+    // Mastered (ou em revisão de retenção — ainda "mastered" pra esse fim) e a opção está
+    // ligada em Ajustes. A UI (Session/13-ui.js) decide o timing exato de quando borrar.
+    const stg = this.stage(profile);
+    const isMasteredFlash = !!Store.data.settings.masteryFlash && (stg==='mastered' || stg==='review_due');
     return {op:def.op, a:gen.a, b:gen.b, answer:gen.answer, features:gen.features, key,
       kcLabel:def.label, timeoutMs:this.computeTimeoutMs(profile, targetMs), targetMs,
       symbol:opDef.symbol, label:opDef.label, isCalibration:!!meta.isCalibration, isReview:!!meta.isReview,
       exprText:gen.exprText, c:gen.c, d:gen.d, innerOp:gen.innerOp, outerOp:gen.outerOp,
       leftOp:gen.leftOp, rightOp:gen.rightOp, midOp:gen.midOp, terms:gen.terms, ops:gen.ops,
-      isEquation:!!gen.isEquation };
+      isEquation:!!gen.isEquation, isReversePath:!!gen.isReversePath, isMasteredFlash };
   },
   // Prazo de resposta (seç. 2 da revisão): no modo Ultimate, targetMs × multiplicador por
   // fase, com piso de segurança — substitui o segundo fixo global só nesse modo. Nos
@@ -301,14 +373,17 @@ const Engine = {
     const mult=ULTIMATE_TIMEOUT_MULT[stage] || ULTIMATE_TIMEOUT_MULT.acquisition;
     return Math.max(ULTIMATE_TIMEOUT_FLOOR_MS, Math.round(targetMs*mult));
   },
-  registerResult(item, cognitiveMs, correct, timedOut){
+  registerResult(item, cognitiveMs, correct, timedOut, typedRaw){
     const p=this.profile(item.key), now=Date.now();
     const targetHit=!!(correct && cognitiveMs<=item.targetMs && !item.isCalibration);
-    // Lapso motor (seç. 9/IMPULSE_FLOOR): um erro digitado rápido demais para ter sido
-    // raciocínio real (ex.: typo) ainda fica salvo no histórico — mas não conta para
-    // acerto/meta/domínio, dificuldade contínua ou peso de padrão. Não tem relação com o
-    // tipo do erro mostrado na sessão (etype continua 'erro' normalmente).
-    const isLapse = !item.isCalibration && !correct && !timedOut && cognitiveMs < IMPULSE_FLOOR;
+    // Lapso motor (seç. 9/IMPULSE_FLOOR + filtro de typo, Pilar 1): um erro digitado rápido
+    // demais pra ter sido raciocínio real (tempo) OU cujo padrão de dígitos é claramente um
+    // erro de tecla (inverso do resultado, ou 1 dígito errado no mesmo tamanho) ainda fica
+    // salvo no histórico — mas não conta para acerto/meta/domínio, dificuldade contínua ou
+    // peso de padrão. Não tem relação com o tipo do erro mostrado na sessão (etype continua
+    // 'erro' normalmente).
+    const isLapse = !item.isCalibration && !correct && !timedOut &&
+      (cognitiveMs < IMPULSE_FLOOR || this.isTypoLapse(typedRaw, item.answer));
     const result={ms:cognitiveMs, correct:!!correct, targetHit, calibration:!!item.isCalibration, lapse:isLapse, at:now};
     p.window.push(result); if(p.window.length>30) p.window.shift();
     if(item.isCalibration && correct) p.calibration.push(cognitiveMs);
@@ -348,11 +423,14 @@ const Engine = {
       }
     }
     // Peso por padrão (seç. 3): só famílias com atributo categórico mapeado em
-    // patternAttrs; nunca expõe nada em tela, só influencia a próxima geração.
+    // patternAttrs; nunca expõe nada em tela, só influencia a próxima geração — exceto o
+    // hint por padrão de erro (Andaime, Pilar 3), que É mostrado, mas só ao bater a
+    // sequência de erros (PATTERN_HINT_STREAK).
     // Peso por dígito/linha: mesma ideia para dígitos (2–9 / 11–19) — mede a dificuldade
     // em "multiplicar por 7", não a decoreba do par 7×8. Interno, não exposto em tela.
+    let hint = null;
     if(!item.isCalibration && !isLapse){
-      this.nudgePatternWeight(p, item, correct, targetHit);
+      hint = this.nudgePatternWeight(p, item, correct, targetHit);
       const track = this.digitTrack[item.key];
       if(track) this.nudgeDigits(p, item.key, track(item), correct, targetHit);
     }
@@ -383,9 +461,9 @@ const Engine = {
     if(correct && !item.isCalibration && accuracy>=0.85 && (!p.bestMs || cognitiveMs<p.bestMs)) p.bestMs=cognitiveMs;
     p.lastPracticeAt=now;
     Store.save();
-    if(timedOut) return {etype:'abandono', targetHit:false};
-    if(!correct) return {etype:'erro', targetHit:false};
-    return {etype:targetHit?'meta':'lento_correto', targetHit};
+    if(timedOut) return {etype:'abandono', targetHit:false, hint};
+    if(!correct) return {etype:'erro', targetHit:false, hint};
+    return {etype:targetHit?'meta':'lento_correto', targetHit, hint:null};
   }
 };
 

@@ -27,6 +27,7 @@ const Session = {
   records:[],           // {op,key,ms,cognitiveMs,motorMs,correct,etype,kcLabel,isReview,isAcquisition}
   timerHandle:null, endsAt:0, phase:'work', cyclesLeft:0,
   restHandle:null, itemTimeoutHandle:null, itemDeadline:null, nextQuestionHandle:null,
+  masteryBlurHandle:null,       // Mastery Flash (Pilar 2): agenda o blur do enunciado
   answering:false, inputLocked:false, phaseEndPending:false,
   state:'aquecimento',  // aquecimento | fluxo | fadiga | frustracao (seç. 13)
   touchedKcs:new Set(),
@@ -58,6 +59,7 @@ const Session = {
     this.mode = s.mode;
     clearInterval(this.timerHandle); clearInterval(this.restHandle);
     clearTimeout(this.itemTimeoutHandle); clearTimeout(this.nextQuestionHandle); clearTimeout(this._ultimateResumeHandle);
+    clearTimeout(this.masteryBlurHandle);
     this.records = [];
     this.answering = false;
     this.phaseEndPending = false;
@@ -268,6 +270,18 @@ const Session = {
       // Se o bloco terminou enquanto a voz ainda lia a conta, estende o relógio até o
       // prazo da conta para o anel acompanhar a espera antes do descanso.
       if(this.phaseEndPending && this.itemDeadline > this.endsAt) this.endsAt = this.itemDeadline;
+      // Ocultação progressiva (Mastery Flash, Pilar 2): o relógio de exibição só começa a
+      // contar quando a conta fica de fato visível/respondível (mesmo ponto que libera o
+      // input) — item.isMasteredFlash já veio decidido do Engine (família Mastered/revisão
+      // + opção ligada em Ajustes).
+      clearTimeout(this.masteryBlurHandle);
+      UI.setMasteryBlur(false);
+      if(item.isMasteredFlash){
+        this.masteryBlurHandle = setTimeout(()=>{
+          if(!this.active || this.paused || this.current!==item) return;
+          UI.setMasteryBlur(true);
+        }, MASTERY_FLASH_MS);
+      }
     });
   },
   handleTimeout(){
@@ -333,9 +347,11 @@ const Session = {
     }
     this.answering = true;
     clearTimeout(this.itemTimeoutHandle);
+    clearTimeout(this.masteryBlurHandle);
     this.itemDeadline = null;
     const eqEl = document.getElementById('equationText');
     if(eqEl) eqEl.classList.remove('hidden-eq');
+    UI.setMasteryBlur(false);
     const item = this.current;
     const now = U.now();
     const totalMs = timedOut ? item.timeoutMs : (now - this.qShownAt);
@@ -356,7 +372,7 @@ const Session = {
     // independente de qual dos dois a tecla decimal inseriu (idioma do app).
     const typedNormalized = this.typed.replace(',', '.');
     const correct = !timedOut && this.typed.length>0 && (+typedNormalized === item.answer);
-    const result = Engine.registerResult(item, effectiveMs, correct, !!timedOut);
+    const result = Engine.registerResult(item, effectiveMs, correct, !!timedOut, this.typed);
     this.touchedKcs.add(item.key);
     this.records.push({op:item.op, key:item.key, kcLabel:item.kcLabel, ms:effectiveMs, totalMs, cognitiveMs, motorMs,
       correct, etype:result.etype, targetHit:result.targetHit, isCalibration:item.isCalibration, targetMs:item.targetMs});
@@ -364,7 +380,12 @@ const Session = {
     UI.flashAnswer(correct);
     UI.pushPulse(classify(result));
     if(correct){ Sound.correct(); Haptics.correct(); }
-    else { Sound.wrong(); Haptics.wrong(); UI.showCorrectAnswer(item.answer); }
+    else {
+      Sound.wrong(); Haptics.wrong(); UI.showCorrectAnswer(item.answer);
+      // Hint por padrão de erro (Andaime, Pilar 3): só vem preenchido quando a mesma
+      // combinação atributo/bucket bateu PATTERN_HINT_STREAK erros seguidos.
+      if(result.hint) UI.showHint(result.hint);
+    }
     const gap = Store.data.settings.gapMs;
     const holdError = correct ? 0 : Store.data.settings.correctAnswerShowMs;
     this.nextQuestionHandle = setTimeout(()=>{
@@ -379,6 +400,7 @@ const Session = {
     this.phaseEndPending = false;
     clearInterval(this.timerHandle); clearInterval(this.restHandle);
     clearTimeout(this.itemTimeoutHandle); clearTimeout(this.nextQuestionHandle); clearTimeout(this._ultimateResumeHandle);
+    clearTimeout(this.masteryBlurHandle);
     this._saveSession();
   },
   // Salva o resumo da sessão, atualiza o recorde de sequência e mostra a tela de
@@ -404,6 +426,7 @@ const Session = {
     this.phaseEndPending = false;
     clearInterval(this.timerHandle); clearInterval(this.restHandle);
     clearTimeout(this.itemTimeoutHandle); clearTimeout(this.nextQuestionHandle); clearTimeout(this._ultimateResumeHandle);
+    clearTimeout(this.masteryBlurHandle);
     try{ speechSynthesis && speechSynthesis.cancel && speechSynthesis.cancel(); }catch(e){}
     document.getElementById('btnPause').textContent = '⏸';
     if(this.records.length){
