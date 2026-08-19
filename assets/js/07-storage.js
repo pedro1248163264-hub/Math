@@ -119,6 +119,9 @@ const Store = {
         // (mesma chave usada em patternWeights) — usado só para decidir quando mostrar uma
         // dica tática (PATTERN_HINT_STREAK), nunca persiste nada visível em tela.
         p.patternErrorStreak=(p.patternErrorStreak&&typeof p.patternErrorStreak==='object')?p.patternErrorStreak:{};
+        // hotPairs: dicionário esparso "a_b" -> {rtEwma, n, streakGood}. Só existe pra pares que
+        // já dispararam o gatilho — a maioria das combinações nunca aparece aqui.
+        p.hotPairs=(p.hotPairs&&typeof p.hotPairs==='object')?p.hotPairs:{};
       });
       if(!Array.isArray(this.data.settings.selectedSkills) || !this.data.settings.selectedSkills.length){
         this.data.settings.selectedSkills = [...DEFAULT_SELECTED_SKILLS];

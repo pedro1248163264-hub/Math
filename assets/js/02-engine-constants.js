@@ -117,6 +117,19 @@ const REVERSE_PATH_FLUENT_RATE = 0.10;
 // zera nesse momento e em qualquer acerto, para a dica não repetir a cada erro novo.
 const PATTERN_HINT_STREAK = 3;
 
+// hotPairs (pontos cegos silenciosos dentro do dígito, complemento ao digitWeights):
+// HOTPAIR_MIN_SAMPLES = amostras mínimas do par antes de poder virar "quente" (evita
+// decidir com 1-2 pontos ruidosos). HOTPAIR_RT_RATIO = quanto o RT do par precisa estar
+// acima do RT médio do dígito pra disparar. HOTPAIR_INJECT_CHANCE = probabilidade de,
+// tendo um par quente pendente no dígito sorteado, forçar esse par em vez de sortear o
+// segundo fator livre. HOTPAIR_CLEAR_STREAK = acertos seguidos dentro da meta pra apagar
+// o par da lista (nunca fica preso pra sempre).
+const HOTPAIR_MIN_SAMPLES = 3;
+const HOTPAIR_RT_RATIO = 1.45;
+const HOTPAIR_INJECT_CHANCE = 0.25;
+const HOTPAIR_CLEAR_STREAK = 2;
+const HOTPAIR_EWMA_ALPHA = 0.3; // suavização do RT por par, mesmo estilo do resto do motor
+
 /* ---------- 2d. FAMÍLIAS COM VÍRGULA (decimais) ----------
    Cada família decimal tem uma família inteira "irmã" — mesma operação, mesma faixa de
    magnitude — usada como referência para medir o quanto a vírgula em si (e não a conta em

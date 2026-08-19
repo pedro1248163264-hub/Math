@@ -156,7 +156,8 @@ const KC_DEFS = {
       let a,b;
       if(profile){
         a = Engine.pickRow(profile,'mult_tabuada',lo,hiD);
-        b = U.rint(lo,hiD);
+        const hotB = Engine.pickHotPartner(a, lo, hiD);
+        b = (hotB!=null && Math.random() < HOTPAIR_INJECT_CHANCE) ? hotB : U.rint(lo,hiD);
       } else { a=U.rint(lo,hiD); b=U.rint(lo,hiD); if(Math.random()<0.5)[a,b]=[b,a]; }
       const answer = a*b;
       // Inversão de baixa frequência (Reverse Path, Pilar 3, stress test): em vez de "a×b=?",
@@ -200,7 +201,8 @@ const KC_DEFS = {
       let x,y;
       if(profile){
         x = Engine.pickRow(profile,'div_tabuada',lo,hiD);
-        y = U.rint(lo,hiD);
+        const hotY = Engine.pickHotPartner(x, lo, hiD);
+        y = (hotY!=null && Math.random() < HOTPAIR_INJECT_CHANCE) ? hotY : U.rint(lo,hiD);
       } else { x=U.rint(lo,hiD); y=U.rint(lo,hiD); }
       const divisor=x, quotient=y, dividend=divisor*quotient;
       // Inversão de baixa frequência (Reverse Path, Pilar 3): esconde o dividendo —

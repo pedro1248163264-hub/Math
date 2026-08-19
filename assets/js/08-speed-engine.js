@@ -34,7 +34,7 @@ const Engine = {
       const difficulty = prereqDiffs.length ? U.mean(prereqDiffs) : 0.3;
       profiles[key] = {key, calibration:[], baselineMs:baseline, targetMs:Math.round(baseline*0.85), difficulty, level:0, window:[], bestMs:null, lastPracticeAt:0,
         retentionPasses:0, reviewResults:[], masteredAt:0, nextReviewAt:0, lastReviewAt:0,
-        samplesInStage:0, patternWeights:{}, digitWeights:{}, patternErrorStreak:{}};
+        samplesInStage:0, patternWeights:{}, digitWeights:{}, patternErrorStreak:{}, hotPairs:{}};
     }
     return profiles[key];
   },
@@ -169,6 +169,48 @@ const Engine = {
       const next = (correct && targetHit) ? cur - PATTERN_WEIGHT_NUDGE : cur + PATTERN_WEIGHT_NUDGE;
       profile.digitWeights[wKey] = U.clamp(next, PATTERN_WEIGHT_MIN, PATTERN_WEIGHT_MAX);
     });
+  },
+  // ---------- hotPairs: ponto cego silencioso dentro do dígito ----------
+  // Só mult_tabuada/div_tabuada têm essa granularidade fina fazendo sentido (fato único,
+  // a×b comutativo). Roda fora do bloco de calibração/lapso, igual nudgeDigits.
+  registerPairRt(profile, item, cognitiveMs, correct, targetHit){
+    if(item.key!=='mult_tabuada' && item.key!=='div_tabuada') return;
+    if(item.isReversePath) return; // reverse path tem dinâmica de RT diferente — não misturar
+    const lo = Math.min(item.a, item.b), hi = Math.max(item.a, item.b);
+    const pairKey = lo+'_'+hi;
+    profile.hotPairs = profile.hotPairs || {};
+    const entry = profile.hotPairs[pairKey];
+    if(correct){
+      const prevRt = entry ? entry.rtEwma : cognitiveMs;
+      const rtEwma = prevRt + HOTPAIR_EWMA_ALPHA*(cognitiveMs - prevRt);
+      const n = (entry ? entry.n : 0) + 1;
+      const streakGood = targetHit ? (entry ? entry.streakGood : 0) + 1 : 0;
+      if(entry){
+        entry.rtEwma = rtEwma; entry.n = n; entry.streakGood = streakGood;
+        if(streakGood >= HOTPAIR_CLEAR_STREAK) delete profile.hotPairs[pairKey];
+      } else if(n >= HOTPAIR_MIN_SAMPLES && rtEwma > profile.targetMs*HOTPAIR_RT_RATIO){
+        profile.hotPairs[pairKey] = {rtEwma, n, streakGood};
+      }
+    }
+  },
+  // Procura, entre os pares quentes do perfil mult_tabuada, um cujo par envolva o dígito
+  // `d` (dentro da faixa atual do gerador — se o range mudou e o parceiro ficou fora,
+  // ignora). Se houver mais de um, pega o mais "quente" (rtEwma mais alto relativo ao alvo).
+  // A fonte de verdade é SEMPRE Engine.profile('mult_tabuada').hotPairs — quem chama não
+  // importa; isso garante que a regra "escrita única" não depende de coincidência de chamada.
+  pickHotPartner(d, lo, hi){
+    const hp = (Engine.profile('mult_tabuada').hotPairs)||{};
+    if(!hp) return null;
+    let best=null, bestScore=-Infinity;
+    Object.keys(hp).forEach(pairKey=>{
+      const [x,y] = pairKey.split('_').map(Number);
+      let partner=null;
+      if(x===d) partner=y; else if(y===d) partner=x;
+      if(partner==null || partner<lo || partner>hi) return;
+      const score = hp[pairKey].rtEwma;
+      if(score>bestScore){ bestScore=score; best=partner; }
+    });
+    return best;
   },
   // ---------- Comparação decimal vs. inteiro (dado interno, não exposto em tela) ----------
   // Mede o quanto a vírgula em si pesa: compara tempo/acerto da família decimal com os da
@@ -433,6 +475,7 @@ const Engine = {
       hint = this.nudgePatternWeight(p, item, correct, targetHit);
       const track = this.digitTrack[item.key];
       if(track) this.nudgeDigits(p, item.key, track(item), correct, targetHit);
+      this.registerPairRt(p, item, cognitiveMs, correct, targetHit);
     }
     // Retry pós-erro (modelo C, seç. 2): um erro real (não lapso, não calibração) agenda
     // a família para reaparecer dentro de RETRY_MIN_GAP–RETRY_MAX_GAP itens.
