@@ -254,6 +254,65 @@ const KC_DEFS = {
       let result=pct*base/100, tries=0; while(!Number.isInteger(result)&&tries<10){ base+=5; result=pct*base/100; tries++; }
       base=Math.round(base); return {a:pct,b:base,answer:Math.round(pct*base/100),features:{pct}}; } },
 
+  // ---- Porcentagens derivadas (seç. "Porcentagens derivadas") ----
+  // Quatro variações que reutilizam o cálculo "p% de base" das famílias pct_* acima, cada
+  // uma virando habilidade própria (Elo/meta/calibração separados). A exibição e o TTS são
+  // compostos por 13-ui/09-feedback a partir dos campos a/b + op — sem exprText — para
+  // continuar funcionando nos dois idiomas; o dedup do motor usa a+'_'+b.
+  // pct_reverso ("20 é quantos % de 80?"): a resposta É a porcentagem — raciocínio inverso
+  // (parte÷base), por isso div_tabuada como pré-requisito junto de pct_basico.
+  pct_reverso:{ label:'Porcentagem — "é quantos % de"', op:'porcentagem_inversa', prereqs:['pct_basico','div_tabuada'], eloBounds:[950,1250],
+    gen(t, profile){
+      const opts = t<0.5 ? [10,20,50,25] : [10,20,50,25,5,15,75];
+      const pct = profile ? Engine.weightedBucket(profile,'pct',opts) : U.choice(opts);
+      let base=U.rint(2,2+Math.round(t*18))*10;
+      let part=pct*base/100, tries=0;
+      while(!Number.isInteger(part)&&tries<10){ base+=10; part=pct*base/100; tries++; }
+      base=Math.round(base); part=Math.round(base*pct/100);
+      return {a:part,b:base,answer:pct,features:{pct}}; } },
+  // pct_adicao / pct_subtracao ("80 ± 15% = ?"): calcula p% da base e soma/subtrai —
+  // aumentos e descontos. Mesma garantia de exatidão dos pct_* (ajusta a base até o
+  // acréscimo ser inteiro); p ≤ 75 mantém o resultado do desconto sempre positivo.
+  pct_adicao:{ label:'Porcentagem — acréscimo (+%)', op:'porcentagem_acrescimo', prereqs:['pct_intermediario'], eloBounds:[1050,1350],
+    gen(t, profile){
+      const opts = t<0.4 ? [10,20,50,25] : [10,20,50,25,15,5,30];
+      const pct = profile ? Engine.weightedBucket(profile,'pct',opts) : U.choice(opts);
+      let base=U.rint(2,2+Math.round(t*56))*10;
+      let inc=pct*base/100, tries=0;
+      while(!Number.isInteger(inc)&&tries<10){ base+=10; inc=pct*base/100; tries++; }
+      base=Math.round(base); inc=Math.round(base*pct/100);
+      return {a:base,b:pct,answer:base+inc,features:{pct}}; } },
+  pct_subtracao:{ label:'Porcentagem — desconto (−%)', op:'porcentagem_desconto', prereqs:['pct_intermediario'], eloBounds:[1050,1350],
+    gen(t, profile){
+      const opts = t<0.4 ? [10,20,50,25] : [10,20,50,25,15,5,30];
+      const pct = profile ? Engine.weightedBucket(profile,'pct',opts) : U.choice(opts);
+      let base=U.rint(2,2+Math.round(t*56))*10;
+      let dec=pct*base/100, tries=0;
+      while(!Number.isInteger(dec)&&tries<10){ base+=10; dec=pct*base/100; tries++; }
+      base=Math.round(base); dec=Math.round(base*pct/100);
+      return {a:base,b:pct,answer:base-dec,features:{pct}}; } },
+  // pct_duplo ("2% de 5% = ?%"): percentual de percentual. Única das quatro com resposta
+  // decimal — em PONTOS PERCENTUAIS (2% de 5% = 0,1%), não na fração bruta 0,001 — então
+  // marca decimal:true e features.decimalPlaces (1 ou 2 casas) para herdar o teclado de
+  // vírgula e a confirmação manual das famílias com vírgula. Como p1×p2 é inteiro e se
+  // divide por 100, o resultado tem no máximo 2 casas — nunca dízima. O retry só evita
+  // produto múltiplo de 100 (que daria resposta inteira, fora do propósito da família).
+  pct_duplo:{ label:'Porcentagem — % de %', op:'porcentagem_dupla', prereqs:['pct_intermediario','mult_decimal'], eloBounds:[1150,1450], decimal:true,
+    gen(t, profile){
+      const p1Opts=[50,25,20,10,30];
+      const p2Opts = t<0.5 ? [10,20,50,25] : [10,20,50,25,5,15,30];
+      const p1 = profile ? Engine.weightedBucket(profile,'pct',p1Opts) : U.choice(p1Opts);
+      let p2 = profile ? Engine.weightedBucket(profile,'pct',p2Opts) : U.choice(p2Opts);
+      let prod=p1*p2, tries=0;
+      while(prod%100===0 && tries<10){ p2 = profile ? Engine.weightedBucket(profile,'pct',p2Opts) : U.choice(p2Opts); prod=p1*p2; tries++; }
+      // Garantia final: nunca sai resposta inteira. Incrementos de 1 em p2 bastam — em
+      // qualquer janela de 10 valores consecutivos existe um cujo produto com p1 (≤50)
+      // não é múltiplo de 100.
+      for(let k=0; prod%100===0 && k<10; k++){ p2+=1; prod=p1*p2; }
+      const value=prod/100;
+      const dp = prod%10===0 ? 1 : 2;
+      return {a:p1,b:p2,answer:value,features:{decimalPlaces:dp,pct:p2}}; } },
+
   // Expressões com parênteses: (a ⊕ b) ⊗ c — ensina precedência/ordem de operações,
   // já que o parêntese força o cálculo interno antes do externo.
   expr_par_simples:{ label:'Expressões — parênteses simples', op:'expressao', prereqs:['soma_2d_cc','mult_tabuada'], eloBounds:[1050,1400],
@@ -424,6 +483,10 @@ const KC_LABELS_EN = {
   pct_basico:'Percentage — basic',
   pct_intermediario:'Percentage — intermediate',
   pct_avancado:'Percentage — advanced',
+  pct_reverso:'Percentage — "is what % of"',
+  pct_adicao:'Percentage — markup (+%)',
+  pct_subtracao:'Percentage — discount (−%)',
+  pct_duplo:'Percentage — % of %',
   expr_par_simples:'Expressions — simple parentheses',
   expr_par_dupla:'Expressions — double parentheses',
   fracao_simples:'Fractions — simple operations',
@@ -441,6 +504,7 @@ function kcLabel(key, fallback){
 const KC_ORDER = ['soma_1d','sub_1d','mult_tabuada','div_tabuada','pct_basico',
   'soma_2d_sc','sub_2d_se','mult_11_19','div_2d','pct_intermediario',
   'soma_2d_cc','sub_2d_ce','mult_2d','div_3d','pct_avancado',
+  'pct_reverso','pct_adicao','pct_subtracao','pct_duplo',
   'soma_decimal','sub_decimal','mult_decimal','div_decimal',
   'soma_3_4d','sub_3_4d','expr_par_simples','expr_par_dupla',
   'fracao_simples','potencia_basica','radical_quad','expr_encadeada','equacao_linear','log_basico'];

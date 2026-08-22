@@ -49,6 +49,7 @@ const Engine = {
     soma_2d_cc:['carries'], soma_3_4d:['carries'],
     sub_2d_ce:['borrows'], sub_3_4d:['borrows'],
     pct_basico:['pct'], pct_intermediario:['pct'], pct_avancado:['pct'],
+    pct_reverso:['pct'], pct_adicao:['pct'], pct_subtracao:['pct'], pct_duplo:['pct'],
     soma_decimal:['decimalPlaces'], sub_decimal:['decimalPlaces'],
     mult_decimal:['decimalPlaces'], div_decimal:['decimalPlaces']
   },
@@ -115,23 +116,32 @@ const Engine = {
       if(diff<=0 || diff>=10) return null;
       return tf('hint_carry', {a, bRound, diff});
     }
-    if(attr==='pct') return this.pctHint(item.a, item.b);
+    if(attr==='pct') return this.pctHintFor(item);
     if(attr==='decimalPlaces') return t('hint_decimal');
     return null;
   },
-  // Dica de porcentagem: sempre ancora em "10% é só mover a vírgula" (Engine.pctHint usa
-  // item.a=pct, item.b=base — mesma convenção dos geradores de pct_*), com atalhos pros
-  // casos redondos (metade/quarto/três-quartos) e um fallback genérico pros valores ímpares.
-  pctHint(pct, base){
-    const ten = base/10;
-    if(pct===10) return tf('hint_pct_ten', {base, ten});
-    if(pct===50) return tf('hint_pct_half', {base});
-    if(pct===25) return tf('hint_pct_quarter', {base});
-    if(pct===75) return tf('hint_pct_three_quarter', {base});
-    if(pct===5) return tf('hint_pct_five', {base, ten, half:ten/2});
-    if(pct%10===0) return tf('hint_pct_tens', {pct, base, ten, mult:pct/10});
-    return tf('hint_pct_generic', {pct, base, ten});
-  },
+    // Dica de porcentagem: sempre ancora em "10% é só mover a vírgula" (Engine.pctHint usa
+    // item.a=pct, item.b=base — mesma convenção dos geradores de pct_*), com atalhos pros
+    // casos redondos (metade/quarto/três-quartos) e um fallback genérico pros valores ímpares.
+    // Nas famílias derivadas a convenção a/b muda (a=base nas de ±%, a=parte na inversa, e a
+    // taxa fica em features.pct) — usa a base certa de cada enunciado; no pct_duplo a dica é
+    // o método em si (transformar em multiplicação), não a decomposição por 10%.
+    pctHint(pct, base){
+      const ten = base/10;
+      if(pct===10) return tf('hint_pct_ten', {base, ten});
+      if(pct===50) return tf('hint_pct_half', {base});
+      if(pct===25) return tf('hint_pct_quarter', {base});
+      if(pct===75) return tf('hint_pct_three_quarter', {base});
+      if(pct===5) return tf('hint_pct_five', {base, ten, half:ten/2});
+      if(pct%10===0) return tf('hint_pct_tens', {pct, base, ten, mult:pct/10});
+      return tf('hint_pct_generic', {pct, base, ten});
+    },
+    pctHintFor(item){
+      if(item.key==='pct_reverso') return this.pctHint(item.features.pct, item.b);
+      if(item.key==='pct_adicao'||item.key==='pct_subtracao') return this.pctHint(item.features.pct, item.a);
+      if(item.key==='pct_duplo') return tf('hint_pct_duplo', {a:item.a, b:item.b});
+      return this.pctHint(item.a, item.b);
+    },
   // ---------- Peso por dígito/linha (substitui os "fatos fracos" da tabuada) ----------
   // Em vez de rastrear pares específicos (ex.: 7×8 — decoreba de resultado pronto), o motor
   // rastreia a dificuldade por DÍGITO/linha (ex.: multiplicar por 7). Onde a pessoa erra ou

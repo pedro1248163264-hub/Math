@@ -73,7 +73,8 @@ const I18N = {
     hint_pct_five:'5% é a metade de 10%: 10% de {base} é {ten}, então 5% é {half}.',
     hint_pct_tens:'{pct}% é {mult} vezes 10%: 10% de {base} é {ten}, então {pct}% é {ten}×{mult}.',
     hint_pct_generic:'Tente por partes: 10% de {base} é {ten}; ajuste esse valor até chegar em {pct}%.',
-    pct_of:'de',
+    hint_pct_duplo:'Transforme em multiplicação: {a}% de {b}% = ({a} × {b}) ÷ 100, já em %.',
+    pct_of:'de', pct_is_what_pct_of:'é quantos % de',
     date_locale:'pt-BR'
   },
   en:{
@@ -139,8 +140,9 @@ const I18N = {
     hint_pct_three_quarter:'75% is 3 times 25% (or half + a quarter).',
     hint_pct_five:'5% is half of 10%: 10% of {base} is {ten}, so 5% is {half}.',
     hint_pct_tens:'{pct}% is {mult} times 10%: 10% of {base} is {ten}, so {pct}% is {ten}×{mult}.',
-    hint_pct_generic:'Try building it up: 10% of {base} is {ten}; adjust that until you reach {pct}%.',
-    pct_of:'of',
+    hint_pct_generic:'Try building it up: 10% of {base} is {ten}; adjust that value until you reach {pct}%.',
+    hint_pct_duplo:'Turn it into multiplication: {a}% of {b}% = ({a} × {b}) ÷ 100, already in %.',
+    pct_of:'of', pct_is_what_pct_of:'is what % of',
     date_locale:'en-US'
   }
 };

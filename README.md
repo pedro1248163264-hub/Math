@@ -10,7 +10,7 @@ O Mental Math é um PWA local: funciona diretamente no navegador, pode usar o ca
 
 Tudo funciona offline, com **uma única exceção**: as fontes do Google Fonts carregadas no `index.html`. Elas dependem da rede. Depois da primeira visita online elas ficam em cache (como resposta opaca do service worker), então as aberturas seguintes já usam as fontes reais mesmo sem conexão. Apenas a primeira abertura offline logo após instalar o app cai para as fontes de fallback locais. O restante — HTML, CSS, JS, dados — nunca depende da rede.
 
-O treino é organizado por **famílias de cálculo** (habilidades), e não por uma conta específica. Há 29 famílias, cobrindo somas, subtrações, multiplicações, divisões, porcentagens, expressões, frações, potências, radicais, logaritmos, equações e contas com vírgula. Na configuração, a pessoa pode escolher uma ou mais delas, ou marcar **Treinar todas as contas** — que é o padrão de uma instalação nova. Todas as famílias ficam selecionáveis desde o início; os pré-requisitos são usados apenas como um sinal de prioridade, não como bloqueio.
+O treino é organizado por **famílias de cálculo** (habilidades), e não por uma conta específica. Há 33 famílias, cobrindo somas, subtrações, multiplicações, divisões, porcentagens (incluindo as quatro variações derivadas — seção abaixo), expressões, frações, potências, radicais, logaritmos, equações e contas com vírgula. Na configuração, a pessoa pode escolher uma ou mais delas, ou marcar **Treinar todas as contas** — que é o padrão de uma instalação nova. Todas as famílias ficam selecionáveis desde o início; os pré-requisitos são usados apenas como um sinal de prioridade, não como bloqueio.
 
 O botão **Iniciar treino** começa imediatamente com a configuração salva. Para alterá-la, acesse **Ajustes** e toque em **Configurar treino** para abrir a tela de configuração; as alterações são salvas na hora. Durante a sessão, o cabeçalho mostra apenas o tempo restante.
 
@@ -24,7 +24,7 @@ Para cada pergunta, o motor considera somente as famílias selecionadas e segue 
 
 Não existe mais um estilo "Foco" ou "Misto" configurável — há um único motor de sequência, usado em todos os modos:
 
-- **Interleaving ponderado:** em vez de sempre repetir a família de maior pontuação, o motor sorteia entre todas as famílias selecionadas com peso proporcional à pontuação de cada uma — os scores são normalizados pelo spread do pool do momento (min→0, max→1) antes do sorteio, com um piso para que, quando ninguém está claramente fraco, o sorteio fique quase-uniforme (começo do app). A mesma família nunca é escolhida duas vezes seguidas, e nenhuma família passa de 40% das últimas 10 escolhas — mistura de verdade, não só evita repetição imediata. A mesma calibração vale tanto para um pool pequeno (poucas famílias escolhidas) quanto para "Treinar todas as contas" (29 famílias).
+- **Interleaving ponderado:** em vez de sempre repetir a família de maior pontuação, o motor sorteia entre todas as famílias selecionadas com peso proporcional à pontuação de cada uma — os scores são normalizados pelo spread do pool do momento (min→0, max→1) antes do sorteio, com um piso para que, quando ninguém está claramente fraco, o sorteio fique quase-uniforme (começo do app). A mesma família nunca é escolhida duas vezes seguidas, e nenhuma família passa de 40% das últimas 10 escolhas — mistura de verdade, não só evita repetição imediata. A mesma calibração vale tanto para um pool pequeno (poucas famílias escolhidas) quanto para "Treinar todas as contas" (33 famílias).
 - **Retry pós-erro:** ao errar uma conta de uma família, ela reaparece dentro de 3 a 6 itens depois (nunca no item seguinte, por causa da regra acima) — fecha o ciclo de correção sem virar repetição espaçada de item específico.
 - **Cascata de dificuldade:** quando uma família está bem abaixo do nível (acerto recente < 0.6, com amostra suficiente), o motor dá um boost forte ao pré-requisito mais fraco ainda não dominado — em vez de só baixar o tamanho dos números no lugar, ele puxa o alicerce de volta ao treino.
 - **Peso por padrão dentro da família:** para famílias com um atributo categórico conhecido (vai-um em somas, empréstimo em subtrações, grupo de porcentagem), o motor guarda internamente um peso por atributo — sobe quando a pessoa é mais lenta/erra mais nele, desce quando está rápida. A próxima geração fica enviesada para esse atributo, mas **nunca** repete um enunciado específico, e nunca fica 100% previsível (sempre há piso de aleatoriedade). Isso não é exposto em nenhuma tela — é só um ajuste interno de geração.
@@ -32,11 +32,24 @@ Não existe mais um estilo "Foco" ou "Misto" configurável — há um único mot
 
 Se só houver uma habilidade selecionada, ela é sempre usada.
 
-Depois de escolher a família, o gerador cria uma conta compatível com ela. A dificuldade individual parte do perfil da habilidade e recebe uma pequena variação aleatória; o motor tenta evitar repetir os últimos 24 enunciados daquela família. Os geradores produzem respostas inteiras e, quando aplicável, divisões exatas, resultados de frações inteiros e expressões válidas — exceto as quatro famílias com vírgula (seção abaixo), cuja resposta é sempre um decimal exato de 1 ou 2 casas, nunca dízima.
+Depois de escolher a família, o gerador cria uma conta compatível com ela. A dificuldade individual parte do perfil da habilidade e recebe uma pequena variação aleatória; o motor tenta evitar repetir os últimos 24 enunciados daquela família. Os geradores produzem respostas inteiras e, quando aplicável, divisões exatas, resultados de frações inteiros e expressões válidas — exceto as cinco famílias com vírgula (seções abaixo), cuja resposta é sempre um decimal exato de 1 ou 2 casas, nunca dízima.
+
+### Porcentagens derivadas
+
+Além das três famílias clássicas de porcentagem (`pct_basico`, `pct_intermediario`, `pct_avancado` — "p% de base"), há quatro variações que reutilizam esse cálculo com um passo a mais (ou invertido), cada uma como habilidade própria, com Elo/meta/calibração e peso por grupo de % separados:
+
+| Família | Enunciado | Resposta |
+|---|---|---|
+| `pct_reverso` | "20 é quantos % de 80?" | 25 — raciocínio inverso (parte ÷ base) |
+| `pct_adicao` | "80 + 15%" | 92 — calcula 15% de 80 e soma |
+| `pct_subtracao` | "80 − 15%" | 68 — calcula 15% de 80 e subtrai |
+| `pct_duplo` | "2% de 5% = ?%" | 0,1 — percentual de percentual |
+
+As respostas de `pct_adicao`/`pct_subtracao`/`pct_duplo` são sempre exatas (o gerador ajusta a base/parcela até o acréscimo ou desconto ser inteiro; no duplo, `p1×p2÷100` tem no máximo 2 casas). O `pct_duplo` responde em **pontos percentuais** (não na fração bruta `0,001`) e é a única das quatro com resposta decimal — ver seção abaixo.
 
 ### Contas com vírgula
 
-Além das famílias inteiras, há quatro famílias com números decimais (1 a 2 casas) — `soma_decimal`, `sub_decimal`, `mult_decimal`, `div_decimal` — uma para cada operação básica. Cada uma tem como pré-requisito a família inteira equivalente (soma/subtração de 2 dígitos, multiplicação/divisão por 2 a 9) e é tratada pelo motor como uma habilidade própria, com seu próprio perfil de Elo/meta de tempo — não é uma variação de exibição das famílias inteiras.
+Além das famílias inteiras, há cinco famílias com números decimais (1 a 2 casas) — `soma_decimal`, `sub_decimal`, `mult_decimal`, `div_decimal` e `pct_duplo`. As quatro primeiras cobrem uma operação básica cada e têm como pré-requisito a família inteira equivalente (soma/subtração de 2 dígitos, multiplicação/divisão por 2 a 9); o `pct_duplo` pertence ao grupo das porcentagens derivadas (seção acima) e entra nesta lista porque sua resposta também é decimal. Todas são tratadas pelo motor como habilidades próprias, com perfil de Elo/meta de tempo próprio — não são variações de exibição das famílias inteiras.
 
 A dificuldade extra da vírgula em si (raciocinar com casas decimais, não o tamanho do número) é tratada como um atributo próprio: assim como o motor já pesa vai-um/empréstimo/grupo de porcentagem dentro de uma família (seção "Escolha da próxima conta" acima), ele também pesa 1 vs. 2 casas decimais, enviesando a próxima geração para a quantidade onde a pessoa está mais lenta ou errando mais — sem nunca eliminar a outra.
 

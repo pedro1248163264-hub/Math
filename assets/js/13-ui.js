@@ -438,7 +438,15 @@ const UI = {
         item.ops.forEach((op, index)=>row.append(this.mathOperator(op), this.mathTerm(item.terms[index+1])));
       }
     } else {
-      const text = item.exprText ? item.exprText
+      // Porcentagens derivadas: enunciado composto na renderização (não via exprText) para
+      // respeitar o idioma do app — mesma razão da linha do 'porcentagem' abaixo usar t('pct_of').
+      let text;
+      if(item.op==='porcentagem_inversa') text = `${item.a} ${t('pct_is_what_pct_of')} ${item.b}?`;
+      // O símbolo de OPS é '+%'/'−%' (distinção nos chips da configuração) — no enunciado o
+      // '%' do símbolo não entra: ele fica só no operando ("90 + 20%"), senão vira "90+%20%".
+      else if(item.op==='porcentagem_acrescimo' || item.op==='porcentagem_desconto') text = `${U.fmtNum(item.a)} ${item.op==='porcentagem_acrescimo'?'+':'−'} ${U.fmtNum(item.b)}%`;
+      else if(item.op==='porcentagem_dupla') text = `${item.a}% ${t('pct_of')} ${item.b}% = ?%`;
+      else text = item.exprText ? item.exprText
         : item.op==='porcentagem' ? `${item.a}% ${t('pct_of')} ${item.b}`
         : `${U.fmtNum(item.a)} ${item.symbol} ${U.fmtNum(item.b)}`;
       row.textContent = text;

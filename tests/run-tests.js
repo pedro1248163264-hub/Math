@@ -102,7 +102,7 @@ globalThis.__TEST_RESULTS__ = { perFamily: {}, engineSmokeError: null, speedEngi
   sequencingError: null, retryQueueError: null, softmaxError: null, softmaxLargePoolError: null, softmaxTieError: null,
   impulseFloorError: null, ultimateTimeoutError: null, patternWeightError: null, patternGenError: null,
   decimalInputError: null, decimalComparisonError: null, digitWeightError: null, cascadeError: null, adaptiveCalibrationError: null,
-  logStandaloneError: null, logExpressionError: null };
+  logStandaloneError: null, logExpressionError: null, pctVariantsError: null };
 
 Object.keys(KC_DEFS).forEach(key=>{
   const def = KC_DEFS[key];
@@ -148,7 +148,9 @@ Object.keys(KC_DEFS).forEach(key=>{
       else if(def.op==='subtracao') trueValue = g.a-g.b;
       else if(def.op==='multiplicacao') trueValue = g.a*g.b;
       else if(def.op==='divisao') trueValue = g.a/g.b;
-      if(Math.abs(trueValue-g.answer) > 1e-6){
+      // pct_duplo: percentual de percentual, resposta em pontos percentuais (2% de 5% = 0,1%).
+      else if(def.op==='porcentagem_dupla') trueValue = g.a*g.b/100;
+      if(trueValue!==undefined && Math.abs(trueValue-g.answer) > 1e-6){
         stats.badAnswer++;
         stats.examples.push('decimal com resposta incorreta: '+JSON.stringify(g));
       }
@@ -250,8 +252,8 @@ try{
   globalThis.__TEST_RESULTS__.softmaxError = e.message;
 }
 
-// Softmax em pool grande ("Treinar todas as contas", 29 famílias ativas): com ~26 das 29
-// famílias carregando a mesma penalidade fixa de pré-requisito, o spread real de necessidade
+// Softmax em pool grande ("Treinar todas as contas", todas as famílias ativas): com quase todas
+// as famílias carregando a mesma penalidade fixa de pré-requisito, o spread real de necessidade
 // fica comprimido e um softmax de temperatura ABSOLUTA dilui a concentração (a fraca caía para
 // ~7%, perto do uniforme de ~3,4%). Com a normalização por min-max dentro do pool
 // (SEQUENCING_SOFTMAX_TEMP_REL), a família fraca precisa dominar bem acima do uniforme e as
@@ -396,7 +398,7 @@ try{
 // Geradores com viés de padrão continuam sempre válidos (resposta inteira e finita),
 // agora recebendo profile como segundo argumento.
 try{
-  const biasedFamilies = ['soma_2d_cc','sub_2d_ce','soma_3_4d','sub_3_4d','pct_basico','pct_intermediario','pct_avancado'];
+  const biasedFamilies = ['soma_2d_cc','sub_2d_ce','soma_3_4d','sub_3_4d','pct_basico','pct_intermediario','pct_avancado','pct_reverso','pct_adicao','pct_subtracao'];
   Store.data = Store.defaults();
   biasedFamilies.forEach(key=>{
     const profile = Engine.profile(key);
@@ -405,7 +407,7 @@ try{
       if(!Number.isFinite(g.answer) || !Number.isInteger(g.answer)) throw new Error(key+': viés de padrão gerou resposta inválida');
     }
   });
-  const biasedDecimalFamilies = ['soma_decimal','sub_decimal','mult_decimal','div_decimal'];
+  const biasedDecimalFamilies = ['soma_decimal','sub_decimal','mult_decimal','div_decimal','pct_duplo'];
   biasedDecimalFamilies.forEach(key=>{
     const profile = Engine.profile(key);
     for(let i=0;i<30;i++){
@@ -723,6 +725,59 @@ try{
 }catch(e){
   globalThis.__TEST_RESULTS__.logExpressionError = e.message;
 }
+
+// Porcentagens derivadas (pct_reverso/pct_adicao/pct_subtracao/pct_duplo): a resposta é
+// matematicamente exata a partir dos operandos exibidos — na inversa ela É a porcentagem
+// (parte×100 = base×resposta), nas de ±% é base ± base×%/100 (inteiro e o desconto nunca
+// zera), e no duplo é p1×p2÷100 em pontos percentuais — sempre com 1–2 casas decimais
+// declaradas em features.decimalPlaces (decimal:true) e NUNCA inteira. A dica por padrão
+// usa a base certa de cada família, e o TTS tem frase própria nos dois idiomas.
+try{
+  Store.data = Store.defaults();
+  Store.data.settings.selectedSkills = Object.keys(KC_DEFS);
+  for(let i=0;i<300;i++){
+    const t=Math.random();
+    const rev=KC_DEFS.pct_reverso.gen(t);
+    if(!Number.isInteger(rev.answer) || rev.answer<=0 || rev.answer>=100) throw new Error('pct_reverso: resposta fora da faixa de %: '+JSON.stringify(rev));
+    if(rev.a*100 !== rev.b*rev.answer) throw new Error('pct_reverso: parte/base não bate com a resposta: '+JSON.stringify(rev));
+    const add=KC_DEFS.pct_adicao.gen(t);
+    const trueAdd=add.a + add.a*add.b/100;
+    if(!Number.isInteger(trueAdd) || trueAdd!==add.answer) throw new Error('pct_adicao: acréscimo não inteiro/exato: '+JSON.stringify(add));
+    const sub=KC_DEFS.pct_subtracao.gen(t);
+    const trueSub=sub.a - sub.a*sub.b/100;
+    if(trueSub<=0 || trueSub!==sub.answer) throw new Error('pct_subtracao: desconto zerou ou não bate: '+JSON.stringify(sub));
+    const dup=KC_DEFS.pct_duplo.gen(t);
+    if(Math.abs(dup.a*dup.b/100 - dup.answer)>1e-9) throw new Error('pct_duplo: valor não bate com p1×p2÷100: '+JSON.stringify(dup));
+    if(Number.isInteger(dup.answer)) throw new Error('pct_duplo: resposta inteira (família existe para treinar vírgula): '+JSON.stringify(dup));
+    const expectedDp=((dup.a*dup.b)%10===0)?1:2;
+    if((dup.features&&dup.features.decimalPlaces)!==expectedDp) throw new Error('pct_duplo: decimalPlaces inconsistente com o produto: '+JSON.stringify(dup));
+  }
+  // Dicas (Andaime): cada família derivada recebe dica ancorada na base certa dela.
+  // pct=15 cai na dica genérica ("10% de {base} é {ten}…"), que cita base e taxa no texto.
+  [
+    {key:'pct_reverso',    item:{key:'pct_reverso',   a:20,b:80, features:{pct:15}}, frags:['80','15']},
+    {key:'pct_adicao',     item:{key:'pct_adicao',    a:80,b:15, features:{pct:15}}, frags:['80','15']},
+    {key:'pct_subtracao',  item:{key:'pct_subtracao', a:80,b:15, features:{pct:15}}, frags:['80','15']},
+    {key:'pct_duplo',      item:{key:'pct_duplo',     a:2, b:5,  features:{pct:5}},  frags:['(2 × 5)']}
+  ].forEach(({key,item,frags})=>{
+    const hint=Engine.buildPatternHint('pct', item);
+    frags.forEach(frag=>{ if(!hint || !hint.includes(frag)) throw new Error(key+': dica sem "'+frag+'": '+hint); });
+  });
+  // TTS próprio dos ops novos — não pode cair no fallback aritmético ("a mais b" etc.).
+  ['pt-BR','en-US'].forEach(v=>{
+    const mk=(op,a,b)=>spokenPhrase({op,a,b,key:'k',kcLabel:'l',symbol:'%'}, v);
+    const revPh=mk('porcentagem_inversa',20,80);
+    if(v==='en-US' ? !/20 is what percent of 80/.test(revPh) : !/20 é quantos por cento de 80/.test(revPh)) throw new Error('TTS inversa caiu no fallback: '+revPh);
+    const addPh=mk('porcentagem_acrescimo',80,15);
+    if(v==='en-US' ? !/80 plus 15 percent/.test(addPh) : !/80 mais 15 por cento/.test(addPh)) throw new Error('TTS acréscimo caiu no fallback: '+addPh);
+    const subPh=mk('porcentagem_desconto',80,15);
+    if(v==='en-US' ? !/80 minus 15 percent/.test(subPh) : !/80 menos 15 por cento/.test(subPh)) throw new Error('TTS desconto caiu no fallback: '+subPh);
+    const dupPh=mk('porcentagem_dupla',2,5);
+    if(v==='en-US' ? !/2 percent of 5 percent/.test(dupPh) : !/2 por cento de 5 por cento/.test(dupPh)) throw new Error('TTS dupla caiu no fallback: '+dupPh);
+  });
+}catch(e){
+  globalThis.__TEST_RESULTS__.pctVariantsError = e.message;
+}
 `;
 
 eval(harness);
@@ -759,6 +814,7 @@ ok(RESULTS.cascadeError===null, 'cascata de dificuldade (boost ao pré-requisito
 ok(RESULTS.adaptiveCalibrationError===null, 'calibração adaptativa (consistente encerra cedo, inconsistente até o teto): '+RESULTS.adaptiveCalibrationError);
 ok(RESULTS.logStandaloneError===null, 'logaritmo standalone (operação em si, expoente correto, TTS próprio): '+RESULTS.logStandaloneError);
 ok(RESULTS.logExpressionError===null, 'log removido das expressões (potência/radical/encadeada sem termos de log): '+RESULTS.logExpressionError);
+ok(RESULTS.pctVariantsError===null, 'porcentagens derivadas (inversa/±%/%% exatas, dica por base, TTS próprio): '+RESULTS.pctVariantsError);
 
 console.log(`\n${passed} verificações passaram, ${failures} falharam.`);
 if(failures>0){

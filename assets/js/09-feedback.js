@@ -67,6 +67,10 @@ function spokenPhrase(item, voiceLang){
     return `${w.open} ${item.a} ${w[item.innerOp]} ${item.b} ${w.close} ${w[item.outerOp]} ${item.c}`;
   }
   if(voiceLang==='en-US'){
+    if(item.op==='porcentagem_inversa') return `${a} is what percent of ${b}`;
+    if(item.op==='porcentagem_acrescimo') return `${a} plus ${b} percent`;
+    if(item.op==='porcentagem_desconto') return `${a} minus ${b} percent`;
+    if(item.op==='porcentagem_dupla') return `${a} percent of ${b} percent`;
     if(item.op==='porcentagem') return `${a} percent of ${b}`;
     if(item.op==='divisao') return `${a} divided by ${b}`;
     if(item.op==='multiplicacao') return `${a} times ${b}`;
@@ -74,6 +78,10 @@ function spokenPhrase(item, voiceLang){
     return `${a} minus ${b}`;
   }
   // pt-BR (padrão)
+  if(item.op==='porcentagem_inversa') return `${a} é quantos por cento de ${b}`;
+  if(item.op==='porcentagem_acrescimo') return `${a} mais ${b} por cento`;
+  if(item.op==='porcentagem_desconto') return `${a} menos ${b} por cento`;
+  if(item.op==='porcentagem_dupla') return `${a} por cento de ${b} por cento`;
   if(item.op==='porcentagem') return `${a} por cento de ${b}`;
   if(item.op==='divisao') return `${a} dividido por ${b}`;
   if(item.op==='multiplicacao') return `${a} vezes ${b}`;
