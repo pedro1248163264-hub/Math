@@ -1,14 +1,16 @@
 /* =====================================================================
    assets/js/05-expression-terms.js — geração de 'termos' avançados usados
-   dentro de expressões maiores: potência, radical, log, sobrescrito/
-   subscrito, além de contadores de vai-um/empréstimo.
+   dentro de expressões maiores: potência, radical, sobrescrito/
+   subscrito, além de contadores de vai-um/empréstimo. (Logaritmo não é
+   mais termo de expressão — virou operação standalone; ver log_basico
+   em 06-skills-graph.js.)
    Depende de: 01-utils.js (U).
    Usado por: 06-skills-graph.js (geradores de exercício).
    ===================================================================== */
 
-/* ---------- 2c. NOVOS BLOCOS/COMPOSIÇÕES (spec: raiz, potência, log, fração, encadeada, equação) ----------
+/* ---------- 2c. NOVOS BLOCOS/COMPOSIÇÕES (spec: raiz, potência, fração, encadeada, equação) ----------
    "Termo" = unidade de operando dentro de uma expressão maior. Cada gerador de termo devolve
-   {kind, value, text, ...campos extras p/ TTS}. Operandos avançados (potência/raiz/log) nunca
+   {kind, value, text, ...campos extras p/ TTS}. Operandos avançados (potência/raiz) nunca
    formam sozinhos a expressão inteira — são sempre conectados a outro termo por um operador
    básico (seç. 3), o que é garantido pelos construtores de cadeia abaixo. */
 const SUP_MAP = {'0':'⁰','1':'¹','2':'²','3':'³','4':'⁴','5':'⁵','6':'⁶','7':'⁷','8':'⁸','9':'⁹','-':'⁻'};
@@ -38,12 +40,6 @@ function genTermRadical(t){
   const radicand = k*k;
   return {kind:'radical', value:k, text:`√${radicand}`, radicand};
 }
-function genTermLog(t){
-  const base_log = U.choice([2,3,4,5,10]);
-  const value = U.rint(1, 2+Math.round(t*3));
-  const arg_log = Math.pow(base_log, value);
-  return {kind:'log', value, text:`log${toSub(base_log)}(${arg_log})`, base_log, arg_log};
-}
 function chainText(terms, ops){
   let s = terms[0].text;
   for(let i=0;i<ops.length;i++) s += ` ${OPS[ops[i]].symbol} ${terms[i+1].text}`;
@@ -58,7 +54,6 @@ function buildAdvancedPair(t, requiredKindGen){
       ()=>genTermInt(U.rint(2, 6+Math.round(t*20))),
       ()=>genTermPower(t),
       ()=>genTermRadical(t),
-      ()=>genTermLog(t),
     ];
     const t2 = U.choice(otherPool)();
     op = U.choice(['soma','subtracao','multiplicacao']);

@@ -56,6 +56,8 @@ function spokenPhrase(item, voiceLang){
       .split('?').join(unknownWord);
     return s;
   }
+  // Log standalone: a operação é a questão — "log na base 2 de 32" / "log base 2 of 32".
+  if(item.op==='logaritmo') return `${w.logof} ${a} ${w.of} ${b}`;
   if(item.op==='equacao') return speakEquation(item, w);
   if(item.terms && item.ops) return speakChain(item.terms, item.ops, w);
   if(item.op==='expressao'){

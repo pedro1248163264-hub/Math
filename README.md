@@ -99,7 +99,7 @@ O motor do app fica em `assets/js/`, dividido em módulos por responsabilidade e
 | `02-engine-constants.js` | Constantes do motor de progressão. |
 | `03-i18n.js` | Textos PT/EN e helpers de tradução. |
 | `04-operations.js` | Operações suportadas (soma, subtração, ...). |
-| `05-expression-terms.js` | Geração de termos avançados (potência, raiz, log). |
+| `05-expression-terms.js` | Geração de termos avançados (potência, raiz). |
 | `06-skills-graph.js` | Grafo de habilidades (KC_DEFS) e geradores de exercício. |
 | `07-storage.js` | Persistência local (`Store`). |
 | `08-speed-engine.js` | Motor de velocidade/adaptação (`Engine`). |

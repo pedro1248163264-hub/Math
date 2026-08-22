@@ -419,7 +419,10 @@ const UI = {
 
     const row = document.createElement('div');
     row.className = 'math-row';
-    if(item.terms && item.ops){
+    // Log standalone: a operação É a questão — renderiza "log₂(32)" estilizado (sem termos).
+    if(item.op==='logaritmo' && !item.terms){
+      row.append(this.mathTerm({kind:'log', base_log:item.a, arg_log:item.b}));
+    } else if(item.terms && item.ops){
       const isFractionDivision = item.ops.length===1 && item.ops[0]==='divisao' && item.terms.every(term=>term.kind==='fraction');
       if(isFractionDivision){
         const complex = document.createElement('span');

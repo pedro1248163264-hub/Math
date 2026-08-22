@@ -343,13 +343,20 @@ const KC_DEFS = {
       return {answer:r, exprText, terms, ops:[opKey], features:{}};
     } },
 
-  // ---- Potência / Radical / Log — sempre conectados a outro termo por operador básico (seç. 3) ----
+  // ---- Potência / Radical — sempre conectados a outro termo por operador básico (seç. 3) ----
   potencia_basica:{ label:'Potência — expoentes 0 a 3', op:'potencia', prereqs:['mult_2d'], eloBounds:[1200,1600],
     gen(t){ return buildAdvancedPair(t, genTermPower); } },
   radical_quad:{ label:'Radical — raiz quadrada exata', op:'radical', prereqs:['mult_2d'], eloBounds:[1200,1600],
     gen(t){ return buildAdvancedPair(t, genTermRadical); } },
+  // Log é operação em si (não termo de expressão): "log₂(32) = ?" — a resposta é o expoente.
+  // a=base, b=argumento (dedup do motor via a+'_'+b); exprText dirige a exibição/TTS.
   log_basico:{ label:'Logaritmo — base inteira', op:'logaritmo', prereqs:['potencia_basica'], eloBounds:[1350,1700],
-    gen(t){ return buildAdvancedPair(t, genTermLog); } },
+    gen(t){
+      const base_log = U.choice([2,3,4,5,10]);
+      const value = U.rint(1, 2+Math.round(t*3));
+      const arg_log = Math.pow(base_log, value);
+      return {a:base_log, b:arg_log, answer:value, exprText:`log${toSub(base_log)}(${arg_log})`, features:{}};
+    } },
 
   // ---- Encadeada: 2–3 operadores em sequência, sem parênteses obrigatórios (seç. 2, exemplo 2) ----
   expr_encadeada:{ label:'Expressões — encadeadas', op:'expressao_encadeada', prereqs:['soma_2d_cc','sub_2d_ce','mult_2d'], eloBounds:[1250,1600],
@@ -362,7 +369,7 @@ const KC_DEFS = {
       do{
         terms=[];
         for(let i=0;i<=numOps;i++){
-          if(Math.random()<0.18*t) terms.push(U.choice([genTermPower,genTermRadical,genTermLog])(t));
+          if(Math.random()<0.18*t) terms.push(U.choice([genTermPower,genTermRadical])(t));
           else if(family==='muldiv') terms.push(genTermInt(U.rint(2, 3+Math.round(t*6))));
           else terms.push(genTermInt(U.rint(1, 6+Math.round(t*25))));
         }

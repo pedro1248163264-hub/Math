@@ -101,7 +101,8 @@ const T_SAMPLES = [0, 0.25, 0.5, 0.75, 1, ...Array.from({length:200}, ()=>Math.r
 globalThis.__TEST_RESULTS__ = { perFamily: {}, engineSmokeError: null, speedEngineError: null, adaptiveFlowError: null, timingFlowError: null, confirmFlowError: null,
   sequencingError: null, retryQueueError: null, softmaxError: null, softmaxLargePoolError: null, softmaxTieError: null,
   impulseFloorError: null, ultimateTimeoutError: null, patternWeightError: null, patternGenError: null,
-  decimalInputError: null, decimalComparisonError: null, digitWeightError: null, cascadeError: null, adaptiveCalibrationError: null };
+  decimalInputError: null, decimalComparisonError: null, digitWeightError: null, cascadeError: null, adaptiveCalibrationError: null,
+  logStandaloneError: null, logExpressionError: null };
 
 Object.keys(KC_DEFS).forEach(key=>{
   const def = KC_DEFS[key];
@@ -688,6 +689,40 @@ try{
 }catch(e){
   globalThis.__TEST_RESULTS__.adaptiveCalibrationError = e.message;
 }
+
+// Logaritmo standalone (operação em si): log_basico gera "log₂(32) = ?" — nunca um item
+// composto (terms/ops), o expoente bate com base^expoente=argumento, e o TTS tem frase própria.
+try{
+  for(let i=0;i<200;i++){
+    const g = KC_DEFS.log_basico.gen(i/199);
+    if(g.terms || g.ops) throw new Error('log_basico gerou item composto (terms/ops) — deveria ser standalone');
+    if(!/^log/.test(g.exprText||'')) throw new Error('log_basico sem exprText de log: '+g.exprText);
+    if(!Number.isInteger(g.a) || !Number.isInteger(g.b)) throw new Error('base/argumento não inteiros: '+JSON.stringify(g));
+    if(Math.pow(g.a,g.answer)!==g.b) throw new Error('expoente não bate com base^expoente=argumento: '+JSON.stringify(g));
+    if(g.answer<1 || g.answer>5) throw new Error('expoente fora da faixa da família: '+g.answer);
+    ['pt-BR','en-US'].forEach(v=>{
+      const phrase = spokenPhrase(Object.assign({op:'logaritmo',key:'log_basico',kcLabel:'x',symbol:'log'}, g), v);
+      if(!/log/i.test(phrase)) throw new Error('TTS do log caiu no fallback aritmético: '+phrase);
+    });
+  }
+}catch(e){
+  globalThis.__TEST_RESULTS__.logStandaloneError = e.message;
+}
+
+// Log saiu das expressões: potência/radical (pares avançados) e encadeada nunca mais emitem
+// termo kind:'log' nem exibem "log" no enunciado — log virou operação isolada.
+try{
+  for(let i=0;i<300;i++){
+    const t = Math.random();
+    ['potencia_basica','radical_quad','expr_encadeada'].forEach(k=>{
+      const g = KC_DEFS[k].gen(t);
+      if((g.terms||[]).some(term=>term.kind==='log')) throw new Error(k+' ainda gera termo de log');
+      if(/log/.test(g.exprText||'')) throw new Error(k+' ainda exibe log na expressão: '+g.exprText);
+    });
+  }
+}catch(e){
+  globalThis.__TEST_RESULTS__.logExpressionError = e.message;
+}
 `;
 
 eval(harness);
@@ -722,6 +757,8 @@ ok(RESULTS.decimalComparisonError===null, 'comparação de dificuldade decimal v
 ok(RESULTS.digitWeightError===null, 'peso por dígito/linha (deslocamento de geração, sem factKey, nudge por operando): '+RESULTS.digitWeightError);
 ok(RESULTS.cascadeError===null, 'cascata de dificuldade (boost ao pré-requisito, guarda de ruído): '+RESULTS.cascadeError);
 ok(RESULTS.adaptiveCalibrationError===null, 'calibração adaptativa (consistente encerra cedo, inconsistente até o teto): '+RESULTS.adaptiveCalibrationError);
+ok(RESULTS.logStandaloneError===null, 'logaritmo standalone (operação em si, expoente correto, TTS próprio): '+RESULTS.logStandaloneError);
+ok(RESULTS.logExpressionError===null, 'log removido das expressões (potência/radical/encadeada sem termos de log): '+RESULTS.logExpressionError);
 
 console.log(`\n${passed} verificações passaram, ${failures} falharam.`);
 if(failures>0){
