@@ -17,13 +17,20 @@ const OPS = {
   porcentagem_acrescimo: {key:'porcentagem_acrescimo', label:'Acréscimo de %', label_en:'Percentage markup', symbol:'+%', baseline:3000, active:false},
   porcentagem_desconto: {key:'porcentagem_desconto', label:'Desconto de %', label_en:'Percentage discount', symbol:'−%', baseline:3000, active:false},
   porcentagem_dupla: {key:'porcentagem_dupla', label:'% de %', label_en:'Percent of percent', symbol:'%%', baseline:3400, active:false},
+  porcentagem_original: {key:'porcentagem_original', label:'Valor original após %', label_en:'Original value before %', symbol:'x=%', baseline:3400, active:false},
+  porcentagem_aumento: {key:'porcentagem_aumento', label:'Aumento entre valores', label_en:'Increase between values', symbol:'→+%', baseline:3300, active:false},
+  porcentagem_reducao: {key:'porcentagem_reducao', label:'Redução entre valores', label_en:'Decrease between values', symbol:'→−%', baseline:3300, active:false},
+  porcentagem_sucessiva: {key:'porcentagem_sucessiva', label:'Descontos sucessivos', label_en:'Successive discounts', symbol:'−−%', baseline:3600, active:false},
   expressao: {key:'expressao', label:'Expressão', label_en:'Expression', symbol:'()', baseline:4200, active:false},
   expressao_encadeada: {key:'expressao_encadeada', label:'Encadeada', label_en:'Chained', symbol:'⋯', baseline:4000, active:false},
   fracao: {key:'fracao', label:'Fração', label_en:'Fraction', symbol:'/', baseline:3000, active:false},
+  fracao_comparacao: {key:'fracao_comparacao', label:'Fração — comparação', label_en:'Fraction — comparison', symbol:'⇔', baseline:2400, active:false},
   potencia: {key:'potencia', label:'Potência', label_en:'Power', symbol:'^', baseline:2600, active:false},
   radical: {key:'radical', label:'Radical', label_en:'Root', symbol:'√', baseline:2600, active:false},
   logaritmo: {key:'logaritmo', label:'Logaritmo', label_en:'Logarithm', symbol:'log', baseline:3200, active:false},
   equacao: {key:'equacao', label:'Equação', label_en:'Equation', symbol:'x', baseline:4500, active:false},
+  proporcao_direta: {key:'proporcao_direta', label:'Proporção — direta', label_en:'Direct proportion', symbol:'→', baseline:2400, active:false},
+  proporcao_inversa: {key:'proporcao_inversa', label:'Proporção — inversa', label_en:'Inverse proportion', symbol:'⇄', baseline:3000, active:false},
 };
 // BUGFIX/3.13: baseline (tempo de reação padrão) e ativação padrão viviam duplicados em
 // Engine.defaultBaseline() e Store.defaults().settings.ops — uma nova operação exigia
@@ -43,4 +50,11 @@ function applyOp2(opKey, x, y){
   if(opKey==='divisao') return y!==0 ? x/y : NaN;
   return NaN;
 }
+
+// Comparação de frações: o símbolo respondido (<, > ou =) viaja como inteiro no campo
+// `answer` (mesma exigência de resposta numérica das demais famílias). Fonte única do
+// mapeamento — usada pela correção (10-session.js), pelo teclado e pelo feedback de erro
+// (13-ui.js). O inverso só é seguro para itens da família de comparação (op checada antes).
+const COMPARE_SYMBOLS = {'<':-1, '=':0, '>':1};
+function compareSymbolOf(code){ return code<0 ? '<' : code>0 ? '>' : '='; }
 

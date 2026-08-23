@@ -102,7 +102,8 @@ globalThis.__TEST_RESULTS__ = { perFamily: {}, engineSmokeError: null, speedEngi
   sequencingError: null, retryQueueError: null, softmaxError: null, softmaxLargePoolError: null, softmaxTieError: null,
   impulseFloorError: null, ultimateTimeoutError: null, patternWeightError: null, patternGenError: null,
   decimalInputError: null, decimalComparisonError: null, digitWeightError: null, cascadeError: null, adaptiveCalibrationError: null,
-  logStandaloneError: null, logExpressionError: null, pctVariantsError: null };
+  logStandaloneError: null, logExpressionError: null, pctVariantsError: null, proportionError: null,
+  fractionCompareError: null, fractionCompareSessionError: null };
 
 Object.keys(KC_DEFS).forEach(key=>{
   const def = KC_DEFS[key];
@@ -726,12 +727,14 @@ try{
   globalThis.__TEST_RESULTS__.logExpressionError = e.message;
 }
 
-// Porcentagens derivadas (pct_reverso/pct_adicao/pct_subtracao/pct_duplo): a resposta é
-// matematicamente exata a partir dos operandos exibidos — na inversa ela É a porcentagem
-// (parte×100 = base×resposta), nas de ±% é base ± base×%/100 (inteiro e o desconto nunca
-// zera), e no duplo é p1×p2÷100 em pontos percentuais — sempre com 1–2 casas decimais
-// declaradas em features.decimalPlaces (decimal:true) e NUNCA inteira. A dica por padrão
-// usa a base certa de cada família, e o TTS tem frase própria nos dois idiomas.
+// Porcentagens derivadas (pct_reverso/pct_adicao/pct_subtracao/pct_duplo e as derivadas II —
+// pct_original/pct_variacao_alta/pct_variacao_baixa/pct_sucessivo): a resposta é matematicamente
+// exata a partir dos operandos exibidos — na inversa ela É a porcentagem (parte×100 = base×resposta),
+// nas de ±% é base ± base×%/100 (inteiro e o desconto nunca zera), no duplo é p1×p2÷100 em pontos
+// percentuais (1–2 casas declaradas, NUNCA inteira), no original é final = original×(100±p)/100,
+// nas variações é final = inicial×(100±resposta)/100 com sinal coerente com a direção da seta, e
+// no sucessivo AMBOS os passos (base→meio→final) são inteiros e o segundo incide sobre o meio.
+// A dica por padrão usa a base certa de cada família, e o TTS tem frase própria nos dois idiomas.
 try{
   Store.data = Store.defaults();
   Store.data.settings.selectedSkills = Object.keys(KC_DEFS);
@@ -751,6 +754,22 @@ try{
     if(Number.isInteger(dup.answer)) throw new Error('pct_duplo: resposta inteira (família existe para treinar vírgula): '+JSON.stringify(dup));
     const expectedDp=((dup.a*dup.b)%10===0)?1:2;
     if((dup.features&&dup.features.decimalPlaces)!==expectedDp) throw new Error('pct_duplo: decimalPlaces inconsistente com o produto: '+JSON.stringify(dup));
+    // Derivadas II: desfazer (original), variação relativa ao INICIAL (+25% vs −20%) e cascata.
+    const ori=KC_DEFS.pct_original.gen(t);
+    const fatorOri=(ori.features&&ori.features.aumento)?100+ori.features.pct:100-ori.features.pct;
+    if(ori.a*100 !== ori.answer*fatorOri) throw new Error('pct_original: final não bate com original×(100±p)/100: '+JSON.stringify(ori));
+    if(!Number.isInteger(ori.answer) || ori.answer<=0) throw new Error('pct_original: original inválido: '+JSON.stringify(ori));
+    if(ori.features.aumento ? ori.answer>=ori.a : ori.answer<=ori.a) throw new Error('pct_original: direção (±) incoerente com os valores: '+JSON.stringify(ori));
+    const va=KC_DEFS.pct_variacao_alta.gen(t);
+    if(va.b<=va.a || va.a*(100+va.answer)!==va.b*100) throw new Error('pct_variacao_alta: aumento não bate com (b−a)/a×100: '+JSON.stringify(va));
+    if(!Number.isInteger(va.answer) || va.answer<=0) throw new Error('pct_variacao_alta: resposta inválida: '+JSON.stringify(va));
+    const vb=KC_DEFS.pct_variacao_baixa.gen(t);
+    if(vb.b>=vb.a || vb.a*(100-vb.answer)!==vb.b*100) throw new Error('pct_variacao_baixa: redução não bate com (a−b)/a×100: '+JSON.stringify(vb));
+    if(!Number.isInteger(vb.answer) || vb.answer<=0 || vb.b<=0) throw new Error('pct_variacao_baixa: resposta inválida: '+JSON.stringify(vb));
+    const suc=KC_DEFS.pct_sucessivo.gen(t);
+    const meioS=suc.a-suc.a*suc.b/100, finS=meioS-meioS*suc.c/100;
+    if(!Number.isInteger(meioS)) throw new Error('pct_sucessivo: valor intermediário não inteiro: '+JSON.stringify(suc));
+    if(finS<=0 || finS!==suc.answer) throw new Error('pct_sucessivo: cascata não bate (segundo % deve incidir sobre o meio): '+JSON.stringify(suc));
   }
   // Dicas (Andaime): cada família derivada recebe dica ancorada na base certa dela.
   // pct=15 cai na dica genérica ("10% de {base} é {ten}…"), que cita base e taxa no texto.
@@ -758,7 +777,11 @@ try{
     {key:'pct_reverso',    item:{key:'pct_reverso',   a:20,b:80, features:{pct:15}}, frags:['80','15']},
     {key:'pct_adicao',     item:{key:'pct_adicao',    a:80,b:15, features:{pct:15}}, frags:['80','15']},
     {key:'pct_subtracao',  item:{key:'pct_subtracao', a:80,b:15, features:{pct:15}}, frags:['80','15']},
-    {key:'pct_duplo',      item:{key:'pct_duplo',     a:2, b:5,  features:{pct:5}},  frags:['(2 × 5)']}
+    {key:'pct_duplo',      item:{key:'pct_duplo',     a:2, b:5,  features:{pct:5}},  frags:['(2 × 5)']},
+    {key:'pct_original',      item:{key:'pct_original',      a:84, b:30, features:{pct:30,aumento:false}}, frags:['84','70']},
+    {key:'pct_variacao_alta', item:{key:'pct_variacao_alta', a:80, b:100},                               frags:['80','20']},
+    {key:'pct_variacao_baixa',item:{key:'pct_variacao_baixa',a:100,b:80},                                frags:['100','20']},
+    {key:'pct_sucessivo',     item:{key:'pct_sucessivo',     a:100,b:20,c:10, features:{pct:20}},        frags:['80']}
   ].forEach(({key,item,frags})=>{
     const hint=Engine.buildPatternHint('pct', item);
     frags.forEach(frag=>{ if(!hint || !hint.includes(frag)) throw new Error(key+': dica sem "'+frag+'": '+hint); });
@@ -774,9 +797,138 @@ try{
     if(v==='en-US' ? !/80 minus 15 percent/.test(subPh) : !/80 menos 15 por cento/.test(subPh)) throw new Error('TTS desconto caiu no fallback: '+subPh);
     const dupPh=mk('porcentagem_dupla',2,5);
     if(v==='en-US' ? !/2 percent of 5 percent/.test(dupPh) : !/2 por cento de 5 por cento/.test(dupPh)) throw new Error('TTS dupla caiu no fallback: '+dupPh);
+    // Derivadas II (o original sem features.aumento fala o caminho do desconto; com aumento,
+    // o do acréscimo; a sucessiva lê os DOIS descontos via item.c).
+    const oriPh=mk('porcentagem_original',84,30);
+    if(v==='en-US' ? !/what number minus 30 percent equals 84/.test(oriPh) : !/que número menos 30 por cento é igual a 84/.test(oriPh)) throw new Error('TTS original caiu no fallback: '+oriPh);
+    const oriAumPh=spokenPhrase({op:'porcentagem_original',a:125,b:25,key:'k',kcLabel:'l',symbol:'%',features:{aumento:true}}, v);
+    if(v==='en-US' ? !/plus 25 percent equals 125/.test(oriAumPh) : !/mais 25 por cento é igual a 125/.test(oriAumPh)) throw new Error('TTS original (aumento) caiu no fallback: '+oriAumPh);
+    const vaPh=mk('porcentagem_aumento',80,100);
+    if(v==='en-US' ? !/from 80 to 100, what percent increase/.test(vaPh) : !/de 80 para 100, quantos por cento de aumento/.test(vaPh)) throw new Error('TTS variação alta caiu no fallback: '+vaPh);
+    const vbPh=mk('porcentagem_reducao',100,80);
+    if(v==='en-US' ? !/from 100 to 80, what percent decrease/.test(vbPh) : !/de 100 para 80, quantos por cento de desconto/.test(vbPh)) throw new Error('TTS variação baixa caiu no fallback: '+vbPh);
+    const sucPh=spokenPhrase({op:'porcentagem_sucessiva',a:100,b:20,c:10,key:'k',kcLabel:'l',symbol:'%'}, v);
+    if(v==='en-US' ? !/100 minus 20 percent, minus 10 percent/.test(sucPh) : !/100 menos 20 por cento, menos 10 por cento/.test(sucPh)) throw new Error('TTS sucessiva caiu no fallback: '+sucPh);
   });
 }catch(e){
   globalThis.__TEST_RESULTS__.pctVariantsError = e.message;
+}
+
+// Proporções (direta/inversa): consistência da relação, resposta = célula oculta em
+// qualquer posição de x e cobertura real das quatro posições ao longo da curva de
+// dificuldade. A inversa precisa satisfazer a constante do produto a×b = c×d.
+try{
+  Store.data = Store.defaults();
+  const seenPos = {direta:new Set(), inversa:new Set()};
+  for(let i=0;i<400;i++){
+    const t=Math.random();
+    const d=KC_DEFS.proporcao_direta.gen(t);
+    const dv=[d.a,d.b,d.c,d.d];
+    if(dv.some(v=>!Number.isInteger(v)||v<=0)) throw new Error('proporcao_direta: célula não inteira/positiva: '+dv);
+    if(dv[1]*dv[2] !== dv[0]*dv[3]) throw new Error('proporcao_direta: razões entre linhas divergem: '+dv);
+    if(d.answer!==dv[d.xPos] || !Number.isInteger(d.answer)) throw new Error('proporcao_direta: answer não é a célula oculta inteira: '+JSON.stringify(d));
+    seenPos.direta.add(d.xPos);
+    const iv=KC_DEFS.proporcao_inversa.gen(t);
+    const vals=[iv.a,iv.b,iv.c,iv.d];
+    if(vals.some(v=>!Number.isInteger(v)||v<=0)) throw new Error('proporcao_inversa: célula não inteira/positiva: '+vals);
+    if(iv.a*iv.b !== iv.c*iv.d) throw new Error('proporcao_inversa: constante do produto violada: '+vals);
+    const partner = iv.xPos%2===0 ? vals[iv.xPos+1] : vals[iv.xPos-1];
+    if(partner*iv.answer !== iv.a*iv.b || !Number.isInteger(iv.answer)) throw new Error('proporcao_inversa: x não fecha o produto na posição '+iv.xPos+': '+JSON.stringify(iv));
+    seenPos.inversa.add(iv.xPos);
+  }
+  ['direta','inversa'].forEach(kind=>{
+    if(seenPos[kind].size!==4) throw new Error('posição de x não cobriu as 4 células em proporção '+kind+' (saiu: '+[...seenPos[kind]]+')');
+  });
+  // TTS próprio — lê "está para … assim como" com a incógnita no lugar certo.
+  ['pt-BR','en-US'].forEach(v=>{
+    const en=v==='en-US';
+    const ph=spokenPhrase({op:'proporcao_direta',a:3,b:5,c:12,d:20,xPos:3,key:'k'}, v);
+    const want=en ? /3 is to 5 as 12 is to what/ : /3 está para 5, assim como 12 está para quanto/;
+    if(!want.test(ph)) throw new Error('TTS proporção caiu no fallback ('+v+'): '+ph);
+  });
+}catch(e){
+  globalThis.__TEST_RESULTS__.proportionError = e.message;
+}
+
+// Comparação de frações (fracao_comparacao): a resposta codificada é sempre {−1,0,+1}
+// (<, =, >) e bate com o sinal do produto cruzado exato sign(n1·d2 − n2·d1); só frações
+// próprias; os três símbolos e os quatro casos (same_den/same_num/equal/cross) aparecem
+// de fato; igualdade tem cota relevante em qualquer dificuldade (a família não pode virar
+// só "qual é maior"); o peso por padrão desloca casos sem eliminar nenhum; e o TTS lê as
+// duas frações com conectivo próprio nos dois idiomas.
+try{
+  Store.data = Store.defaults();
+  const seen={'-1':0,'0':0,'1':0};
+  const seenCase=new Set();
+  for(let i=0;i<600;i++){
+    const t=Math.random();
+    const g=KC_DEFS.fracao_comparacao.gen(t);
+    if(g.answer!==-1 && g.answer!==0 && g.answer!==1) throw new Error('answer fora do domínio {−1,0,1}: '+g.answer);
+    if(Math.sign(g.a*g.d - g.c*g.b)!==g.answer) throw new Error('sinal não bate com o produto cruzado: '+JSON.stringify(g));
+    [[g.a,g.b],[g.c,g.d]].forEach(pair=>{
+      const [n,d]=pair;
+      if(!Number.isInteger(n) || !Number.isInteger(d) || n<1 || d<2 || n>=d) throw new Error('fração inválida/não própria: '+JSON.stringify(g));
+    });
+    seen[String(g.answer)]++;
+    if(g.features && g.features.case) seenCase.add(g.features.case);
+  }
+  Object.keys(seen).forEach(k=>{ if(!seen[k]) throw new Error('símbolo nunca sorteado ('+k+'): '+JSON.stringify(seen)); });
+  if(seen['0']<30) throw new Error('igualdade rara demais ('+seen['0']+'/600)');
+  ['same_den','same_num','equal','cross'].forEach(c=>{ if(!seenCase.has(c)) throw new Error('caso '+c+' nunca gerado'); });
+  // Peso por padrão no caso (atributo direto, como pct/casas decimais): peso máximo em
+  // "cross" desloca a geração para ele, mas os demais casos continuam possíveis.
+  const p = Engine.profile('fracao_comparacao');
+  p.patternWeights = {'case:same_den':PATTERN_WEIGHT_MIN,'case:same_num':PATTERN_WEIGHT_MIN,'case:equal':PATTERN_WEIGHT_MIN,'case:cross':PATTERN_WEIGHT_MAX};
+  let countCross=0; const total=300;
+  for(let i=0;i<total;i++){
+    if(KC_DEFS.fracao_comparacao.gen(0.5,p).features.case==='cross') countCross++;
+  }
+  if(countCross/total < 0.4) throw new Error('peso por padrão não deslocou o caso gerado (cross='+countCross+'/'+total+')');
+  if(countCross===total) throw new Error('peso por padrão eliminou o piso de aleatoriedade');
+  ['pt-BR','en-US'].forEach(v=>{
+    const ph=spokenPhrase({op:'fracao_comparacao',a:5,b:8,c:2,d:3,key:'k',kcLabel:'l',symbol:'⇔'}, v);
+    const want=v==='en-US' ? /5 over 8 compared with 2 over 3/ : /5 sobre 8 comparado com 2 sobre 3/;
+    if(!want.test(ph)) throw new Error('TTS comparação caiu no fallback ('+v+'): '+ph);
+  });
+}catch(e){
+  globalThis.__TEST_RESULTS__.fractionCompareError = e.message;
+}
+
+// Fluxo de sessão da comparação: com "confirmar resposta" ligado, o toque em < = > só
+// marca a escolha (avalia no ✓); desligado, um toque já avalia. O feedback de erro recebe
+// o item (para mostrar o símbolo, não o código numérico), e teclas < = > fora da família
+// de comparação são ignoradas.
+try{
+  let lastShown=null;
+  UI.updateAnswerDisplay=()=>{}; UI.toast=()=>{}; UI.flashAnswer=()=>{};
+  UI.pushPulse=()=>{}; UI.showCorrectAnswer=(it)=>{ lastShown=it; };
+  UI.clearAnswerFeedback=()=>{};
+  Sound.correct=()=>{}; Sound.wrong=()=>{}; Haptics.correct=()=>{}; Haptics.wrong=()=>{};
+  Store.data = Store.defaults();
+  Store.data.settings.confirmBeforeAccept = true;
+  let item=null;
+  do{ item = Engine.generateItem('fracao_comparacao'); } while(item.answer!==1);
+  Session.active=true; Session.paused=false; Session.current=item;
+  Session.typed=''; Session.records=[]; Session.answering=false; Session.inputLocked=false;
+  Session.qShownAt=U.now(); Session.firstKeyAt=0;
+  Session.submitComparison('>');
+  if(Session.records.length!==0) throw new Error('comparação enviou sozinha com confirmação manual ligada');
+  Session.evaluate(false);
+  if(Session.records.length!==1 || !Session.records[0].correct) throw new Error('> não registrou acerto via ✓');
+  clearTimeout(Session.nextQuestionHandle);
+  Store.data.settings.confirmBeforeAccept = false;
+  Session.records=[]; Session.answering=false; Session.typed=''; Session.firstKeyAt=U.now();
+  Session.submitComparison('<');
+  if(Session.records.length!==1 || Session.records[0].correct) throw new Error('< deveria registrar erro imediato sem confirmação manual');
+  if(!lastShown || lastShown.op!=='fracao_comparacao') throw new Error('feedback de erro não recebeu o item da comparação');
+  clearTimeout(Session.nextQuestionHandle);
+  const other = Engine.generateItem('soma_2d_cc');
+  Session.current=other; Session.records=[]; Session.answering=false;
+  Session.submitComparison('<');
+  if(Session.records.length!==0) throw new Error('submitComparison vazou para família que não é de comparação');
+  Session.active=false;
+}catch(e){
+  globalThis.__TEST_RESULTS__.fractionCompareSessionError = e.message;
 }
 `;
 
@@ -814,7 +966,10 @@ ok(RESULTS.cascadeError===null, 'cascata de dificuldade (boost ao pré-requisito
 ok(RESULTS.adaptiveCalibrationError===null, 'calibração adaptativa (consistente encerra cedo, inconsistente até o teto): '+RESULTS.adaptiveCalibrationError);
 ok(RESULTS.logStandaloneError===null, 'logaritmo standalone (operação em si, expoente correto, TTS próprio): '+RESULTS.logStandaloneError);
 ok(RESULTS.logExpressionError===null, 'log removido das expressões (potência/radical/encadeada sem termos de log): '+RESULTS.logExpressionError);
-ok(RESULTS.pctVariantsError===null, 'porcentagens derivadas (inversa/±%/%% exatas, dica por base, TTS próprio): '+RESULTS.pctVariantsError);
+ok(RESULTS.pctVariantsError===null, 'porcentagens derivadas I/II (inversa/±%/%%/original/variação/sucessiva exatas, dica por base, TTS próprio): '+RESULTS.pctVariantsError);
+ok(RESULTS.proportionError===null, 'proporções direta/inversa (relação exata, x nas 4 posições, constante do produto, TTS próprio): '+RESULTS.proportionError);
+ok(RESULTS.fractionCompareError===null, 'comparação de frações (sinal = produto cruzado, 3 símbolos + igualdade, peso por caso, TTS próprio): '+RESULTS.fractionCompareError);
+ok(RESULTS.fractionCompareSessionError===null, 'fluxo de sessão da comparação (< = >, confirmação manual, feedback com símbolo): '+RESULTS.fractionCompareSessionError);
 
 console.log(`\n${passed} verificações passaram, ${failures} falharam.`);
 if(failures>0){

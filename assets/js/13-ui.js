@@ -308,9 +308,34 @@ const UI = {
       btn.addEventListener('click', handler);
     }
   },
+  // O teclado tem dois modos: numérico (padrão) e de comparação de frações (< = >).
+  // A troca acontece por pergunta (Session.nextQuestion → setKeypadMode) e só reconstrói
+  // o grid quando o modo muda de verdade — alternar entre famílias comuns não o recarrega.
+  keypadMode: null,
+  setKeypadMode(mode){
+    if(this.keypadMode===mode) return;
+    this.keypadMode = mode;
+    this.buildKeypad();
+  },
   buildKeypad(){
     const grid = document.getElementById('keypad');
+    if(!grid) return;
     grid.innerHTML='';
+    if(this.keypadMode==='comparison'){
+      ['<','=','>'].forEach(k=>{
+        const btn = document.createElement('button');
+        btn.className='key func'; btn.dataset.compare=k;
+        btn.textContent = k;
+        this.pressKey(btn, ()=>Session.submitComparison(k));
+        grid.appendChild(btn);
+      });
+      // ✓ continua existindo: é ele quem confirma quando "confirmar resposta" está ligado.
+      const okBtn = document.createElement('button');
+      okBtn.className='key func wide3'; okBtn.dataset.ok='1'; okBtn.textContent='✓';
+      this.pressKey(okBtn, ()=>Session.evaluate(false));
+      grid.appendChild(okBtn);
+      return;
+    }
     const keys = ['1','2','3','4','5','6','7','8','9','±','0','←'];
     keys.forEach(k=>{
       const btn = document.createElement('button');
@@ -342,6 +367,9 @@ const UI = {
       else if(e.key==='Backspace') Session.submitDigit('back');
       else if(e.key==='-') Session.submitDigit('sign');
       else if(e.key==='.'||e.key===',') Session.submitDigit('dec');
+      else if(e.key==='<') Session.submitComparison('<');
+      else if(e.key==='>') Session.submitComparison('>');
+      else if(e.key==='=') Session.submitComparison('=');
       else if(e.key==='Enter') Session.evaluate(false);
     });
   },
@@ -416,6 +444,53 @@ const UI = {
       eqEl.append(prompt, line);
       return;
     }
+    // pct_original: mesma estrutura visual da equação linear — incógnita "x" no lugar do "?",
+    // com o pedido ("x = ?") numa segunda linha abaixo do enunciado.
+    if(item.op==='porcentagem_original'){
+      const line = document.createElement('div');
+      line.className = 'math-equation-line';
+      line.append(
+        this.mathSpan('x'),
+        this.mathSpan(item.features&&item.features.aumento?' + ':' − ', 'math-operator'),
+        this.mathSpan(`${U.fmtNum(item.b)}%`),
+        this.mathSpan(' = ', 'math-operator'),
+        this.mathSpan(U.fmtNum(item.a))
+      );
+      eqEl.append(line, this.mathSpan('x = ?', 'math-equation-prompt below'));
+      return;
+    }
+    // Proporção (direta/inversa): representação minimalista sem enunciado — o rótulo do tipo
+    // no topo e duas linhas de pares correspondentes ("a → b"); a incógnita "x" pode ocupar
+    // qualquer uma das quatro posições. As células viajam em a/b/c/d na ordem de leitura.
+    if(item.op==='proporcao_direta'||item.op==='proporcao_inversa'){
+      const wrap = document.createElement('div');
+      wrap.className = 'math-proportion';
+      wrap.append(this.mathSpan(t(item.op==='proporcao_direta'?'prop_direct':'prop_inverse'), 'math-prop-tag'));
+      const cells = [item.a,item.b,item.c,item.d];
+      const cellOf = i => i===item.xPos ? this.mathSpan('x','math-prop-x') : this.mathSpan(U.fmtNum(cells[i]));
+      [0,2].forEach(i=>{
+        const line = document.createElement('div');
+        line.className = 'math-prop-row';
+        line.append(cellOf(i), this.mathSpan('→','math-prop-arrow'), cellOf(i+1));
+        wrap.append(line);
+      });
+      eqEl.append(wrap);
+      return;
+    }
+
+    // Comparação de frações: duas frações empilhadas com o espaço do símbolo ("?")
+    // entre elas — a resposta é escolher <, = ou > no teclado próprio da família.
+    if(item.op==='fracao_comparacao'){
+      const row = document.createElement('div');
+      row.className = 'math-row math-compare';
+      row.append(
+        this.mathFraction(this.mathSpan(String(item.a)), this.mathSpan(String(item.b))),
+        this.mathSpan('?', 'math-compare-gap'),
+        this.mathFraction(this.mathSpan(String(item.c)), this.mathSpan(String(item.d)))
+      );
+      eqEl.append(row);
+      return;
+    }
 
     const row = document.createElement('div');
     row.className = 'math-row';
@@ -446,6 +521,12 @@ const UI = {
       // '%' do símbolo não entra: ele fica só no operando ("90 + 20%"), senão vira "90+%20%".
       else if(item.op==='porcentagem_acrescimo' || item.op==='porcentagem_desconto') text = `${U.fmtNum(item.a)} ${item.op==='porcentagem_acrescimo'?'+':'−'} ${U.fmtNum(item.b)}%`;
       else if(item.op==='porcentagem_dupla') text = `${item.a}% ${t('pct_of')} ${item.b}% = ?%`;
+      // Derivadas II: valor original (o "?" é a incógnita), variação com o sinal já no
+      // enunciado (a pessoa digita só a magnitude) e descontos em cascata.
+      else if(item.op==='porcentagem_original') text = `? ${item.features&&item.features.aumento?'+':'−'} ${U.fmtNum(item.b)}% = ${U.fmtNum(item.a)}`;
+      else if(item.op==='porcentagem_aumento') text = `${U.fmtNum(item.a)} → ${U.fmtNum(item.b)} = +?%`;
+      else if(item.op==='porcentagem_reducao') text = `${U.fmtNum(item.a)} → ${U.fmtNum(item.b)} = −?%`;
+      else if(item.op==='porcentagem_sucessiva') text = `${U.fmtNum(item.a)} − ${U.fmtNum(item.b)}% − ${U.fmtNum(item.c)}%`;
       else text = item.exprText ? item.exprText
         : item.op==='porcentagem' ? `${item.a}% ${t('pct_of')} ${item.b}`
         : `${U.fmtNum(item.a)} ${item.symbol} ${U.fmtNum(item.b)}`;
@@ -490,8 +571,11 @@ const UI = {
     const hintEl = document.getElementById('feedbackHint');
     if(hintEl) hintEl.textContent='';
   },
-  showCorrectAnswer(answer){
-    document.getElementById('feedbackAnswer').textContent = t('answer_label')+': '+U.fmtNum(answer);
+  showCorrectAnswer(item){
+    // Comparação de frações: mostra o símbolo (< = >), não o código inteiro do item.
+    const isCmp = item && typeof item==='object' && item.op==='fracao_comparacao';
+    const value = isCmp ? compareSymbolOf(item.answer) : U.fmtNum(item);
+    document.getElementById('feedbackAnswer').textContent = t('answer_label')+': '+value;
   },
   // Hint por padrão de erro (Andaime, Pilar 3): dica tática pontual, mostrada junto da
   // resposta correta quando o motor decide que o padrão de erro insistiu o bastante.

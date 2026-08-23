@@ -204,7 +204,21 @@ input[type=range]{width:100%; accent-color:var(--accent);}
 .math-power sup{font-size:0.52em; line-height:1; margin-left:0.05em; transform:translateY(-0.08em);}
 .math-log sub{font-size:0.48em; vertical-align:-0.35em;}
 .math-equation-prompt{display:block; font-style:italic; font-size:0.86em; line-height:1; margin-bottom:0.36em;}
+.math-equation-prompt.below{margin-top:0.36em; margin-bottom:0;}
 .math-equation-line{font-size:0.84em; white-space:nowrap;}
+/* Proporção (direta/inversa): rótulo do tipo + duas linhas de pares correspondentes */
+.math-proportion{display:flex; flex-direction:column; align-items:center; gap:0.16em; line-height:1;}
+.math-prop-tag{font-family:var(--font-num); font-size:0.26em; font-weight:700; letter-spacing:0.3em; text-indent:0.3em; color:var(--dim);}
+.math-prop-row{display:flex; align-items:center; justify-content:center; gap:0.42em; font-size:0.56em; line-height:1.05;}
+.math-prop-arrow{color:var(--dim);}
+.math-prop-x{font-style:italic; color:var(--accent);}
+/* Comparação de frações: fração ? fração — o "?" marca o lugar da resposta (< = >) */
+.math-compare{gap:0.5em;}
+.math-compare-gap{
+  min-width:1.15em; text-align:center;
+  font-family:'STIX Two Text', 'Cambria Math', Cambria, serif; font-style:italic;
+  color:var(--accent); border-bottom:0.06em dashed var(--border); padding-bottom:0.08em;
+}
 @media (max-height:720px){
   .math-card{min-height:104px; padding:12px;}
   .equation-zone{gap:6px; padding-top:4px;}
@@ -238,6 +252,7 @@ input[type=range]{width:100%; accent-color:var(--accent);}
 .key.wide3{grid-column:span 3; margin-top:2px;}
 .key.func{color:var(--text); font-size:1.15rem; font-family:var(--font-num); background:var(--surface-2);}
 .key.func[data-ok="1"]{background:var(--accent); color:#fff; font-weight:700;}
+.key.func[data-compare]{font-size:1.6rem; font-weight:600; padding:15px 0;}
 
 /* rest / hiit overlay */
 .rest-overlay{flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:10px; text-align:center;}

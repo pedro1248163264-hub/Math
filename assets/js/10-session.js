@@ -245,6 +245,9 @@ const Session = {
     this.current = Engine.next();
     if(!this.current){ UI.toast(t('no_op_selected')); return; }
     const item = this.current;
+    // Comparação de frações troca o teclado numérico por < = > (a UI só reconstrói
+    // quando o modo muda, então alternar entre famílias não recarrega o teclado toda hora).
+    UI.setKeypadMode(item.op==='fracao_comparacao' ? 'comparison' : 'numeric');
     this.typed = '';
     this.firstKeyAt = 0;
     this.qShownAt = U.now();
@@ -332,6 +335,25 @@ const Session = {
     if(Store.data.settings.confirmBeforeAccept) return;
     if(this.current.answer >= 0 && Number.isInteger(this.current.answer) && !isDecimalItem && digitsOnly.length >= expectedLen){ this.evaluate(false); }
   },
+  // Comparação de frações: < = > registram a escolha (uma tecla só — não há sequência a
+  // digitar). O envio segue a mesma regra das respostas que não podem ser aceitas por
+  // contagem de dígitos: com "confirmar resposta" ligado espera o ✓/Enter; desligado,
+  // avalia no toque. O primeiro toque também para o cronômetro de abandono, como qualquer
+  // outra primeira tecla.
+  submitComparison(sym){
+    if(!this.active || this.paused || !this.current || this.answering || this.inputLocked) return;
+    // Teclas < = > só significam algo na família de comparação — o teclado físico
+    // compartilha o mesmo handler e precisa do guarda explícito.
+    if(this.current.op!=='fracao_comparacao') return;
+    if(this.firstKeyAt===0){
+      this.firstKeyAt = U.now();
+      clearTimeout(this.itemTimeoutHandle);
+    }
+    this.typed = sym;
+    UI.updateAnswerDisplay(this.typed);
+    if(Store.data.settings.confirmBeforeAccept) return;
+    this.evaluate(false);
+  },
   evaluate(timedOut){
     // O botão ✓/Enter só confirma uma resposta de fato. Sem esta guarda, um toque
     // acidental registrava erro com campo vazio; toques repetidos também avaliavam a
@@ -371,7 +393,12 @@ const Session = {
     // Aceita tanto vírgula quanto ponto como separador decimal na hora de comparar,
     // independente de qual dos dois a tecla decimal inseriu (idioma do app).
     const typedNormalized = this.typed.replace(',', '.');
-    const correct = !timedOut && this.typed.length>0 && (+typedNormalized === item.answer);
+    // Comparação de frações: o símbolo tocado (< = >) é traduzido pelo mapa único
+    // (04-operations.js) e comparado ao código inteiro do item — não passa pela conversão
+    // numérica, que daria NaN para '<' e '='.
+    const compareCode = COMPARE_SYMBOLS[this.typed];
+    const correct = !timedOut && this.typed.length>0 &&
+      (compareCode!==undefined ? compareCode===item.answer : (+typedNormalized === item.answer));
     const result = Engine.registerResult(item, effectiveMs, correct, !!timedOut, this.typed);
     this.touchedKcs.add(item.key);
     this.records.push({op:item.op, key:item.key, kcLabel:item.kcLabel, ms:effectiveMs, totalMs, cognitiveMs, motorMs,
@@ -381,7 +408,7 @@ const Session = {
     UI.pushPulse(classify(result));
     if(correct){ Sound.correct(); Haptics.correct(); }
     else {
-      Sound.wrong(); Haptics.wrong(); UI.showCorrectAnswer(item.answer);
+      Sound.wrong(); Haptics.wrong(); UI.showCorrectAnswer(item);
       // Hint por padrão de erro (Andaime, Pilar 3): só vem preenchido quando a mesma
       // combinação atributo/bucket bateu PATTERN_HINT_STREAK erros seguidos.
       if(result.hint) UI.showHint(result.hint);

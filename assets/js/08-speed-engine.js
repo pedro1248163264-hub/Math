@@ -50,12 +50,15 @@ const Engine = {
     sub_2d_ce:['borrows'], sub_3_4d:['borrows'],
     pct_basico:['pct'], pct_intermediario:['pct'], pct_avancado:['pct'],
     pct_reverso:['pct'], pct_adicao:['pct'], pct_subtracao:['pct'], pct_duplo:['pct'],
+    pct_original:['pct'], pct_variacao_alta:['pct'], pct_variacao_baixa:['pct'], pct_sucessivo:['pct'],
     soma_decimal:['decimalPlaces'], sub_decimal:['decimalPlaces'],
-    mult_decimal:['decimalPlaces'], div_decimal:['decimalPlaces']
+    mult_decimal:['decimalPlaces'], div_decimal:['decimalPlaces'],
+    fracao_comparacao:['case']
   },
   // Atributos cujo valor bruto (não uma contagem sem/um/vários) já é a própria chave do
-  // bucket — pct (10/20/25...) e decimalPlaces (1/2 casas) funcionam assim.
-  directBucketAttrs:['pct','decimalPlaces'],
+  // bucket — pct (10/20/25...), decimalPlaces (1/2 casas) e o caso de comparação de
+  // frações (same_den/same_num/equal/cross) funcionam assim.
+  directBucketAttrs:['pct','decimalPlaces','case'],
   bucketFromCount(attr, count){
     if(count<=0) return 'sem';
     if(count===1) return 'um';
@@ -140,6 +143,19 @@ const Engine = {
       if(item.key==='pct_reverso') return this.pctHint(item.features.pct, item.b);
       if(item.key==='pct_adicao'||item.key==='pct_subtracao') return this.pctHint(item.features.pct, item.a);
       if(item.key==='pct_duplo') return tf('hint_pct_duplo', {a:item.a, b:item.b});
+      // Derivadas II: cada uma ancora na referência certa — no original, o final representa
+      // (100±p)% do valor procurado; nas variações, a taxa incide sobre o INICIAL; no
+      // sucessivo, o segundo desconto incide sobre o meio (já reduzido), não sobre a base.
+      if(item.key==='pct_original'){
+        const fator = item.features.aumento ? 100+item.features.pct : 100-item.features.pct;
+        return tf('hint_pct_original', {final:item.a, fator});
+      }
+      if(item.key==='pct_variacao_alta') return tf('hint_pct_variacao', {inicial:item.a, delta:item.b-item.a});
+      if(item.key==='pct_variacao_baixa') return tf('hint_pct_variacao', {inicial:item.a, delta:item.a-item.b});
+      if(item.key==='pct_sucessivo'){
+        const meio = item.a - item.a*item.features.pct/100;
+        return tf('hint_pct_sucessivo', {base:item.a, p1:item.features.pct, meio, p2:item.c});
+      }
       return this.pctHint(item.a, item.b);
     },
   // ---------- Peso por dígito/linha (substitui os "fatos fracos" da tabuada) ----------
@@ -412,6 +428,7 @@ const Engine = {
       symbol:opDef.symbol, label:opDef.label, isCalibration:!!meta.isCalibration, isReview:!!meta.isReview,
       exprText:gen.exprText, c:gen.c, d:gen.d, innerOp:gen.innerOp, outerOp:gen.outerOp,
       leftOp:gen.leftOp, rightOp:gen.rightOp, midOp:gen.midOp, terms:gen.terms, ops:gen.ops,
+      xPos:gen.xPos,
       isEquation:!!gen.isEquation, isReversePath:!!gen.isReversePath, isMasteredFlash };
   },
   // Prazo de resposta (seç. 2 da revisão): no modo Ultimate, targetMs × multiplicador por

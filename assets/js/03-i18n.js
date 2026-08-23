@@ -74,7 +74,11 @@ const I18N = {
     hint_pct_tens:'{pct}% é {mult} vezes 10%: 10% de {base} é {ten}, então {pct}% é {ten}×{mult}.',
     hint_pct_generic:'Tente por partes: 10% de {base} é {ten}; ajuste esse valor até chegar em {pct}%.',
     hint_pct_duplo:'Transforme em multiplicação: {a}% de {b}% = ({a} × {b}) ÷ 100, já em %.',
+    hint_pct_original:'O resultado representa {fator}% do original: {final} ÷ {fator} × 100.',
+    hint_pct_variacao:'A referência é o valor INICIAL: {delta} ÷ {inicial}, depois ×100.',
+    hint_pct_sucessivo:'O segundo desconto incide sobre o valor já reduzido, não sobre a base: {base} − {p1}% = {meio}; agora −{p2}% sobre {meio}.',
     pct_of:'de', pct_is_what_pct_of:'é quantos % de',
+    prop_direct:'DIRETA', prop_inverse:'INVERSA',
     date_locale:'pt-BR'
   },
   en:{
@@ -142,7 +146,11 @@ const I18N = {
     hint_pct_tens:'{pct}% is {mult} times 10%: 10% of {base} is {ten}, so {pct}% is {ten}×{mult}.',
     hint_pct_generic:'Try building it up: 10% of {base} is {ten}; adjust that value until you reach {pct}%.',
     hint_pct_duplo:'Turn it into multiplication: {a}% of {b}% = ({a} × {b}) ÷ 100, already in %.',
+    hint_pct_original:'The result represents {fator}% of the original: {final} ÷ {fator} × 100.',
+    hint_pct_variacao:'The reference is the INITIAL value: {delta} ÷ {inicial}, then ×100.',
+    hint_pct_sucessivo:'The second discount applies to the already reduced value, not to the base: {base} − {p1}% = {meio}; now −{p2}% on {meio}.',
     pct_of:'of', pct_is_what_pct_of:'is what % of',
+    prop_direct:'DIRECT', prop_inverse:'INVERSE',
     date_locale:'en-US'
   }
 };

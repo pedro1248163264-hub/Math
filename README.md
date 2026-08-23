@@ -10,7 +10,7 @@ O Mental Math é um PWA local: funciona diretamente no navegador, pode usar o ca
 
 Tudo funciona offline, com **uma única exceção**: as fontes do Google Fonts carregadas no `index.html`. Elas dependem da rede. Depois da primeira visita online elas ficam em cache (como resposta opaca do service worker), então as aberturas seguintes já usam as fontes reais mesmo sem conexão. Apenas a primeira abertura offline logo após instalar o app cai para as fontes de fallback locais. O restante — HTML, CSS, JS, dados — nunca depende da rede.
 
-O treino é organizado por **famílias de cálculo** (habilidades), e não por uma conta específica. Há 33 famílias, cobrindo somas, subtrações, multiplicações, divisões, porcentagens (incluindo as quatro variações derivadas — seção abaixo), expressões, frações, potências, radicais, logaritmos, equações e contas com vírgula. Na configuração, a pessoa pode escolher uma ou mais delas, ou marcar **Treinar todas as contas** — que é o padrão de uma instalação nova. Todas as famílias ficam selecionáveis desde o início; os pré-requisitos são usados apenas como um sinal de prioridade, não como bloqueio.
+O treino é organizado por **famílias de cálculo** (habilidades), e não por uma conta específica. Há 40 famílias, cobrindo somas, subtrações, multiplicações, divisões, porcentagens (incluindo as oito variações derivadas — seção abaixo), expressões, frações (operações e comparação — seção abaixo), potências, radicais, logaritmos, equações, proporções e contas com vírgula. Na configuração, a pessoa pode escolher uma ou mais delas, ou marcar **Treinar todas as contas** — que é o padrão de uma instalação nova. Todas as famílias ficam selecionáveis desde o início; os pré-requisitos são usados apenas como um sinal de prioridade, não como bloqueio.
 
 O botão **Iniciar treino** começa imediatamente com a configuração salva. Para alterá-la, acesse **Ajustes** e toque em **Configurar treino** para abrir a tela de configuração; as alterações são salvas na hora. Durante a sessão, o cabeçalho mostra apenas o tempo restante.
 
@@ -24,7 +24,7 @@ Para cada pergunta, o motor considera somente as famílias selecionadas e segue 
 
 Não existe mais um estilo "Foco" ou "Misto" configurável — há um único motor de sequência, usado em todos os modos:
 
-- **Interleaving ponderado:** em vez de sempre repetir a família de maior pontuação, o motor sorteia entre todas as famílias selecionadas com peso proporcional à pontuação de cada uma — os scores são normalizados pelo spread do pool do momento (min→0, max→1) antes do sorteio, com um piso para que, quando ninguém está claramente fraco, o sorteio fique quase-uniforme (começo do app). A mesma família nunca é escolhida duas vezes seguidas, e nenhuma família passa de 40% das últimas 10 escolhas — mistura de verdade, não só evita repetição imediata. A mesma calibração vale tanto para um pool pequeno (poucas famílias escolhidas) quanto para "Treinar todas as contas" (33 famílias).
+- **Interleaving ponderado:** em vez de sempre repetir a família de maior pontuação, o motor sorteia entre todas as famílias selecionadas com peso proporcional à pontuação de cada uma — os scores são normalizados pelo spread do pool do momento (min→0, max→1) antes do sorteio, com um piso para que, quando ninguém está claramente fraco, o sorteio fique quase-uniforme (começo do app). A mesma família nunca é escolhida duas vezes seguidas, e nenhuma família passa de 40% das últimas 10 escolhas — mistura de verdade, não só evita repetição imediata. A mesma calibração vale tanto para um pool pequeno (poucas famílias escolhidas) quanto para "Treinar todas as contas" (39 famílias).
 - **Retry pós-erro:** ao errar uma conta de uma família, ela reaparece dentro de 3 a 6 itens depois (nunca no item seguinte, por causa da regra acima) — fecha o ciclo de correção sem virar repetição espaçada de item específico.
 - **Cascata de dificuldade:** quando uma família está bem abaixo do nível (acerto recente < 0.6, com amostra suficiente), o motor dá um boost forte ao pré-requisito mais fraco ainda não dominado — em vez de só baixar o tamanho dos números no lugar, ele puxa o alicerce de volta ao treino.
 - **Peso por padrão dentro da família:** para famílias com um atributo categórico conhecido (vai-um em somas, empréstimo em subtrações, grupo de porcentagem), o motor guarda internamente um peso por atributo — sobe quando a pessoa é mais lenta/erra mais nele, desce quando está rápida. A próxima geração fica enviesada para esse atributo, mas **nunca** repete um enunciado específico, e nunca fica 100% previsível (sempre há piso de aleatoriedade). Isso não é exposto em nenhuma tela — é só um ajuste interno de geração.
@@ -36,7 +36,7 @@ Depois de escolher a família, o gerador cria uma conta compatível com ela. A d
 
 ### Porcentagens derivadas
 
-Além das três famílias clássicas de porcentagem (`pct_basico`, `pct_intermediario`, `pct_avancado` — "p% de base"), há quatro variações que reutilizam esse cálculo com um passo a mais (ou invertido), cada uma como habilidade própria, com Elo/meta/calibração e peso por grupo de % separados:
+Além das três famílias clássicas de porcentagem (`pct_basico`, `pct_intermediario`, `pct_avancado` — "p% de base"), há oito variações que reutilizam esse cálculo com um passo a mais (ou invertido), cada uma como habilidade própria, com Elo/meta/calibração e peso por grupo de % separados:
 
 | Família | Enunciado | Resposta |
 |---|---|---|
@@ -44,8 +44,18 @@ Além das três famílias clássicas de porcentagem (`pct_basico`, `pct_intermed
 | `pct_adicao` | "80 + 15%" | 92 — calcula 15% de 80 e soma |
 | `pct_subtracao` | "80 − 15%" | 68 — calcula 15% de 80 e subtrai |
 | `pct_duplo` | "2% de 5% = ?%" | 0,1 — percentual de percentual |
+| `pct_original` | "x − 30% = 84" + "x = ?" | 120 — desfaz a redução: x(1−0,30)=84 |
+| `pct_variacao_alta` | "80 → 100 = +?%" | +25 — aumento relativo ao valor INICIAL (80) |
+| `pct_variacao_baixa` | "100 → 80 = −?%" | −20 — redução relativa ao valor INICIAL (100) |
+| `pct_sucessivo` | "100 − 20% − 10% = ?" | 72 — o segundo desconto incide sobre 80, não sobre 100 |
 
-As respostas de `pct_adicao`/`pct_subtracao`/`pct_duplo` são sempre exatas (o gerador ajusta a base/parcela até o acréscimo ou desconto ser inteiro; no duplo, `p1×p2÷100` tem no máximo 2 casas). O `pct_duplo` responde em **pontos percentuais** (não na fração bruta `0,001`) e é a única das quatro com resposta decimal — ver seção abaixo.
+As quatro primeiras respondem "um passo além" do cálculo direto; as quatro últimas (`pct_original`, `pct_variacao_*`, `pct_sucessivo`) existem para desarmar erros conceituais específicos:
+
+- **`pct_original`** é diferente de calcular 30% de 84: a pessoa precisa **desfazer** a redução dividindo por (1−p/100). Em dificuldades maiores entra também a versão com acréscimo ("x + 25% = 125"). Na tela, o enunciado usa a mesma estrutura de equação linear (incógnita `x` e o pedido `x = ?` em linha própria).
+- **A dupla de variação** mostra que voltar ao valor original não usa a mesma taxa: 80 → 100 é +25%, mas 100 → 80 é −20% — porque a referência é sempre o valor inicial. O sinal já vem no enunciado (`+?%`/`−?%`); a resposta digitada é só a magnitude.
+- **`pct_sucessivo`** pega o erro clássico de somar descontos: −20% −10% não equivale a −30%, e sim a −28% sobre o valor inicial, porque os 10% caem sobre o valor já reduzido.
+
+As respostas são sempre exatas (o gerador ajusta a base/parcela até o acréscimo ou desconto ser inteiro; no duplo, `p1×p2÷100` tem no máximo 2 casas; no sucessivo, ambos os passos da cascata são inteiros). O `pct_duplo` responde em **pontos percentuais** (não na fração bruta `0,001`) e é o único com resposta decimal — ver seção abaixo.
 
 ### Contas com vírgula
 
@@ -56,6 +66,32 @@ A dificuldade extra da vírgula em si (raciocinar com casas decimais, não o tam
 **Comparação interna (ainda não exposta em tela):** o motor consegue calcular, a qualquer momento, o quanto a vírgula pesa de fato — comparando tempo e acerto de cada família decimal com os da família inteira "irmã" (`soma_decimal` ↔ `soma_2d_cc`, `sub_decimal` ↔ `sub_2d_ce`, `mult_decimal` ↔ `mult_tabuada`, `div_decimal` ↔ `div_tabuada`) e checando se a diferença está dentro do que já era esperado (até ~25% mais lento, até 5 p.p. a menos de acerto) ou desproporcional. Isso vive em `Engine.decimalComparison(key)` / `Engine.allDecimalComparisons()` (`assets/js/08-speed-engine.js`) e não altera dificuldade, sequenciamento nem é mostrado em nenhuma tela hoje — a tela de estatísticas precisa de uma revisão à parte antes de exibir esse tipo de dado.
 
 No teclado numérico da sessão, uma tecla extra (vírgula ou ponto, conforme o idioma do app) fica sempre disponível; nas famílias sem vírgula ela simplesmente não se aplica. Respostas decimais sempre exigem toque em ✓ (nunca são enviadas sozinhas por contagem de dígitos), pelo mesmo motivo que respostas negativas já exigiam.
+
+### Proporções
+
+Duas famílias irmãs — `proporcao_direta` e `proporcao_inversa` — treinam reconhecer a relação entre grandezas **sem enunciado textual**: a questão mostra apenas o rótulo do tipo no topo (`DIRETA`/`INVERSA`; traduzido para `DIRECT`/`INVERSE` no modo inglês) e duas linhas de pares correspondentes, com a incógnita `x` em qualquer uma das quatro posições:
+
+| Família | Representação | Relação | Exemplo |
+|---|---|---|---|
+| `proporcao_direta` | `3 → 5` / `12 → x` | razão constante: b/a = d/c | x = 20 |
+| `proporcao_inversa` | `3 → 12` / `6 → x` | constante do produto: a×b = c×d | x = 6 |
+
+- **Direta** é construída por multiplicação: a linha de baixo é a linha de cima × m — as quatro células são sempre inteiras e qualquer posição de `x` resolve por multiplicar/dividir exato (nunca quebra). A dificuldade cresce em dois eixos: o tamanho da linha-base (~5 até ~40) e a razão entre linhas m — redonda no começo (2, 3, 5, 10), menos óbvia depois (7, 9, 12, 15, 25).
+- **Inversa** é construída pela constante do produto K = a·c·k: linha 1 = (a → c·k), linha 2 = (c → a·k). Com k = 1 o par só se inverte ("3 → 4 / 4 → 3"), caso de reconhecimento imediato reservado ao início da curva; os fatores crescem de ~8 até ~30 e k até 8.
+- A resposta é digitada no teclado normal (sempre inteira); o TTS lê os dois pares na ordem ("3 está para 5, assim como 12 está para quanto") com a incógnita exatamente onde ela está na tela. Pré-requisitos: tabuada de multiplicação (direta) e também de divisão (inversa).
+
+### Comparação de frações
+
+A família `fracao_comparacao` treina comparar duas frações **sem calcular seus valores decimais**: a tela mostra `A/B ? C/D` e a resposta é escolher `<`, `=` ou `>`. A resposta correta é sempre o sinal do produto cruzado exato — `sign(n1·d2 − n2·d1)` — codificado como inteiro (−1/0/+1) no campo `answer`, como nas demais famílias.
+
+Quatro casos de raciocínio (o motor pesa internamente o caso onde a pessoa erra ou demora mais, igual ao vai-um/grupo de %):
+
+- **Mesmo denominador** (`same_den`): basta comparar numeradores — aquecimento do começo da curva.
+- **Mesmo numerador** (`same_num`): relação inversa — denominador maior é a fração menor.
+- **Igualdade** (`equal`): mesma fração escrita em escalas diferentes (8/15 ? 16/30). Tem cota fixa (~1/4 dos itens, em qualquer nível) para a família não virar só "qual é maior". No começo da curva pode ser até fração idêntica ("3/4 ? 3/4") — reconhecimento imediato do `=`.
+- **Multiplicação cruzada** (`cross`): o caso geral (5/8 ? 2/3 → 15 vs 16). Em dificuldade alta o gerador sorteia vários candidatos e fica com o de produtos cruzados mais próximos ("quase-empate").
+
+Só aparecem frações próprias. O teclado numérico da sessão é substituído por três teclas grandes (`<` `=` `>`) apenas nesta família; no teclado físico, as teclas correspondentes também funcionam. Com "confirmar resposta" ligado, o toque só marca a escolha (o ✓ confirma); desligado, um toque já avalia. No erro, o feedback mostra o símbolo correto. Pré-requisito: tabuada de multiplicação.
 
 ### Adaptação, metas e domínio
 

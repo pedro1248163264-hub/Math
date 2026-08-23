@@ -10,9 +10,9 @@
 /* Monta a frase falada no idioma da VOZ selecionado (independente do idioma do app) */
 const EXPR_WORDS = {
   'pt-BR':{soma:'mais', subtracao:'menos', multiplicacao:'vezes', divisao:'dividido por', open:'abre parênteses', close:'fecha parênteses',
-    root:'raiz quadrada de', pow:'elevado a', logof:'log na base', of:'de', over:'sobre', equals:'igual a'},
+    root:'raiz quadrada de', pow:'elevado a', logof:'log na base', of:'de', over:'sobre', equals:'igual a', compare:'comparado com'},
   'en-US':{soma:'plus', subtracao:'minus', multiplicacao:'times', divisao:'divided by', open:'open parenthesis', close:'close parenthesis',
-    root:'square root of', pow:'to the power of', logof:'log base', of:'of', over:'over', equals:'equals'}
+    root:'square root of', pow:'to the power of', logof:'log base', of:'of', over:'over', equals:'equals', compare:'compared with'}
 };
 function speakTerm(term, w){
   if(term.kind==='power') return `${term.base<0?w.subtracao+' '+Math.abs(term.base):term.base} ${w.pow} ${term.exp}`;
@@ -58,6 +58,21 @@ function spokenPhrase(item, voiceLang){
   }
   // Log standalone: a operação é a questão — "log na base 2 de 32" / "log base 2 of 32".
   if(item.op==='logaritmo') return `${w.logof} ${a} ${w.of} ${b}`;
+  // Proporção (direta/inversa): lê os dois pares na ordem, com "quanto"/"what" exatamente
+  // na posição da incógnita — a voz nunca entrega o número que a pessoa precisa digitar.
+  if(item.op==='proporcao_direta'||item.op==='proporcao_inversa'){
+    const en = voiceLang==='en-US';
+    const link = en ? ' is to ' : ' está para ';
+    const asSo = en ? ' as ' : ', assim como ';
+    const vals = [item.a,item.b,item.c,item.d].map((v,i)=>
+      i===item.xPos ? (en?'what':'quanto') : spokenNum(v,voiceLang));
+    return vals[0]+link+vals[1]+asSo+vals[2]+link+vals[3];
+  }
+  // Comparação de frações: lê as duas frações com o conectivo "comparado com" — nunca
+  // revela a relação entre elas (a resposta É justamente <, > ou =).
+  if(item.op==='fracao_comparacao'){
+    return `${item.a} ${w.over} ${item.b} ${w.compare} ${item.c} ${w.over} ${item.d}`;
+  }
   if(item.op==='equacao') return speakEquation(item, w);
   if(item.terms && item.ops) return speakChain(item.terms, item.ops, w);
   if(item.op==='expressao'){
@@ -71,6 +86,10 @@ function spokenPhrase(item, voiceLang){
     if(item.op==='porcentagem_acrescimo') return `${a} plus ${b} percent`;
     if(item.op==='porcentagem_desconto') return `${a} minus ${b} percent`;
     if(item.op==='porcentagem_dupla') return `${a} percent of ${b} percent`;
+    if(item.op==='porcentagem_original') return item.features&&item.features.aumento ? `what number plus ${b} percent equals ${a}` : `what number minus ${b} percent equals ${a}`;
+    if(item.op==='porcentagem_aumento') return `from ${a} to ${b}, what percent increase`;
+    if(item.op==='porcentagem_reducao') return `from ${a} to ${b}, what percent decrease`;
+    if(item.op==='porcentagem_sucessiva') return `${a} minus ${b} percent, minus ${item.c} percent`;
     if(item.op==='porcentagem') return `${a} percent of ${b}`;
     if(item.op==='divisao') return `${a} divided by ${b}`;
     if(item.op==='multiplicacao') return `${a} times ${b}`;
@@ -82,6 +101,10 @@ function spokenPhrase(item, voiceLang){
   if(item.op==='porcentagem_acrescimo') return `${a} mais ${b} por cento`;
   if(item.op==='porcentagem_desconto') return `${a} menos ${b} por cento`;
   if(item.op==='porcentagem_dupla') return `${a} por cento de ${b} por cento`;
+  if(item.op==='porcentagem_original') return item.features&&item.features.aumento ? `que número mais ${b} por cento é igual a ${a}` : `que número menos ${b} por cento é igual a ${a}`;
+  if(item.op==='porcentagem_aumento') return `de ${a} para ${b}, quantos por cento de aumento`;
+  if(item.op==='porcentagem_reducao') return `de ${a} para ${b}, quantos por cento de desconto`;
+  if(item.op==='porcentagem_sucessiva') return `${a} menos ${b} por cento, menos ${item.c} por cento`;
   if(item.op==='porcentagem') return `${a} por cento de ${b}`;
   if(item.op==='divisao') return `${a} dividido por ${b}`;
   if(item.op==='multiplicacao') return `${a} vezes ${b}`;
