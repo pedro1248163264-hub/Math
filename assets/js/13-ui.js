@@ -574,7 +574,7 @@ const UI = {
   showCorrectAnswer(item){
     // Comparação de frações: mostra o símbolo (< = >), não o código inteiro do item.
     const isCmp = item && typeof item==='object' && item.op==='fracao_comparacao';
-    const value = isCmp ? compareSymbolOf(item.answer) : U.fmtNum(item);
+    const value = isCmp ? compareSymbolOf(item.answer) : U.fmtNum(item && item.answer);
     document.getElementById('feedbackAnswer').textContent = t('answer_label')+': '+value;
   },
   // Hint por padrão de erro (Andaime, Pilar 3): dica tática pontual, mostrada junto da
