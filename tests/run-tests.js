@@ -1,43 +1,25 @@
 /* =====================================================================
-   tests/run-tests.js — suíte de testes automatizados do motor de geração
-   de contas (KC_DEFS) e do disparo de fala (spokenPhrase).
+   tests/run-tests.js — suíte automatizada do motor (sem DOM, só Node.js).
 
-   Por que este arquivo existe (item 3.3 da auditoria de 2026):
-   antes desta suíte, a única forma de validar se um gerador de exercício
-   sempre produz uma conta matematicamente correta era revisão manual do
-   código. Isso já deixou passar um bug real (fracao_simples podia, em
-   ~0.025% dos casos, esgotar suas tentativas e devolver uma soma de
-   frações não-exata) — só foi encontrado porque testes ad-hoc foram
-   escritos na hora. Este arquivo versiona esse tipo de verificação.
+   O QUE COBRE
+     1. Geradores: toda trilha × level × posição m produz conta EXATA, de resposta
+        inteira (ou decimal com ≤ 2 casas), nunca negativa (exceto equação/comparação)
+        e com a FORMA de dígitos fixa do level (acaba com "4 dígitos e depois 2").
+     2. spokenPhrase() não quebra para nenhum item, em pt-BR e en-US.
+     3. Engine: nivelamento, passo de m pequeno e na direção certa, XP, barra, prova de
+        nível (aprova/reprova), reforço suave, patente Mestre, filtro de lapso, blocos.
+     4. Progress: curva de nível, meta diária, sequência de dias, estrelas da rodada.
+     5. Storage: saneamento de dados corrompidos e migração do formato v2.
+     6. Session: rodada completa com a UI "muda" (stubs) — XP, histórico, meta, saída parcial.
 
-   O QUE ESTE TESTE COBRE:
-     - Todo gen(t) de KC_DEFS, para vários níveis de dificuldade (t),
-       produz sempre um `answer` finito e dentro de uma faixa plausível —
-       nunca NaN, Infinity, ou fração quebrada. Para a maioria das
-       famílias isso significa inteiro; para as famílias marcadas
-       `decimal:true` (seç. "Decimais"), significa um valor com
-       exatamente 1 ou 2 casas decimais (features.decimalPlaces) e
-       matematicamente exato a partir de a/b — nunca dízima.
-     - spokenPhrase() nunca lança exceção para nenhuma família, em
-       pt-BR/en-US.
-     - Um "smoke test" do motor completo (Engine.next / registerResult)
-       rodando centenas de iterações simuladas sem lançar exceção e sem
-       o rating de nenhuma KC virar NaN/Infinity.
+   NÃO COBRE: layout/teclado/TTS reais (ver teste de navegador descrito no README).
 
-   O QUE ESTE TESTE **NÃO** COBRE (dependem do DOM do navegador real):
-     - Session/UI (teclado, temporizadores, TTS de verdade). Esses
-       precisam de teste manual no navegador (ou, futuramente, de uma
-       suíte com um DOM headless tipo jsdom/Playwright).
-
-   COMO RODAR:
-     node tests/run-tests.js
-   (não precisa de npm install nem de nenhuma dependência — só Node.js)
+   COMO RODAR:  node tests/run-tests.js   (ou: node run-tests.js)
    ===================================================================== */
 
 const fs = require('fs');
 const path = require('path');
 
-// ---------- stubs mínimos de ambiente de navegador ----------
 global.window = global;
 global.localStorage = {
   _data:{},
@@ -45,937 +27,466 @@ global.localStorage = {
   setItem(k,v){ this._data[k]=String(v); },
   removeItem(k){ delete this._data[k]; }
 };
-global.navigator = { vibrate(){ return true; } }; // sem serviceWorker/speechSynthesis de propósito
-global.prompt = ()=>null; // stub — só usado por Session.promptUltimateGoal(), não exercitado diretamente aqui
+global.navigator = { vibrate(){ return true; } };
+const fakeEl = ()=>({ classList:{add(){},remove(){},toggle(){},contains(){return false;}}, appendChild(){}, style:{setProperty(){}}, setAttribute(){}, replaceChildren(){}, append(){} });
 global.document = {
-  addEventListener(){}, removeEventListener(){},
-  querySelectorAll(){ return []; }, querySelector(){ return null; },
-  getElementById(){ return null; }, createElement(){ return { classList:{add(){},remove(){},toggle(){}}, appendChild(){}, style:{}, setAttribute(){} }; },
-  createElementNS(){ return { setAttribute(){} }; }
+  addEventListener(){}, removeEventListener(){}, querySelectorAll(){ return []; }, querySelector(){ return null; },
+  getElementById(){ return null; }, createElement(){ return fakeEl(); }, createElementNS(){ return fakeEl(); }
 };
 global.performance = global.performance || { now:()=>Date.now() };
 
-// ---------- carrega o motor a partir de assets/js/ ----------
-// O app é dividido em módulos carregados em ordem de dependência (ver
-// index.html). Aqui concatenamos os mesmos módulos, na mesma ordem, para
-// reproduzir exatamente o escopo léxico que o navegador monta — exceto
-// 14-init.js, que mexeria em document/DOMContentLoaded/serviceWorker de
-// verdade; os testes chamam Store.load() e o motor manualmente, sob controle.
+// Mesmos módulos, mesma ordem do index.html — exceto 15-init.js (efeitos colaterais de inicialização).
 const jsDir = path.join(__dirname, '..', 'assets', 'js');
-const MODULES = [
-  '01-utils.js', '02-engine-constants.js', '03-i18n.js', '04-operations.js',
-  '05-expression-terms.js', '06-skills-graph.js', '07-storage.js',
-  '08-speed-engine.js', '09-feedback.js', '10-session.js', '11-analytics.js',
-  '12-export.js', '13-ui.js', // 14-init.js propositalmente de fora
-];
+const MODULES = ['01-utils.js','02-engine-constants.js','03-i18n.js','04-operations.js','05-expression-terms.js','06-tracks.js',
+  '07-storage.js','08-speed-engine.js','09-feedback.js','10-progress.js','11-session.js','12-analytics.js','13-export.js','14-ui.js'];
 const engineSrc = MODULES.map(name => fs.readFileSync(path.join(jsDir, name), 'utf8')).join('\n');
 
 let failures = 0, passed = 0;
-function ok(cond, msg){
-  if(cond){ passed++; }
-  else { failures++; console.error('❌ FALHOU:', msg); }
-}
+function ok(cond, msg){ if(cond) passed++; else { failures++; console.error('❌ FALHOU:', msg); } }
+const sleep = ms => new Promise(r=>setTimeout(r,ms));
 
 const harness = `
 ${engineSrc}
+return (async function(ok, sleep){
 
-/* ---------- corpo dos testes (mesma escopo léxico do motor) ---------- */
-Store.data = Store.defaults();
-Object.keys(Store.data.settings.ops).forEach(k=>{ Store.data.settings.ops[k] = true; }); // ativa tudo
-ok(Store.data.settings.confirmBeforeAccept===true, 'novas instalações exigem confirmação manual');
-ok(Store.data.settings.answerTimeoutSeconds===10, 'new installs use a 10-second answer limit');
-const timeoutItem = Engine.generateItem('soma_2d_cc');
-ok(timeoutItem.timeoutMs===10000, 'the configured limit is applied to each problem');
-Store.data.settings.answerTimeoutSeconds = 7;
-ok(Engine.generateItem('soma_2d_cc').timeoutMs===7000, 'changing the limit updates the next problem deadline');
-localStorage.setItem(DB_KEY, JSON.stringify({settings:{confirmBeforeAccept:false}, kc:{mult_tabuada:{key:'mult_tabuada',rtBaseline:1900,lastPracticeAt:123,window:[{ms:1600,correct:true,t:123}]}}, history:[], bestStreak:0}));
-Store.load();
-ok(Store.data.settings.confirmBeforeAccept===true, 'instalações antigas migram para confirmação manual');
-ok(!!Store.data.speedProfiles.mult_tabuada, 'dados antigos migram para perfil de velocidade');
-Store.data = Store.defaults();
-Object.keys(Store.data.settings.ops).forEach(k=>{ Store.data.settings.ops[k] = true; });
+function freshStore(patch){
+  Store.data = Store.normalize(patch||{});
+  Store.save = ()=>{};
+  return Store.data;
+}
+function placeAll(level, m){
+  Engine.activeKeys().forEach(k=>{ const tr = Engine.track(k); tr.placed = true; tr.level = Math.min(level, TRACKS[k].levels.length); tr.m = m==null?0.3:m; });
+}
+// executa um bloco inteiro com um "usuário" (função item → {correct, ms})
+function runBlock(spec, user){
+  Engine.beginBlock(spec);
+  const outs = []; let item, guard=0;
+  while((item = Engine.nextItem()) && guard++<200){
+    const r = user(item);
+    const out = Engine.registerResult(item, r.ms, r.correct, !!r.timedOut, r.typed);
+    outs.push({item, out});
+  }
+  return outs;
+}
 
-const VOICES = ['pt-BR','en-US'];
-const T_SAMPLES = [0, 0.25, 0.5, 0.75, 1, ...Array.from({length:200}, ()=>Math.random())];
-
-globalThis.__TEST_RESULTS__ = { perFamily: {}, engineSmokeError: null, speedEngineError: null, adaptiveFlowError: null, timingFlowError: null, confirmFlowError: null,
-  sequencingError: null, retryQueueError: null, softmaxError: null, softmaxLargePoolError: null, softmaxTieError: null,
-  impulseFloorError: null, ultimateTimeoutError: null, patternWeightError: null, patternGenError: null,
-  decimalInputError: null, decimalComparisonError: null, digitWeightError: null, cascadeError: null, adaptiveCalibrationError: null,
-  logStandaloneError: null, logExpressionError: null, pctVariantsError: null, proportionError: null,
-  fractionCompareError: null, fractionCompareSessionError: null };
-
-Object.keys(KC_DEFS).forEach(key=>{
-  const def = KC_DEFS[key];
-  const stats = { total:0, badAnswer:0, badSpeech:0, examples:[] };
-  T_SAMPLES.forEach(t=>{
-    stats.total++;
-    let g;
-    try{
-      g = def.gen(t);
-    }catch(e){
-      stats.badAnswer++;
-      stats.examples.push('gen() lançou exceção: '+e.message);
-      return;
-    }
-    let answerOk;
-    if(def.decimal){
-      const dp = g.features && g.features.decimalPlaces;
-      const scale = Math.pow(10, dp);
-      answerOk = Number.isFinite(g.answer) && Math.abs(g.answer) < 1e6 && (dp===1||dp===2) &&
-        Math.abs(Math.round(g.answer*scale) - g.answer*scale) < 1e-6;
-    } else {
-      answerOk = Number.isFinite(g.answer) && Number.isInteger(g.answer) && Math.abs(g.answer) < 1e6;
-    }
-    if(!answerOk){
-      stats.badAnswer++;
-      stats.examples.push('answer inválido: '+JSON.stringify(g));
-    }
-    // BUGFIX (regressão pct_basico): o teste antigo só conferia se answer era inteiro, e o gerador
-    // "arredondava" o resultado esperado — 25% de 30 virava 8 em vez de 7,5. Agora verificamos que a
-    // resposta matemática dos operandos exibidos é de fato inteira e igual à esperada.
-    if(def.op==='porcentagem'){
-      const trueValue = g.a * g.b / 100;
-      if(!Number.isInteger(trueValue) || trueValue !== g.answer){
-        stats.badAnswer++;
-        stats.examples.push('porcentagem com resposta arredondada: '+JSON.stringify(g));
+/* ---------- 1. GERADORES ---------- */
+function evalItem(it){
+  const f = it.features||{};
+  switch(it.op){
+    case 'soma': return it.a+it.b;
+    case 'subtracao': return it.a-it.b;
+    case 'multiplicacao': return it.a*it.b;
+    case 'divisao': return it.a/it.b;
+    case 'porcentagem': return it.a*it.b/100;
+    case 'porcentagem_inversa': return it.a/it.b*100;
+    case 'porcentagem_acrescimo': return it.a + it.a*it.b/100;
+    case 'porcentagem_desconto': return it.a - it.a*it.b/100;
+    case 'porcentagem_original': return f.aumento ? it.a/(1+it.b/100) : it.a/(1-it.b/100);
+    case 'porcentagem_aumento': return (it.b-it.a)/it.a*100;
+    case 'porcentagem_reducao': return (it.a-it.b)/it.a*100;
+    case 'porcentagem_sucessiva': return it.a*(1-it.b/100)*(1-it.c/100);
+    case 'fracao_comparacao': return Math.sign(it.a*it.d-it.c*it.b);
+    case 'equacao': return null;
+    default:
+      if(it.terms){ let v=it.terms[0].value; for(let i=0;i<it.ops.length;i++) v=applyOp2(it.ops[i],v,it.terms[i+1].value); return v; }
+      if(it.op==='expressao'){
+        if(it.midOp){ const l=applyOp2(it.leftOp,it.a,it.b), r=applyOp2(it.rightOp,it.c,it.d); return applyOp2(it.midOp,l,r); }
+        return applyOp2(it.outerOp, applyOp2(it.innerOp,it.a,it.b), it.c);
+      }
+  }
+  return undefined;
+}
+freshStore();
+let genProblems = 0, genTotal = 0; const genSamples = [];
+for(const key of TRACK_ORDER){
+  const n = TRACKS[key].levels.length;
+  for(let L=1; L<=n; L++){
+    const def = levelDef(key, L);
+    for(const m of [0, 0.5, 1]){
+      for(let i=0;i<120;i++){
+        const it = Engine.generateItem(key, L, m, {kind:'practice'});
+        genTotal++;
+        const tag = key+'/L'+L+'/m'+m;
+        const bad = msg=>{ genProblems++; if(genSamples.length<8) genSamples.push(tag+': '+msg+' '+JSON.stringify(it).slice(0,160)); };
+        if(!Number.isFinite(it.answer)){ bad('resposta não finita'); continue; }
+        if((String(it.answer).split('.')[1]||'').length>2) bad('mais de 2 casas');
+        if(it.isReversePath) continue;
+        const ev = evalItem(it);
+        if(ev===undefined) bad('op sem verificador '+it.op);
+        else if(ev!==null && Math.abs(ev-it.answer)>1e-9) bad('resposta diverge '+ev+' vs '+it.answer);
+        if(it.op==='equacao'){
+          if(it.a*it.answer+it.b !== it.c*it.answer+it.d) bad('equação não fecha');
+          if(!Number.isInteger(it.answer)) bad('x não inteiro');
+        }
+        if(it.op!=='fracao_comparacao' && it.op!=='equacao' && !Number.isInteger(it.answer) && !(it.features&&it.features.decimalPlaces)) bad('resposta não inteira');
+        if(it.answer<0 && it.op!=='equacao' && it.op!=='fracao_comparacao') bad('resposta negativa');
+        if(['soma','subtracao','multiplicacao','divisao'].includes(it.op) && def.shape){
+          const sh = [digitCount(it.a),digitCount(it.b)].sort((x,y)=>y-x);
+          if(sh[0]!==def.shape[0] || sh[1]!==def.shape[1]) bad('forma '+sh+' != '+def.shape);
+        }
       }
     }
-    // Famílias decimais: confere que a/b combinados pela operação básica batem exatamente
-    // com o answer (mesmo espírito do bugfix de porcentagem acima).
-    if(def.decimal){
-      let trueValue;
-      if(def.op==='soma') trueValue = g.a+g.b;
-      else if(def.op==='subtracao') trueValue = g.a-g.b;
-      else if(def.op==='multiplicacao') trueValue = g.a*g.b;
-      else if(def.op==='divisao') trueValue = g.a/g.b;
-      // pct_duplo: percentual de percentual, resposta em pontos percentuais (2% de 5% = 0,1%).
-      else if(def.op==='porcentagem_dupla') trueValue = g.a*g.b/100;
-      if(trueValue!==undefined && Math.abs(trueValue-g.answer) > 1e-6){
-        stats.badAnswer++;
-        stats.examples.push('decimal com resposta incorreta: '+JSON.stringify(g));
+  }
+}
+ok(genProblems===0, 'geradores: '+genProblems+' problemas em '+genTotal+' itens → '+genSamples.join(' | '));
+// metas de tempo crescem ao longo de cada trilha (exceto o salto proposital de multiplicação/raiz) e existe dica nos dois idiomas
+for(const key of TRACK_ORDER){
+  TRACKS[key].levels.forEach((l,i)=>{
+    ok(l.goal>=500 && l.goal<=10000, key+' L'+(i+1)+' meta plausível');
+    ok(Array.isArray(l.tip) && l.tip[0] && l.tip[1], key+' L'+(i+1)+' tem dica PT/EN');
+    ok(Array.isArray(l.n) && l.n[0] && l.n[1], key+' L'+(i+1)+' tem nome PT/EN');
+  });
+}
+
+/* ---------- 2. FALA ---------- */
+{
+  let threw = 0;
+  for(const key of TRACK_ORDER){
+    for(let L=1; L<=TRACKS[key].levels.length; L++){
+      for(let i=0;i<20;i++){
+        const it = Engine.generateItem(key, L, Math.random(), {});
+        for(const lang of ['pt-BR','en-US']){
+          try{ const s = spokenPhrase(it, lang); if(typeof s!=='string' || !s.length) threw++; }catch(e){ threw++; }
+        }
       }
     }
-    const fakeItem = Object.assign({op:def.op, key, kcLabel:def.label, symbol:(OPS[def.op]||{}).symbol}, g);
-    VOICES.forEach(v=>{
-      try{ const phrase = spokenPhrase(fakeItem, v); if(typeof phrase!=='string' || !phrase.length) throw new Error('frase vazia'); }
-      catch(e){ stats.badSpeech++; stats.examples.push('spokenPhrase('+v+') falhou: '+e.message); }
+  }
+  ok(threw===0, 'spokenPhrase falhou em '+threw+' casos');
+}
+
+/* ---------- 3. MOTOR ---------- */
+// 3a. nivelamento: usuário forte termina alto, usuário fraco termina baixo
+{
+  freshStore();
+  const key = 'multiplicacao', n = TRACKS[key].levels.length;
+  const strong = runBlock({kind:'placement', track:key, level:Engine.startLevel(key), count:PLACEMENT_ITEMS}, it=>({correct:true, ms:it.goalMs*0.6}));
+  const lvStrong = Engine.track(key).level;
+  ok(Engine.track(key).placed, 'nivelamento marca a trilha como nivelada');
+  ok(strong.some(o=>o.out.events.some(e=>e.type==='placed')), 'nivelamento emite evento placed');
+  freshStore();
+  runBlock({kind:'placement', track:key, level:Engine.startLevel(key), count:PLACEMENT_ITEMS}, it=>({correct:false, ms:it.goalMs*3, typed:'7777777'}));
+  const lvWeak = Engine.track(key).level;
+  ok(lvStrong>lvWeak, 'nivelamento: forte ('+lvStrong+') > fraco ('+lvWeak+')');
+  ok(lvStrong<=n && lvWeak>=1, 'nivelamento dentro dos limites');
+  ok(lvStrong>=Engine.startLevel(key), 'usuário que acerta tudo rápido não começa abaixo do ponto médio');
+  ok(lvWeak<=Math.max(2, Engine.startLevel(key)-1), 'usuário que erra tudo começa baixo (level '+lvWeak+')');
+}
+// 3b. passo de m: pequeno, sobe no sucesso, desce no fracasso, nunca sai de [0,1]
+{
+  freshStore(); placeAll(3, 0.5);
+  const tr = Engine.track('soma'); let maxStep = 0;
+  const run = (correct, ms)=>runBlock({kind:'practice', track:'soma', level:3, count:BLOCK_MAX}, it=>{ return {correct, ms:it.goalMs*ms}; });
+  let before = tr.m;
+  run(true, 0.5); ok(tr.m>before, 'm sobe quando acerta rápido');
+  before = tr.m;
+  run(false, 2.5); ok(tr.m<before, 'm desce quando erra');
+  for(let r=0;r<40;r++){
+    runBlock({kind:'practice', track:'soma', level:3, count:BLOCK_MAX}, it=>{ const m0 = tr.m; const c = Math.random()<0.6; setImmediate; return {correct:c, ms:it.goalMs*(c?0.8:2)}; });
+  }
+  // passo máximo teórico = M_ETA * max(1-rho, rho) < 0.06
+  ok(M_ETA*Math.max(1-Engine.rho(), Engine.rho()) < 0.06, 'passo máximo de m por conta é pequeno');
+  ok(tr.m>=0 && tr.m<=1, 'm permanece em [0,1]');
+}
+// 3c. convergência: m se estabiliza onde a taxa de sucesso ≈ ρ*
+{
+  freshStore(); placeAll(4, 0.1);
+  const tr = Engine.track('multiplicacao'); tr.placed = true; tr.level = 4; tr.m = 0.1;
+  let succ = 0, tot = 0;
+  for(let r=0;r<120;r++){
+    runBlock({kind:'practice', track:'multiplicacao', level:4, count:BLOCK_MAX}, it=>{
+      const p = 1/(1+Math.exp(6*(it.m-0.55)));   // usuário cujo ponto de equilíbrio está perto de m≈0.55+
+      const c = Math.random()<p; if(r>=60){ tot++; if(c) succ++; }
+      tr.testReady = false; tr.xp = 0;           // isola o teste de qualquer prova
+      return {correct:c, ms:it.goalMs*(c?0.8:2)};
     });
-  });
-  globalThis.__TEST_RESULTS__.perFamily[key] = stats;
-});
-
-// Smoke test do motor de velocidade: todas as famílias são selecionáveis desde o
-// início; calibração, mistura, metas e dificuldade não podem gerar NaN/Infinity.
-try{
-  Store.data = Store.defaults();
-  Store.data.settings.selectedSkills = Object.keys(KC_DEFS);
-  for(let i=0;i<800;i++){
-    const item = Engine.next();
-    if(!item) continue;
-    const correct = Math.random() < 0.75;
-    const ms = 400 + Math.random()*3000;
-    Engine.registerResult(item, ms, correct, false);
-    const p = Store.data.speedProfiles[item.key];
-    if(!p || !Number.isFinite(p.targetMs) || !Number.isFinite(p.difficulty)){
-      throw new Error('perfil inválido na habilidade '+item.key);
-    }
   }
-}catch(e){
-  globalThis.__TEST_RESULTS__.engineSmokeError = e.message;
+  ok(Math.abs(succ/tot-Engine.rho())<0.08, 'taxa de sucesso estável ('+(succ/tot).toFixed(2)+') perto de ρ*='+Engine.rho());
 }
-
-// Sequenciamento v2 (seç. 2 da revisão do motor): interleaving ponderado nunca repete a
-// mesma família 2x seguidas, uma vez fora da fase de calibração (que não usa este pool).
-try{
-  Store.data = Store.defaults();
-  const keys = ['soma_2d_cc','sub_2d_ce','mult_2d','pct_intermediario','potencia_basica'];
-  Store.data.settings.selectedSkills = keys;
-  Engine.recentKeys = []; Engine.errorRetryQueue = {}; Engine.itemCounter = 0;
-  keys.forEach(k=>{
-    for(let i=0;i<CALIBRATION_ITEMS;i++){
-      Engine.registerResult(Engine.generateItem(k,{isCalibration:true}), 1000, true, false);
-    }
-  });
-  let lastKey=null, repeats=0;
-  for(let i=0;i<200;i++){
-    const item = Engine.next();
-    if(item.key===lastKey) repeats++;
-    lastKey = item.key;
-    Engine.registerResult(item, item.targetMs*0.9, Math.random()<0.8, false);
+// 3d. nunca desce de level por erros; XP nunca negativo
+{
+  freshStore(); placeAll(4, 0.3);
+  const tr = Engine.track('soma');
+  let minXp = Infinity;
+  for(let r=0;r<30;r++){
+    runBlock({kind:'practice', track:'soma', level:tr.level, count:BLOCK_MAX}, it=>({correct:false, ms:it.goalMs*3, typed:'999999'}));
+    minXp = Math.min(minXp, tr.xp);
   }
-  if(repeats>0) throw new Error('sequenciamento repetiu a mesma família 2x seguidas '+repeats+' vez(es) em 200 escolhas');
-}catch(e){
-  globalThis.__TEST_RESULTS__.sequencingError = e.message;
+  ok(tr.level>=3, 'errar muito nunca derruba o level (level='+tr.level+')');
+  ok(minXp>=0, 'XP da barra nunca fica negativo');
 }
-
-// Sorteio softmax (seç. 2 da revisão): TODAS as famílias selecionadas participam (nenhuma
-// fica com probabilidade zero — piso de aleatoriedade) e as mais fracas dominam o peso.
-try{
-  Store.data = Store.defaults();
-  const keys = ['soma_2d_cc','sub_2d_ce','mult_2d','pct_intermediario','potencia_basica','radical_quad'];
-  Store.data.settings.selectedSkills = keys;
-  Store.data.settings.selectAllSkills = false;
-  Engine.recentKeys = []; Engine.errorRetryQueue = {}; Engine.itemCounter = 0;
-  // Fabrica perfis: uma família fraca (erros/lenta) e as demais dominadas (rápidas e
-  // corretas). Cedo no motor (janelas fabricadas), nada aqui dispara revisão nem calibração.
-  keys.forEach(k=>{
-    const p = Engine.profile(k);
-    p.calibratedAt = Date.now();
-    const weak = k==='soma_2d_cc';
-    p.baselineMs = weak ? 1500 : 1000;
-    p.targetMs  = weak ? 1500 : 850;
-    p.window = [];
-    for(let j=0;j<20;j++){
-      const fast = weak ? (j%3!==0) : true; // fraca erra ~1/3; as demais nunca erram
-      p.window.push({ms: fast ? (weak?1400:600) : 3000, correct:fast, targetHit:fast, calibration:false, lapse:false, at:Date.now()});
-    }
-  });
-  const counts = {}; const N = 1500;
-  for(let i=0;i<N;i++){
-    const item = Engine.next();
-    counts[item.key]=(counts[item.key]||0)+1;
-    // Não registra resultados: janelas/perfis fabricados não podem ser contaminados.
+// 3e. XP por zona e multiplicadores
+{
+  freshStore(); placeAll(3, 0.5);
+  const it = Engine.generateItem('soma', 3, 0.5, {kind:'practice'});
+  ok(Engine.zone(it.goalMs*0.9, it.goalMs)==='fast' && Engine.zone(it.goalMs*1.5, it.goalMs)==='ok' && Engine.zone(it.goalMs*2, it.goalMs)==='slow', 'zonas fast/ok/slow');
+  ok(Engine.xpFor(it,'fast')>Engine.xpFor(it,'ok') && Engine.xpFor(it,'ok')>Engine.xpFor(it,'slow'), 'XP decresce com a zona');
+  const warm = Object.assign({}, it, {isWarmup:true});
+  ok(Engine.xpFor(warm,'fast')<Engine.xpFor(it,'fast'), 'aquecimento rende menos XP');
+}
+// 3f. barra cheia + m alto libera a prova; barra cheia com m baixo espera
+{
+  freshStore(); placeAll(3, 0.2);
+  const tr = Engine.track('soma'); tr.xp = Engine.xpNeed(tr)-1; tr.m = 0.1;
+  runBlock({kind:'practice', track:'soma', level:3, count:BLOCK_MAX}, it=>({correct:true, ms:it.goalMs*0.5}));
+  // m sobe aos poucos; a prova só libera quando m>=TEST_READY_M
+  let guard = 0;
+  while(!tr.testReady && guard++<80){ runBlock({kind:'practice', track:'soma', level:3, count:BLOCK_MAX}, it=>({correct:true, ms:it.goalMs*0.5})); }
+  ok(tr.testReady, 'prova liberada com barra cheia e m alto');
+  ok(tr.m>=TEST_READY_M, 'prova só libera com m>=TEST_READY_M (m='+tr.m.toFixed(2)+')');
+  const plan = Engine.planRound();
+  ok(plan.some(b=>b.kind==='test' && b.track==='soma'), 'planRound inclui a prova liberada');
+  ok(plan[plan.length-1].kind==='test', 'a prova é o clímax da rodada (último bloco)');
+}
+// 3g. prova: aprovação sobe o level e dá estrelas; reprovação mantém o level
+{
+  freshStore(); placeAll(3, 0.7);
+  const tr = Engine.track('soma'); tr.xp = Engine.xpNeed(tr); tr.testReady = true;
+  const outs = runBlock({kind:'test', track:'soma', level:3, count:TEST_ITEMS}, it=>({correct:true, ms:it.goalMs*0.7}));
+  const last = outs[outs.length-1].out;
+  ok(last.blockDone && last.blockResult.test.pass, 'prova perfeita é aprovada');
+  ok(last.blockResult.test.stars===3, 'prova perfeita e rápida vale 3 estrelas');
+  ok(tr.level===4 && !tr.testReady && tr.xp===0, 'aprovação sobe de level e zera a barra');
+  ok(tr.stars[3]===3, 'estrelas gravadas no level');
+  ok(tr.m<=0.2, 'm recomeça confortável no level novo');
+  ok(last.events.some(e=>e.type==='levelUp'), 'evento levelUp');
+  // reprova (acertos suficientes mas lento)
+  tr.xp = Engine.xpNeed(tr); tr.testReady = true; const lvBefore = tr.level;
+  const o2 = runBlock({kind:'test', track:'soma', level:tr.level, count:TEST_ITEMS}, it=>({correct:true, ms:it.goalMs*3}));
+  ok(!o2[o2.length-1].out.blockResult.test.pass, 'prova correta porém lenta reprova');
+  ok(tr.level===lvBefore, 'reprovar nunca derruba o level');
+  ok(!tr.testReady && tr.xp===Math.round(Engine.xpNeed(tr)*TEST_FAIL_XP_KEEP), 'reprovar devolve a barra a '+TEST_FAIL_XP_KEEP*100+'%');
+  // reprova por erros
+  tr.testReady = true; tr.xp = Engine.xpNeed(tr); let i = 0;
+  const o3 = runBlock({kind:'test', track:'soma', level:tr.level, count:TEST_ITEMS}, it=>({correct:(i++%2===0), ms:it.goalMs, typed:'99999'}));
+  ok(!o3[o3.length-1].out.blockResult.test.pass, 'metade de erros reprova');
+}
+// 3g2. refazer prova de level conquistado: melhora estrelas sem mexer no level atual
+{
+  freshStore(); placeAll(4, 0.5);
+  const tr = Engine.track('soma'); tr.stars[2] = 1;
+  const plan = Engine.planRound({retake:{key:'soma', level:2}});
+  ok(plan.length===1 && plan[0].kind==='test' && plan[0].level===2, 'retake gera um bloco de prova do level escolhido');
+  ok(Engine.planRound({retake:{key:'soma', level:4}}).length!==1 || Engine.planRound({retake:{key:'soma', level:4}})[0].kind!=='test' || false, 'retake do level atual não é aceito');
+  const outs = runBlock(plan[0], it=>({correct:true, ms:it.goalMs*0.6}));
+  const r = outs[outs.length-1].out.blockResult.test;
+  ok(r.pass && r.retake && tr.stars[2]===r.stars && tr.stars[2]>1 && tr.level===4, 'retake aprovado melhora as estrelas e mantém o level');
+}
+// 3h. lapso (digitação trocada / impulso) não pune m nem XP, e a conta da prova é reposta
+{
+  ok(Engine.isTypoLapse('45','54') && Engine.isTypoLapse('57','56') && !Engine.isTypoLapse('12','56') && !Engine.isTypoLapse('5','7'), 'isTypoLapse');
+  freshStore(); placeAll(3, 0.5);
+  const tr = Engine.track('soma'); const m0 = tr.m;
+  Engine.beginBlock({kind:'practice', track:'soma', level:3, count:6});
+  const it = Engine.nextItem();
+  const out = Engine.registerResult(it, 100, false, false, '1');
+  ok(out.lapse && tr.m===m0, 'erro rápido demais é lapso e não mexe em m');
+  freshStore(); placeAll(3,0.5);
+  Engine.beginBlock({kind:'test', track:'soma', level:3, count:TEST_ITEMS});
+  const t1 = Engine.nextItem(); Engine.registerResult(t1, 100, false, false, '1');
+  ok(Engine.block.count===TEST_ITEMS+1, 'lapso na prova repõe a conta');
+}
+// 3i. blocos: um level, uma trilha; aquecimento só no 1º bloco da trilha na rodada
+{
+  freshStore(); placeAll(4, 0.5);
+  for(let r=0;r<30;r++){
+    const plan = Engine.planRound();
+    const seen = {};
+    plan.forEach(b=>{
+      if(b.kind==='practice'){
+        if(seen[b.track]) ok(b.warmup===0, 'aquecimento só no primeiro bloco da trilha na rodada');
+        seen[b.track] = true;
+      }
+    });
+    const tot = plan.reduce((a,b)=>a+(b.kind==='practice'?b.count-b.warmup:b.count),0);
+    ok(tot>=Engine.roundSize()-1, 'rodada tem o tamanho pedido ('+tot+')');
+    // nenhum bloco repete a trilha do anterior (há mais de uma ativa)
+    for(let i=1;i<plan.length;i++) if(plan[i].kind==='practice' && plan[i-1].kind==='practice') ok(plan[i].track!==plan[i-1].track, 'trilhas consecutivas diferem');
   }
-  keys.forEach(k=>{
-    if(!counts[k]) throw new Error('softmax deixou a família '+k+' com probabilidade zero em '+N+' escolhas');
-  });
-  const weakShare = counts['soma_2d_cc']/N;
-  const maxStrong = Math.max(...keys.filter(k=>k!=='soma_2d_cc').map(k=>counts[k]/N));
-  // O anti-clump (-0.9) limita QUALQUER família isolada a ~30–40% das escolhas (share>40% da
-  // janela dispara o corte), então não esperamos o fraco acima disso — mas ele deve sair bem
-  // acima do uniforme (1/6≈16.7%) e dominar claramente as famílias dominadas.
-  if(weakShare < 0.22) throw new Error('família fraca ficou perto do sorteio uniforme (fraca='+(weakShare*100).toFixed(1)+'%)');
-  if(weakShare < maxStrong*1.5){
-    throw new Error('família fraca não dominou o sorteio (fraca='+(weakShare*100).toFixed(1)+'%, mais forte entre as demais='+(maxStrong*100).toFixed(1)+'%)');
+  // contas de um bloco de treino têm sempre a mesma forma de dígitos
+  const tr = Engine.track('multiplicacao'); tr.level = 5; tr.m = 0.5;
+  let shapes = new Set();
+  runBlock({kind:'practice', track:'multiplicacao', level:5, count:40}, it=>{ if(!it.isWarmup) shapes.add(Math.max(digitCount(it.a),digitCount(it.b))+'x'+Math.min(digitCount(it.a),digitCount(it.b))); return {correct:true, ms:it.goalMs}; });
+  ok(shapes.size===1, 'bloco de multiplicação mantém uma forma só: '+[...shapes]);
+}
+// 3j. reforço suave: patinar com m no mínimo faz o próximo bloco rodar um level abaixo (sem perder level)
+{
+  freshStore(); placeAll(4, 0.1);
+  const tr = Engine.track('soma'); tr.m = 0.05; let triggered = false;
+  for(let r=0;r<20 && !triggered;r++){
+    const outs = runBlock({kind:'practice', track:'soma', level:4, count:BLOCK_MAX}, it=>({correct:false, ms:it.goalMs*3, typed:'9999999'}));
+    triggered = outs.some(o=>o.out.events.some(e=>e.type==='reinforce'));
+    if(triggered) break;
+    tr.m = Math.min(tr.m, 0.05);
   }
-}catch(e){
-  globalThis.__TEST_RESULTS__.softmaxError = e.message;
+  ok(triggered && tr.reinforce===1, 'reforço é acionado após muitos erros com m no piso');
+  ok(tr.level===4, 'reforço não tira level');
+  ok(tr.m>=REINFORCE_M, 'm volta a um ponto confortável');
+  const plan = Engine.planRound({onlyTrack:'soma'});
+  ok(plan.some(b=>b.reinforce && b.level===3), 'próximo bloco é de reforço um level abaixo');
+  runBlock(plan.find(b=>b.reinforce), it=>({correct:true, ms:it.goalMs*0.8}));
+  ok(tr.reinforce===0, 'reforço termina depois de um bloco');
 }
-
-// Softmax em pool grande ("Treinar todas as contas", todas as famílias ativas): com quase todas
-// as famílias carregando a mesma penalidade fixa de pré-requisito, o spread real de necessidade
-// fica comprimido e um softmax de temperatura ABSOLUTA dilui a concentração (a fraca caía para
-// ~7%, perto do uniforme de ~3,4%). Com a normalização por min-max dentro do pool
-// (SEQUENCING_SOFTMAX_TEMP_REL), a família fraca precisa dominar bem acima do uniforme e as
-// ~5 mais fracas devem concentrar a maioria das escolhas — mesma calibração do pool pequeno.
-try{
-  Store.data = Store.defaults();
-  const keys = Object.keys(KC_DEFS);
-  Store.data.settings.selectedSkills = keys;
-  Store.data.settings.selectAllSkills = false;
-  Engine.recentKeys = []; Engine.errorRetryQueue = {}; Engine.itemCounter = 0;
-  keys.forEach(k=>{
-    const p = Engine.profile(k);
-    p.calibratedAt = Date.now();
-    const weak = k==='soma_2d_cc';
-    p.baselineMs = weak ? 1500 : 1000;
-    p.targetMs  = weak ? 1500 : 850;
-    p.window = [];
-    for(let j=0;j<20;j++){
-      const fast = weak ? (j%3!==0) : true;
-      p.window.push({ms: fast ? (weak?1400:600) : 3000, correct:fast, targetHit:fast, calibration:false, lapse:false, at:Date.now()});
-    }
-  });
-  const counts = {}; const N = 3000;
-  for(let i=0;i<N;i++){
-    const item = Engine.next();
-    counts[item.key]=(counts[item.key]||0)+1;
+// 3k. última trilha concluída entra em "Mestre": patentes e meta que encolhe
+{
+  freshStore(); placeAll(1); const key='potencia'; const n = TRACKS[key].levels.length;
+  const tr = Engine.track(key); tr.level = n; tr.m = 0.8; tr.xp = Engine.xpNeed(tr); tr.testReady = true;
+  const outs = runBlock({kind:'test', track:key, level:n, count:TEST_ITEMS}, it=>({correct:true, ms:it.goalMs*0.5}));
+  ok(tr.done && outs[outs.length-1].out.blockResult.test.finished, 'passar no último level conclui a trilha');
+  const g0 = Engine.goalMs(tr);
+  let rankUps = 0, guard = 0;
+  while(tr.rank<RANK_MAX && guard++<400){
+    const o = runBlock({kind:'practice', track:key, level:n, count:BLOCK_MAX}, it=>({correct:true, ms:it.goalMs*0.5}));
+    rankUps += o.filter(x=>x.out.events.some(e=>e.type==='rankUp')).length;
   }
-  keys.forEach(k=>{
-    if(!counts[k]) throw new Error('pool grande deixou a família '+k+' com probabilidade zero em '+N+' escolhas');
-  });
-  const share = k=>counts[k]/N;
-  const sorted = keys.slice().sort((a,b)=>share(b)-share(a));
-  const weakShare = share('soma_2d_cc');
-  const top5 = sorted.slice(0,5).reduce((s,k)=>s+share(k),0);
-  if(weakShare < 0.15) throw new Error('pool grande: família fraca diluída pelo sorteio (fraca='+(weakShare*100).toFixed(1)+'%, uniforme='+(100/keys.length).toFixed(1)+'%)');
-  if(top5 < 0.50) throw new Error('pool grande: as 5 mais fracas não concentraram o sorteio (top5='+(top5*100).toFixed(1)+'%)');
-}catch(e){
-  globalThis.__TEST_RESULTS__.softmaxLargePoolError = e.message;
+  ok(tr.rank===RANK_MAX && rankUps===RANK_MAX, 'sobe todas as patentes Mestre');
+  ok(Engine.goalMs(tr)<g0, 'meta de tempo encolhe a cada patente');
 }
-
-// Degradação graciosa em empate: com todas as famílias prontas (pré-requisitos dominados) e
-// desempenho igual, o sorteio precisa ficar perto do uniforme — é o comportamento do começo do
-// app, quando ainda não há família claramente fraca. Sem o piso SEQUENCING_SPREAD_FLOOR, a
-// normalização min-max amplificaria o ruído dos scores e concentraria numa família qualquer.
-try{
-  Store.data = Store.defaults();
-  const keys = ['soma_2d_cc','sub_2d_ce','mult_2d','pct_intermediario','potencia_basica','radical_quad'];
-  Store.data.settings.selectedSkills = keys;
-  Store.data.settings.selectAllSkills = false;
-  Engine.recentKeys = []; Engine.errorRetryQueue = {}; Engine.itemCounter = 0;
-  // Domina os pré-requisitos para que nenhuma família carregue a penalidade fixa — sem isso,
-  // as famílias-raiz ficariam estruturalmente acima das demais e não seria um empate de verdade.
-  keys.forEach(k=>{
-    (KC_DEFS[k].prereqs||[]).forEach(pk=>{ Engine.profile(pk).masteredAt = Date.now(); });
-    const p = Engine.profile(k);
-    p.calibratedAt = Date.now();
-    p.baselineMs = 1000; p.targetMs = 850; p.window = [];
-    for(let j=0;j<20;j++) p.window.push({ms:595, correct:true, targetHit:true, calibration:false, lapse:false, at:Date.now()});
-  });
-  const counts = {}; const N = 3000;
-  for(let i=0;i<N;i++){
-    const item = Engine.next();
-    counts[item.key]=(counts[item.key]||0)+1;
-  }
-  const maxShare = Math.max(...keys.map(k=>counts[k]/N));
-  const uniform = 1/keys.length;
-  if(maxShare > uniform*2.5) throw new Error('empate de scores concentrou demais o sorteio (max='+(maxShare*100).toFixed(1)+'%, uniforme='+(uniform*100).toFixed(1)+'%)');
-}catch(e){
-  globalThis.__TEST_RESULTS__.softmaxTieError = e.message;
-}
-
-// Retry pós-erro (modelo C): um erro real (não lapso) agenda a família para reaparecer
-// dentro da janela RETRY_MIN_GAP–RETRY_MAX_GAP itens depois.
-try{
-  Store.data = Store.defaults();
-  Store.data.settings.selectedSkills = ['soma_2d_cc'];
-  Engine.recentKeys = []; Engine.errorRetryQueue = {}; Engine.itemCounter = 0;
-  const item = Engine.generateItem('soma_2d_cc');
-  Engine.itemCounter = 10;
-  Engine.registerResult(item, 900, false, false); // erro genuíno (900ms > IMPULSE_FLOOR)
-  const due = Engine.errorRetryQueue['soma_2d_cc'];
-  if(due==null || due < 10+RETRY_MIN_GAP || due > 10+RETRY_MAX_GAP){
-    throw new Error('retry pós-erro não agendou a família dentro da janela esperada (due='+due+')');
-  }
-}catch(e){
-  globalThis.__TEST_RESULTS__.retryQueueError = e.message;
-}
-
-// IMPULSE_FLOOR: um erro digitado rápido demais para ter sido raciocínio real não pode
-// contaminar a janela pontuada (acerto/meta/domínio/peso de padrão) nem agendar retry.
-try{
-  Store.data = Store.defaults();
-  Store.data.settings.selectedSkills = ['soma_2d_cc'];
-  Engine.recentKeys = []; Engine.errorRetryQueue = {}; Engine.itemCounter = 0;
-  const p = Engine.profile('soma_2d_cc');
-  for(let i=0;i<CALIBRATION_ITEMS;i++) Engine.registerResult(Engine.generateItem('soma_2d_cc',{isCalibration:true}), 1000, true, false);
-  Engine.registerResult(Engine.generateItem('soma_2d_cc'), 1200, true, false); // 1 acerto real na janela
-  const scoredBefore = Engine.scoredWindow(p).length;
-  Engine.registerResult(Engine.generateItem('soma_2d_cc'), 200, false, false); // lapso: 200ms < IMPULSE_FLOOR
-  const scoredAfter = Engine.scoredWindow(p).length;
-  if(scoredAfter!==scoredBefore) throw new Error('lapso (erro < IMPULSE_FLOOR) entrou na janela pontuada');
-  if(Engine.errorRetryQueue['soma_2d_cc']!=null) throw new Error('lapso agendou retry pós-erro indevidamente');
-}catch(e){
-  globalThis.__TEST_RESULTS__.impulseFloorError = e.message;
-}
-
-// Prazo do modo Ultimate: targetMs × multiplicador por fase, com piso de segurança; nos
-// demais modos (ou fora de sessão), continua usando o ajuste manual em Opções.
-try{
-  Store.data = Store.defaults();
-  Store.data.settings.selectedSkills = ['soma_2d_cc'];
-  const p = Engine.profile('soma_2d_cc');
-  p.targetMs = 2000;
-  Session.mode = 'ultimate';
-  const stage = Engine.stage(p);
-  const expectedMult = ULTIMATE_TIMEOUT_MULT[stage] || ULTIMATE_TIMEOUT_MULT.acquisition;
-  const expected = Math.max(ULTIMATE_TIMEOUT_FLOOR_MS, Math.round(2000*expectedMult));
-  const item = Engine.generateItem('soma_2d_cc');
-  if(item.timeoutMs!==expected) throw new Error('prazo do Ultimate não bateu com targetMs×multiplicador ('+item.timeoutMs+' vs '+expected+')');
-  Session.mode = null;
-  if(Engine.generateItem('soma_2d_cc').timeoutMs !== Store.data.settings.answerTimeoutSeconds*1000){
-    throw new Error('fora do Ultimate, o prazo deveria voltar a usar answerTimeoutSeconds');
-  }
-}catch(e){
-  globalThis.__TEST_RESULTS__.ultimateTimeoutError = e.message;
-}
-
-// Peso por padrão (seç. 3): um peso bem mais alto num bucket desloca a geração pra ele,
-// mas nunca elimina a chance dos outros (piso de aleatoriedade).
-try{
-  Store.data = Store.defaults();
-  const p = Engine.profile('pct_basico');
-  p.patternWeights = {'pct:50':PATTERN_WEIGHT_MAX, 'pct:10':PATTERN_WEIGHT_MIN, 'pct:20':PATTERN_WEIGHT_MIN, 'pct:25':PATTERN_WEIGHT_MIN};
-  let count50=0; const total=300;
-  for(let i=0;i<total;i++){ if(Engine.weightedBucket(p,'pct',[10,20,50,25])===50) count50++; }
-  if(count50/total < 0.4) throw new Error('peso por padrão não deslocou a geração como esperado (pct 50 saiu em '+count50+'/'+total+')');
-  if(count50===total) throw new Error('peso por padrão eliminou o piso de aleatoriedade');
-}catch(e){
-  globalThis.__TEST_RESULTS__.patternWeightError = e.message;
-}
-
-// Geradores com viés de padrão continuam sempre válidos (resposta inteira e finita),
-// agora recebendo profile como segundo argumento.
-try{
-  const biasedFamilies = ['soma_2d_cc','sub_2d_ce','soma_3_4d','sub_3_4d','pct_basico','pct_intermediario','pct_avancado','pct_reverso','pct_adicao','pct_subtracao'];
-  Store.data = Store.defaults();
-  biasedFamilies.forEach(key=>{
-    const profile = Engine.profile(key);
-    for(let i=0;i<30;i++){
-      const g = KC_DEFS[key].gen(U.clamp(0.2+i*0.02,0,1), profile);
-      if(!Number.isFinite(g.answer) || !Number.isInteger(g.answer)) throw new Error(key+': viés de padrão gerou resposta inválida');
-    }
-  });
-  const biasedDecimalFamilies = ['soma_decimal','sub_decimal','mult_decimal','div_decimal','pct_duplo'];
-  biasedDecimalFamilies.forEach(key=>{
-    const profile = Engine.profile(key);
-    for(let i=0;i<30;i++){
-      const g = KC_DEFS[key].gen(U.clamp(0.2+i*0.02,0,1), profile);
-      const dp = g.features && g.features.decimalPlaces, scale = Math.pow(10,dp);
-      if(!Number.isFinite(g.answer) || (dp!==1&&dp!==2) || Math.abs(Math.round(g.answer*scale)-g.answer*scale) > 1e-6){
-        throw new Error(key+': viés de padrão gerou resposta decimal inválida');
+// 3l. simulação: usuários virtuais — nenhum NaN, acerto perto de ρ*, level cresce com a habilidade
+{
+  const gauss=()=>{ let u=0,v=0; while(!u)u=Math.random(); while(!v)v=Math.random(); return Math.sqrt(-2*Math.log(u))*Math.cos(2*Math.PI*v); };
+  const sim = ab=>{
+    freshStore(); let items=0, correct=0, bad=false;
+    for(let r=0;r<40;r++){
+      for(const spec of Engine.planRound()){
+        Engine.beginBlock(spec); let item;
+        while((item=Engine.nextItem())){
+          const g = (item.level+item.m)-ab, pc = 1/(1+Math.exp(2.5*(g-1)));
+          const c = Math.random()<pc, ms = Math.max(400, Math.round(0.9*Math.exp(0.55*g)*Math.exp(0.25*gauss())*item.goalMs));
+          const tr = Engine.track(item.key);
+          Engine.registerResult(item, ms, c, false, c?String(item.answer):String(item.answer+7));
+          items++; if(c) correct++;
+          if(!Number.isFinite(tr.m)||!Number.isFinite(tr.xp)||!Number.isFinite(tr.strength)) bad = true;
+        }
       }
     }
-  });
-}catch(e){
-  globalThis.__TEST_RESULTS__.patternGenError = e.message;
+    const avgLevel = Engine.activeKeys().reduce((a,k)=>a+Engine.track(k).level/TRACKS[k].levels.length,0)/Engine.activeKeys().length;
+    return {acc:correct/items, avgLevel, bad};
+  };
+  const lo = sim(1.5), hi = sim(6.5);
+  ok(!lo.bad && !hi.bad, 'simulação sem NaN');
+  ok(hi.avgLevel>lo.avgLevel+0.2, 'usuário mais hábil chega a levels mais altos ('+lo.avgLevel.toFixed(2)+' → '+hi.avgLevel.toFixed(2)+')');
+  ok(lo.acc>0.62 && lo.acc<0.95 && hi.acc>0.62 && hi.acc<0.95, 'acerto médio fica numa faixa saudável (iniciante '+lo.acc.toFixed(2)+', avançado '+hi.acc.toFixed(2)+')');
 }
 
-try{
-  Store.data = Store.defaults();
-  Store.data.settings.selectedSkills = ['soma_2d_cc'];
-  const p = Engine.profile('soma_2d_cc');
-  let calibrationItems=0;
-  for(let i=0;i<CALIBRATION_ITEMS && !p.calibratedAt;i++){
-    const item = Engine.next();
-    if(!item.isCalibration) throw new Error('calibração concluiu sem calibratedAt');
-    Engine.registerResult(item, 1000+i*10, true, false);
-    calibrationItems++;
-  }
-  // Calibração adaptativa: tempos consistentes encerram antes do teto (>= CALIBRATION_MIN_ITEMS).
-  if(!p.calibratedAt) throw new Error('calibração não concluiu com amostras consistentes');
-  if(calibrationItems < CALIBRATION_MIN_ITEMS || calibrationItems > CALIBRATION_ITEMS) throw new Error('calibração terminou com número inválido de itens ('+calibrationItems+')');
-  const postCalibration = Engine.next();
-  if(postCalibration.isCalibration) throw new Error('calibração não terminou');
-  if(!Number.isFinite(p.targetMs) || p.targetMs>=p.baselineMs) throw new Error('meta não foi criada a partir da calibração');
-  const beforeBest = p.bestMs;
-  Engine.registerResult(postCalibration, 300, false, false);
-  if(p.bestMs!==beforeBest) throw new Error('erro criou ou alterou recorde');
-  Store.data.settings.selectedSkills = ['radical_quad'];
-  if(Engine.next().key!=='radical_quad') throw new Error('treino de foco não respeitou a habilidade selecionada');
-}catch(e){
-  globalThis.__TEST_RESULTS__.speedEngineError = e.message;
+/* ---------- 4. PROGRESS ---------- */
+{
+  freshStore();
+  for(let n=1;n<60;n++) ok(Progress.levelFloorXp(n+1)>Progress.levelFloorXp(n), 'piso de XP cresce (nível '+n+')');
+  ok(Progress.levelInfo(0).level===1 && Progress.levelInfo(Progress.levelFloorXp(5)).level===5 && Progress.levelInfo(Progress.levelFloorXp(5)-1).level===4, 'levelInfo respeita os pisos');
+  const li = Progress.levelInfo(250); ok(li.frac>=0 && li.frac<1 && li.into+Progress.levelFloorXp(li.level)===250, 'levelInfo.frac/into coerentes');
+  const r = Progress.addXp(100000); ok(r.leveledUp && r.to>r.from, 'addXp reporta subida de nível');
+  ok(Progress.addDays('2026-03-01',-1)==='2026-02-28' && Progress.addDays('2026-12-31',1)==='2027-01-01', 'addDays (mês/ano)');
+  // meta diária e sequência
+  freshStore(); Store.data.settings.dailyGoal = 20;
+  const today = Progress.dayKey(); let justHit = 0;
+  for(let i=0;i<25;i++){ if(Progress.recordItem(true).goalJustHit) justHit++; }
+  ok(justHit===1, 'meta diária dispara uma única vez');
+  ok(Store.data.streak.current===1 && Store.data.streak.lastGoalDay===today, 'primeiro dia vira sequência 1');
+  freshStore(); Store.data.settings.dailyGoal = 20;
+  Store.data.streak = {current:3, best:3, lastGoalDay:Progress.addDays(today,-1)};
+  for(let i=0;i<20;i++) Progress.recordItem(true);
+  ok(Store.data.streak.current===4 && Store.data.streak.best===4, 'dia seguinte estende a sequência');
+  freshStore(); Store.data.settings.dailyGoal = 20;
+  Store.data.streak = {current:5, best:5, lastGoalDay:Progress.addDays(today,-3)};
+  ok(Progress.currentStreak()===0, 'sequência antiga não é exibida');
+  for(let i=0;i<20;i++) Progress.recordItem(true);
+  ok(Store.data.streak.current===1 && Store.data.streak.best===5, 'buraco de dias reinicia a sequência mas preserva o recorde');
+  freshStore(); Store.data.streak = {current:2, best:2, lastGoalDay:Progress.addDays(today,-1)};
+  ok(Progress.streakAtRisk() && Progress.currentStreak()===2, 'sequência em risco quando ontem bateu e hoje ainda não');
+  ok(Progress.weekStrip().length===7 && Progress.weekStrip()[6].today, 'faixa da semana tem 7 dias terminando hoje');
+  ok(Progress.roundStars(0.95,0.7)===3 && Progress.roundStars(0.85,0.1)===2 && Progress.roundStars(0.4,0)===1, 'estrelas da rodada (mínimo 1)');
+  // poda do histórico diário
+  freshStore(); for(let i=0;i<DAILY_KEEP_DAYS+30;i++){ Store.data.daily[Progress.addDays(today,-i-5)] = {items:1,correct:1,xp:1,goalHit:false}; }
+  Progress.prune(); ok(Object.keys(Store.data.daily).length<=DAILY_KEEP_DAYS, 'poda dias antigos');
 }
 
-try{
-  Store.data = Store.defaults();
-  Store.data.settings.selectedSkills = ['soma_2d_cc'];
-  const masteryProfile = Engine.profile('soma_2d_cc');
-  for(let i=0;i<CALIBRATION_ITEMS;i++) Engine.registerResult(Engine.next(), 1000, true, false);
-  if(Engine.targetRate(masteryProfile)!==0) throw new Error('calibration contaminated target rate');
-  for(let i=0;i<MASTERY_MIN_ITEMS;i++){
-    const item=Engine.next();
-    Engine.registerResult(item, Math.min(700,item.targetMs), true, false);
-  }
-  if(!masteryProfile.masteredAt || Engine.stage(masteryProfile)!=='mastered') throw new Error('consistent performance did not confirm mastery');
-  masteryProfile.nextReviewAt=Date.now()-1;
-  for(let i=0;i<RETENTION_REVIEW_ITEMS;i++){
-    const review=Engine.next();
-    if(!review.isReview) throw new Error('retention review was not prioritized');
-    Engine.registerResult(review, Math.min(700,review.targetMs), true, false);
-  }
-  if(masteryProfile.retentionPasses!==1 || masteryProfile.nextReviewAt<=Date.now()) throw new Error('passed review did not schedule the next review');
-  masteryProfile.nextReviewAt=Date.now()-1;
-  const failedReview=Engine.next();
-  if(!failedReview.isReview) throw new Error('second review was not generated');
-  Engine.registerResult(failedReview, failedReview.targetMs, false, false);
-  if(masteryProfile.masteredAt || Engine.stage(masteryProfile)==='mastered') throw new Error('failed review kept mastery');
-}catch(e){
-  globalThis.__TEST_RESULTS__.adaptiveFlowError = e.message;
+/* ---------- 5. STORAGE ---------- */
+{
+  const junk = Store.normalize({settings:{appLang:'xx', theme:5, dailyGoal:7, roundSize:'gigante', challenge:null, activeTracks:['nada'], gapMs:'abc', fontScale:3},
+    tracks:{soma:{level:99, xp:-5, m:7, rank:42, stars:{'1':9,'x':1}, window:'oops'}, inexistente:{level:1}}, player:{xp:'a'}, daily:{'ontem':{}, '2026-01-01':{items:'5'}}, streak:{current:-4}});
+  ok(junk.settings.appLang==='pt' && junk.settings.theme==='dark' && junk.settings.dailyGoal===DEFAULT_DAILY_GOAL && junk.settings.roundSize==='normal' && junk.settings.challenge==='balanced', 'ajustes inválidos viram padrão');
+  ok(junk.settings.activeTracks.length>0 && junk.settings.gapMs>=100 && junk.settings.fontScale===1, 'listas/limites saneados');
+  const s = junk.tracks.soma;
+  ok(s && s.level===TRACKS.soma.levels.length && s.xp===0 && s.m===1 && s.rank===RANK_MAX && Array.isArray(s.window) && s.stars['1']===3 && !junk.tracks.inexistente, 'trilha corrompida é saneada');
+  ok(junk.player.xp===0 && !junk.daily.ontem && junk.daily['2026-01-01'].items===5 && junk.streak.current===0, 'jogador/dias/sequência saneados');
+  // migração v2 → v3
+  localStorage._data = {};
+  localStorage.setItem('calcrapido_db_v2', JSON.stringify({settings:{appLang:'en', theme:'light', tts:true, voiceRate:1.4, mode:'hiit', selectedSkills:['x']}, history:[{date:1,total:10,accuracy:0.9,avgTime:1000}], bestStreak:12, speedProfiles:{a:1}}));
+  Store.load();
+  ok(Store.data.settings.appLang==='en' && Store.data.settings.theme==='light' && Store.data.settings.tts===true && Store.data.settings.voiceRate===1.4, 'migração preserva ajustes');
+  ok(Store.data.history.length===1 && Store.data.bestStreak===12 && !Store.data.onboarded && Object.keys(Store.data.tracks).length===0, 'migração preserva histórico e recomeça o nivelamento');
+  ok(!('mode' in Store.data.settings) && localStorage.getItem('calcrapido_db_v3')!==null, 'migração grava no formato v3');
+  Store.data.settings.appLang = 'pt';
+  // ida e volta
+  freshStore(); Engine.track('soma').level = 4; Engine.track('soma').placed = true;
+  Store._persist(); Store.load();
+  ok(Store.data.tracks.soma.level===4 && Store.data.tracks.soma.placed, 'salvar e recarregar mantém a trilha');
+  // textos: PT e EN têm as mesmas chaves
+  const pk = Object.keys(I18N.pt), ek = Object.keys(I18N.en);
+  ok(pk.every(k=>ek.includes(k)) && ek.every(k=>pk.includes(k)), 'i18n: PT e EN têm as mesmas chaves');
 }
 
-try{
-  Store.data = Store.defaults();
-  Store.data.settings.selectedSkills = ['soma_2d_cc'];
-  const realNow=U.now;
-  let fakeNow=1000;
-  U.now=()=>fakeNow;
-  UI.renderQuestion=(_item,onReady)=>{ fakeNow=5000; onReady(); };
-  Session.active=true; Session.paused=false; Session.answering=false;
-  Session.nextQuestion();
-  if(Session.qShownAt!==5000 || Session.itemDeadline!==5000+Session.current.timeoutMs){
-    throw new Error('response time included time before availability');
+/* ---------- 6. SESSION (UI muda) ---------- */
+{
+  freshStore(); Store.data.settings.gapMs = 0; Store.data.settings.correctAnswerShowMs = 0; Store.data.settings.confirmBeforeAccept = false;
+  placeAll(3, 0.5);
+  const noop = ()=>{}; let summary = null, intros = 0, results = 0;
+  Object.assign(UI, {resetTraining:noop, showScreen:noop, setBlockChip:noop, setItemChip:noop, updateHud:noop, popXp:noop, setPaused:noop, celebrate:noop,
+    toast:noop, flashAnswer:noop, pushPulse:noop, clearAnswerFeedback:noop, showCorrectAnswer:noop, showHint:noop, setMasteryBlur:noop,
+    updateAnswerDisplay:noop, setKeypadMode:noop, setTab:noop, renderHome:noop, hideOverlays:noop,
+    renderQuestion:(item,ready)=>ready(), renderSummary:s=>{ summary = s; },
+    showBlockIntro:(info,go)=>{ intros++; setTimeout(go,0); }, showTestResult:(res,go)=>{ results++; setTimeout(go,0); }});
+  const xp0 = Store.data.player.xp;
+  ok(Session.start({size:16}), 'Session.start inicia');
+  let guard = 0;
+  while(Session.active && guard++<4000){
+    if(Session.current && !Session.answering && !Session.inputLocked && !Session.waiting){
+      const ans = String(Session.current.answer).replace('.',',');
+      for(const ch of ans) Session.submitDigit(ch==='-'?'sign':ch===','?'dec':ch);
+      Session.evaluate(false);
+    }
+    await sleep(1);
   }
-  clearTimeout(Session.itemTimeoutHandle);
-  UI.showScreen=()=>{}; Session.restCountdown=()=>{};
-  Session.mode='intervalado'; Session.phase='work'; Session.cyclesLeft=2;
-  Session.endsAt=7000; Session.phaseEndPending=false;
-  Session.current={answer:1}; Session.answering=false;
-  Session.itemDeadline=12000;
-  Session.itemTimeoutHandle=setTimeout(()=>{ throw new Error('rest timeout fired'); }, 1000);
-  Session.onPhaseEnd();
-  if(!Session.phaseEndPending || Session.current===null || Session.answering){
-    throw new Error('work block cancelled the current problem instead of waiting for it');
+  ok(!Session.active && summary && summary.completed, 'rodada termina sozinha com resumo completo');
+  ok(summary && summary.total>=16 && summary.accuracy>0.95 && summary.stars>=1, 'resumo coerente (total '+(summary&&summary.total)+')');
+  ok(Store.data.player.xp>xp0 && summary.xp>0, 'XP do jogador aumentou');
+  ok(Store.data.history.length===1 && Store.data.history[0].completed===true, 'rodada entrou no histórico');
+  ok(Store.data.player.rounds===1 && Store.data.player.items>=16 && Progress.day().items>=16, 'contadores do jogador e do dia');
+  ok(intros>=1, 'primeira visita a um level mostra a dica (intro)');
+  ok(Store.data.seenTips['soma:3']===true || Object.keys(Store.data.seenTips).length>0, 'dicas vistas são lembradas');
+  // saída parcial salva
+  summary = null; Store.data.history.length = 0;
+  Session.start({size:24}); guard = 0;
+  while(Session.active && Session.records.length<5 && guard++<2000){
+    if(Session.current && !Session.answering && !Session.inputLocked && !Session.waiting){
+      for(const ch of String(Session.current.answer).replace('.',',')) Session.submitDigit(ch==='-'?'sign':ch===','?'dec':ch);
+      Session.evaluate(false);
+    }
+    await sleep(1);
   }
-  if(Session.endsAt!==12000) throw new Error('block end was not extended to the problem deadline');
-  // Quando a conta termina (resposta ou prazo dela), o bloco vai pro descanso sem nova pergunta.
-  Session.nextQuestion();
-  if(Session.phase!=='rest' || Session.cyclesLeft!==1 || Session.current!==null || !Session.answering || Session.phaseEndPending){
-    throw new Error('deferred block end did not go to rest after the problem concluded');
+  Session.exit(true);
+  ok(!Session.active && summary && !summary.completed && summary.stars===0 && Store.data.history.length===1, 'sair no meio fecha como rodada parcial (sem estrelas)');
+  ok(Engine.block===null, 'sair descarta o bloco em andamento');
+  // errar não é punido: rodada toda errada ainda conclui e rende ≥ 0 XP
+  Store.data.history.length = 0; summary = null;
+  Session.start({size:16}); guard = 0;
+  while(Session.active && guard++<4000){
+    if(Session.current && !Session.answering && !Session.inputLocked && !Session.waiting){ Session.submitDigit('9'); Session.submitDigit('9'); Session.submitDigit('9'); Session.submitDigit('9'); Session.submitDigit('9'); Session.evaluate(false); }
+    await sleep(1);
   }
-  clearTimeout(Session.itemTimeoutHandle); clearTimeout(Session.nextQuestionHandle); clearInterval(Session.restHandle);
-  Session.active=false; U.now=realNow;
-}catch(e){
-  globalThis.__TEST_RESULTS__.timingFlowError = e.message;
+  ok(summary && summary.completed && summary.stars===1 && summary.xp>=ROUND_COMPLETE_XP, 'rodada toda errada ainda dá 1 estrela e o bônus de conclusão '+JSON.stringify(summary&&{c:summary.completed,s:summary.stars,x:summary.xp,t:summary.total,a:Session.active,g:guard}));
+  ok(Engine.activeKeys().every(k=>Engine.track(k).level>=3), 'nenhum level caiu');
+  // exportação CSV não quebra
+  ok(typeof Export.csvText()==='string' && Export.csvText().includes('trilha'), 'CSV gerado');
 }
 
-// Regressão do teclado: confirmar vazio não pode virar erro, e tocar no ✓ duas
-// vezes não pode contabilizar a mesma questão duas vezes.
-try{
-  UI.updateAnswerDisplay=()=>{}; UI.toast=()=>{}; UI.flashAnswer=()=>{};
-  UI.pushPulse=()=>{}; UI.showCorrectAnswer=()=>{};
-  UI.clearAnswerFeedback=()=>{};
-  Sound.correct=()=>{}; Sound.wrong=()=>{}; Haptics.correct=()=>{}; Haptics.wrong=()=>{};
-  Store.data = Store.defaults();
-  Store.data.settings.confirmBeforeAccept = true;
-  const item = Engine.next();
-  Session.active=true; Session.paused=false; Session.current=item;
-  Session.typed=''; Session.records=[]; Session.answering=false;
-  Session.qShownAt=U.now(); Session.firstKeyAt=0;
-  Session.evaluate(false);
-  if(Session.records.length!==0) throw new Error('confirmação vazia registrou uma resposta');
-  const answer = String(item.answer);
-  if(answer.startsWith('-')) Session.submitDigit('sign');
-  answer.replace('-','').split('').forEach(d=>Session.submitDigit(d));
-  if(Session.records.length!==0) throw new Error('modo de confirmação aceitou resposta antes do ✓');
-  Session.evaluate(false);
-  if(Session.records.length!==1) throw new Error('✓ não registrou exatamente uma resposta');
-  if(Session.records[0].ms!==Session.records[0].cognitiveMs || Session.records[0].cognitiveMs>Session.records[0].totalMs){
-    throw new Error('tempo cognitivo não foi separado corretamente do tempo total');
-  }
-  Session.evaluate(false);
-  if(Session.records.length!==1) throw new Error('✓ duplicou o registro da mesma resposta');
-  clearTimeout(Session.nextQuestionHandle);
-  Session.active=false;
-}catch(e){
-  globalThis.__TEST_RESULTS__.confirmFlowError = e.message;
-}
-
-// Entrada decimal: a tecla "dec" insere o separador certo, ignora toques repetidos, exige
-// confirmação manual (não envia sozinha por contagem de dígitos) e aceita tanto vírgula
-// quanto ponto na comparação final.
-try{
-  UI.updateAnswerDisplay=()=>{}; UI.toast=()=>{}; UI.flashAnswer=()=>{};
-  UI.pushPulse=()=>{}; UI.showCorrectAnswer=()=>{};
-  UI.clearAnswerFeedback=()=>{};
-  Sound.correct=()=>{}; Sound.wrong=()=>{}; Haptics.correct=()=>{}; Haptics.wrong=()=>{};
-  Store.data = Store.defaults();
-  Store.data.settings.confirmBeforeAccept = false;
-  const item = Engine.generateItem('soma_decimal');
-  Session.active=true; Session.paused=false; Session.current=item; Session.inputLocked=false;
-  Session.typed=''; Session.records=[]; Session.answering=false;
-  Session.qShownAt=U.now(); Session.firstKeyAt=0;
-  Session.submitDigit('1'); Session.submitDigit('dec'); Session.submitDigit('dec'); Session.submitDigit('5');
-  if((Session.typed.match(/[,.]/g)||[]).length!==1) throw new Error('tecla decimal repetida inseriu mais de um separador');
-  if(Session.records.length!==0) throw new Error('resposta decimal foi enviada sozinha sem confirmação manual');
-  Session.evaluate(false);
-  if(Session.records.length!==1) throw new Error('✓ não confirmou a resposta decimal digitada');
-  clearTimeout(Session.nextQuestionHandle);
-  // Mesma família, mas digitando a resposta certa de fato (via helper), com ',' e com '.'.
-  [',','.'].forEach(sep=>{
-    Store.data = Store.defaults();
-    const it = Engine.generateItem('sub_decimal');
-    Session.current=it; Session.typed=String(it.answer).replace('.', sep);
-    Session.records=[]; Session.answering=false; Session.qShownAt=U.now(); Session.firstKeyAt=U.now();
-    Session.evaluate(false);
-    if(!Session.records[0] || !Session.records[0].correct) throw new Error('separador "'+sep+'" não foi aceito como decimal válido');
-    clearTimeout(Session.nextQuestionHandle);
-  });
-  Session.active=false;
-}catch(e){
-  globalThis.__TEST_RESULTS__.decimalInputError = e.message;
-}
-
-// Comparação decimal vs. inteiro (dado interno, seç. "Decimais"): só responde com amostra
-// suficiente nos dois perfis, e classifica corretamente dentro/fora do esperado.
-try{
-  Store.data = Store.defaults();
-  if(Engine.decimalComparison('soma_decimal')!==null){
-    throw new Error('comparação decimal respondeu sem amostra suficiente');
-  }
-  const dProfile = Engine.profile('soma_decimal'), rProfile = Engine.profile('soma_2d_cc');
-  for(let i=0;i<DECIMAL_COMPARISON_MIN_SAMPLES+2;i++){
-    dProfile.window.push({ms:1000, correct:true, targetHit:true, calibration:false, lapse:false, at:Date.now()});
-    rProfile.window.push({ms:1000, correct:true, targetHit:true, calibration:false, lapse:false, at:Date.now()});
-  }
-  const withinCmp = Engine.decimalComparison('soma_decimal');
-  if(!withinCmp || !withinCmp.withinExpected) throw new Error('comparação decimal não reconheceu desempenho equivalente como esperado');
-  dProfile.window = dProfile.window.map(w=>({...w, ms:1000*(EXPECTED_DECIMAL_TIME_MULT+0.5)}));
-  const slowCmp = Engine.decimalComparison('soma_decimal');
-  if(!slowCmp || slowCmp.withinExpected) throw new Error('comparação decimal não sinalizou lentidão desproporcional');
-  const all = Engine.allDecimalComparisons();
-  if(!Array.isArray(all) || !all.some(c=>c.key==='soma_decimal')) throw new Error('allDecimalComparisons() não incluiu soma_decimal');
-}catch(e){
-  globalThis.__TEST_RESULTS__.decimalComparisonError = e.message;
-}
-
-// Peso por dígito/linha (substitui os "fatos fracos" da tabuada): um peso alto num dígito
-// desloca a geração para pares que contêm esse dígito, mas nunca elimina a aleatoriedade
-// (piso PATTERN_WEIGHT_MIN); não existe mais "par pronto" rastreado (sem factKey); e o nudge
-// em registerResult alimenta o peso a partir dos dígitos do item (a/b), não de um fato exato.
-try{
-  Store.data = Store.defaults();
-  const p = Engine.profile('mult_tabuada');
-  p.digitWeights['mult_tabuada:d7'] = PATTERN_WEIGHT_MAX;
-  for(let d=2;d<=12;d++) p.digitWeights['mult_tabuada:d'+d] = PATTERN_WEIGHT_MIN;
-  p.digitWeights['mult_tabuada:d7'] = PATTERN_WEIGHT_MAX;
-  let count7=0; const total=300;
-  for(let i=0;i<total;i++){
-    const g = KC_DEFS.mult_tabuada.gen(0.5, p);
-    if(g.a===7 || g.b===7) count7++;
-  }
-  if(count7/total < 0.4) throw new Error('peso por dígito não deslocou a geração (7 apareceu em '+count7+'/'+total+')');
-  if(count7===total) throw new Error('peso por dígito eliminou o piso de aleatoriedade');
-  // A geração nunca expõe um "fato rastreado" — a memorização de par específico acabou.
-  const gd = KC_DEFS.div_tabuada.gen(0.5, p);
-  if(gd.features && gd.features.factKey) throw new Error('div_tabuada ainda expõe factKey (memorização)');
-  if(!Number.isFinite(gd.answer) || gd.a%gd.b!==0) throw new Error('div_tabuada gerou resposta inválida');
-  // Nudge em perfil limpo: após erro, o peso dos dígitos presentes sobe; após acerto na meta,
-  // desce. mult_11_19 e div_tabuada ponderam só a "linha" (fator 11–19 / divisor).
-  Store.data = Store.defaults();
-  const nudgeProfile = Engine.profile('mult_tabuada');
-  const item = {key:'mult_tabuada', a:6, b:7, isCalibration:false};
-  Engine.nudgeDigits(nudgeProfile, 'mult_tabuada', Engine.digitTrack.mult_tabuada(item), false, false);
-  if(!(nudgeProfile.digitWeights['mult_tabuada:d6'] > 1)) throw new Error('nudgeDigits não subiu o peso do dígito 6 após erro');
-  if(!(nudgeProfile.digitWeights['mult_tabuada:d7'] > 1)) throw new Error('nudgeDigits não subiu o peso do dígito 7 após erro');
-  const afterUp = nudgeProfile.digitWeights['mult_tabuada:d6'];
-  Engine.nudgeDigits(nudgeProfile, 'mult_tabuada', Engine.digitTrack.mult_tabuada(item), true, true);
-  if(nudgeProfile.digitWeights['mult_tabuada:d6'] >= afterUp) throw new Error('nudgeDigits não reduziu o peso após acerto na meta');
-  const p19 = Engine.profile('mult_11_19');
-  const item19 = {key:'mult_11_19', a:17, b:6, isCalibration:false};
-  Engine.nudgeDigits(p19, 'mult_11_19', Engine.digitTrack.mult_11_19(item19), false, false);
-  if(!(p19.digitWeights['mult_11_19:d17'] > 1)) throw new Error('mult_11_19: linha 17 não foi ponderada após erro');
-  if(p19.digitWeights['mult_11_19:d6']) throw new Error('mult_11_19: multiplicador (2–9) não deveria ser ponderado');
-  const pdiv = Engine.profile('div_tabuada');
-  const itemDiv = {key:'div_tabuada', b:8, isCalibration:false};
-  Engine.nudgeDigits(pdiv, 'div_tabuada', Engine.digitTrack.div_tabuada(itemDiv), false, false);
-  if(!(pdiv.digitWeights['div_tabuada:d8'] > 1)) throw new Error('div_tabuada: divisor 8 não foi ponderado após erro');
-}catch(e){
-  globalThis.__TEST_RESULTS__.digitWeightError = e.message;
-}
-
-// Cascata de dificuldade (seç. "Cascata"): família sofrendo (acerto < CASCADE_ACC_FLOOR com
-// amostra suficiente) dá boost ao pré-requisito mais fraco ainda não dominado; sem amostra
-// suficiente (ruído), não há boost.
-try{
-  Store.data = Store.defaults();
-  const child = Engine.profile('soma_2d_cc');
-  for(let i=0;i<CASCADE_MIN_ITEMS;i++) child.window.push({ms:1500, correct:false, targetHit:false, calibration:false, lapse:false, at:Date.now()});
-  if(Engine.prereqReadiness('soma_2d_cc').key!=='soma_2d_sc') throw new Error('prereqReadiness não apontou o pré-requisito mais fraco');
-  const scored = [{key:'soma_2d_sc', score:0.5},{key:'soma_2d_cc', score:0.8}];
-  Engine.applyCascadeBoost(scored);
-  const boosted = scored.find(x=>x.key==='soma_2d_sc').score;
-  if(boosted < 0.5 + CASCADE_BOOST - 1e-9) throw new Error('pré-requisito não recebeu o boost de cascata');
-  if(scored.find(x=>x.key==='soma_2d_cc').score!==0.8) throw new Error('cascata mexeu no score da própria família');
-  const scored2 = [{key:'sub_2d_se', score:0.5},{key:'sub_2d_ce', score:0.8}];
-  Engine.applyCascadeBoost(scored2);
-  if(scored2.find(x=>x.key==='sub_2d_se').score!==0.5) throw new Error('cascata reagiu a ruído sem amostra suficiente');
-}catch(e){
-  globalThis.__TEST_RESULTS__.cascadeError = e.message;
-}
-
-// Calibração adaptativa (seç. "Calibração"): tempos consistentes encerram a calibração antes
-// do teto (mín. CALIBRATION_MIN_ITEMS, sem chegar em CALIBRATION_ITEMS); tempos inconsistentes
-// seguem até o teto.
-try{
-  Store.data = Store.defaults();
-  Store.data.settings.selectedSkills = ['soma_2d_cc'];
-  const p1 = Engine.profile('soma_2d_cc');
-  for(let i=0;i<CALIBRATION_ITEMS;i++){
-    Engine.registerResult(Engine.generateItem('soma_2d_cc',{isCalibration:true}), 1000+i*5, true, false);
-    if(p1.calibratedAt) break;
-  }
-  if(!p1.calibratedAt) throw new Error('calibração consistente não encerrou cedo');
-  if(p1.calibration.length < CALIBRATION_MIN_ITEMS) throw new Error('calibração consistente encerrou abaixo do mínimo');
-  if(p1.calibration.length >= CALIBRATION_ITEMS) throw new Error('calibração consistente não usou a conclusão antecipada');
-  if(!Number.isFinite(p1.targetMs) || p1.targetMs>=p1.baselineMs) throw new Error('baseline/meta não criados na conclusão antecipada');
-
-  Store.data = Store.defaults();
-  Store.data.settings.selectedSkills = ['sub_2d_ce'];
-  const p2 = Engine.profile('sub_2d_ce');
-  for(let i=0;i<CALIBRATION_ITEMS;i++){
-    Engine.registerResult(Engine.generateItem('sub_2d_ce',{isCalibration:true}), 500 + (i%2)*2000, true, false);
-  }
-  if(p2.calibration.length!==CALIBRATION_ITEMS || !p2.calibratedAt) throw new Error('calibração inconsistente não seguiu até o teto');
-}catch(e){
-  globalThis.__TEST_RESULTS__.adaptiveCalibrationError = e.message;
-}
-
-// Logaritmo standalone (operação em si): log_basico gera "log₂(32) = ?" — nunca um item
-// composto (terms/ops), o expoente bate com base^expoente=argumento, e o TTS tem frase própria.
-try{
-  for(let i=0;i<200;i++){
-    const g = KC_DEFS.log_basico.gen(i/199);
-    if(g.terms || g.ops) throw new Error('log_basico gerou item composto (terms/ops) — deveria ser standalone');
-    if(!/^log/.test(g.exprText||'')) throw new Error('log_basico sem exprText de log: '+g.exprText);
-    if(!Number.isInteger(g.a) || !Number.isInteger(g.b)) throw new Error('base/argumento não inteiros: '+JSON.stringify(g));
-    if(Math.pow(g.a,g.answer)!==g.b) throw new Error('expoente não bate com base^expoente=argumento: '+JSON.stringify(g));
-    if(g.answer<1 || g.answer>5) throw new Error('expoente fora da faixa da família: '+g.answer);
-    ['pt-BR','en-US'].forEach(v=>{
-      const phrase = spokenPhrase(Object.assign({op:'logaritmo',key:'log_basico',kcLabel:'x',symbol:'log'}, g), v);
-      if(!/log/i.test(phrase)) throw new Error('TTS do log caiu no fallback aritmético: '+phrase);
-    });
-  }
-}catch(e){
-  globalThis.__TEST_RESULTS__.logStandaloneError = e.message;
-}
-
-// Log saiu das expressões: potência/radical (pares avançados) e encadeada nunca mais emitem
-// termo kind:'log' nem exibem "log" no enunciado — log virou operação isolada.
-try{
-  for(let i=0;i<300;i++){
-    const t = Math.random();
-    ['potencia_basica','radical_quad','expr_encadeada'].forEach(k=>{
-      const g = KC_DEFS[k].gen(t);
-      if((g.terms||[]).some(term=>term.kind==='log')) throw new Error(k+' ainda gera termo de log');
-      if(/log/.test(g.exprText||'')) throw new Error(k+' ainda exibe log na expressão: '+g.exprText);
-    });
-  }
-}catch(e){
-  globalThis.__TEST_RESULTS__.logExpressionError = e.message;
-}
-
-// Porcentagens derivadas (pct_reverso/pct_adicao/pct_subtracao/pct_duplo e as derivadas II —
-// pct_original/pct_variacao_alta/pct_variacao_baixa/pct_sucessivo): a resposta é matematicamente
-// exata a partir dos operandos exibidos — na inversa ela É a porcentagem (parte×100 = base×resposta),
-// nas de ±% é base ± base×%/100 (inteiro e o desconto nunca zera), no duplo é p1×p2÷100 em pontos
-// percentuais (1–2 casas declaradas, NUNCA inteira), no original é final = original×(100±p)/100,
-// nas variações é final = inicial×(100±resposta)/100 com sinal coerente com a direção da seta, e
-// no sucessivo AMBOS os passos (base→meio→final) são inteiros e o segundo incide sobre o meio.
-// A dica por padrão usa a base certa de cada família, e o TTS tem frase própria nos dois idiomas.
-try{
-  Store.data = Store.defaults();
-  Store.data.settings.selectedSkills = Object.keys(KC_DEFS);
-  for(let i=0;i<300;i++){
-    const t=Math.random();
-    const rev=KC_DEFS.pct_reverso.gen(t);
-    if(!Number.isInteger(rev.answer) || rev.answer<=0 || rev.answer>=100) throw new Error('pct_reverso: resposta fora da faixa de %: '+JSON.stringify(rev));
-    if(rev.a*100 !== rev.b*rev.answer) throw new Error('pct_reverso: parte/base não bate com a resposta: '+JSON.stringify(rev));
-    const add=KC_DEFS.pct_adicao.gen(t);
-    const trueAdd=add.a + add.a*add.b/100;
-    if(!Number.isInteger(trueAdd) || trueAdd!==add.answer) throw new Error('pct_adicao: acréscimo não inteiro/exato: '+JSON.stringify(add));
-    const sub=KC_DEFS.pct_subtracao.gen(t);
-    const trueSub=sub.a - sub.a*sub.b/100;
-    if(trueSub<=0 || trueSub!==sub.answer) throw new Error('pct_subtracao: desconto zerou ou não bate: '+JSON.stringify(sub));
-    const dup=KC_DEFS.pct_duplo.gen(t);
-    if(Math.abs(dup.a*dup.b/100 - dup.answer)>1e-9) throw new Error('pct_duplo: valor não bate com p1×p2÷100: '+JSON.stringify(dup));
-    if(Number.isInteger(dup.answer)) throw new Error('pct_duplo: resposta inteira (família existe para treinar vírgula): '+JSON.stringify(dup));
-    const expectedDp=((dup.a*dup.b)%10===0)?1:2;
-    if((dup.features&&dup.features.decimalPlaces)!==expectedDp) throw new Error('pct_duplo: decimalPlaces inconsistente com o produto: '+JSON.stringify(dup));
-    // Derivadas II: desfazer (original), variação relativa ao INICIAL (+25% vs −20%) e cascata.
-    const ori=KC_DEFS.pct_original.gen(t);
-    const fatorOri=(ori.features&&ori.features.aumento)?100+ori.features.pct:100-ori.features.pct;
-    if(ori.a*100 !== ori.answer*fatorOri) throw new Error('pct_original: final não bate com original×(100±p)/100: '+JSON.stringify(ori));
-    if(!Number.isInteger(ori.answer) || ori.answer<=0) throw new Error('pct_original: original inválido: '+JSON.stringify(ori));
-    if(ori.features.aumento ? ori.answer>=ori.a : ori.answer<=ori.a) throw new Error('pct_original: direção (±) incoerente com os valores: '+JSON.stringify(ori));
-    const va=KC_DEFS.pct_variacao_alta.gen(t);
-    if(va.b<=va.a || va.a*(100+va.answer)!==va.b*100) throw new Error('pct_variacao_alta: aumento não bate com (b−a)/a×100: '+JSON.stringify(va));
-    if(!Number.isInteger(va.answer) || va.answer<=0) throw new Error('pct_variacao_alta: resposta inválida: '+JSON.stringify(va));
-    const vb=KC_DEFS.pct_variacao_baixa.gen(t);
-    if(vb.b>=vb.a || vb.a*(100-vb.answer)!==vb.b*100) throw new Error('pct_variacao_baixa: redução não bate com (a−b)/a×100: '+JSON.stringify(vb));
-    if(!Number.isInteger(vb.answer) || vb.answer<=0 || vb.b<=0) throw new Error('pct_variacao_baixa: resposta inválida: '+JSON.stringify(vb));
-    const suc=KC_DEFS.pct_sucessivo.gen(t);
-    const meioS=suc.a-suc.a*suc.b/100, finS=meioS-meioS*suc.c/100;
-    if(!Number.isInteger(meioS)) throw new Error('pct_sucessivo: valor intermediário não inteiro: '+JSON.stringify(suc));
-    if(finS<=0 || finS!==suc.answer) throw new Error('pct_sucessivo: cascata não bate (segundo % deve incidir sobre o meio): '+JSON.stringify(suc));
-  }
-  // Dicas (Andaime): cada família derivada recebe dica ancorada na base certa dela.
-  // pct=15 cai na dica genérica ("10% de {base} é {ten}…"), que cita base e taxa no texto.
-  [
-    {key:'pct_reverso',    item:{key:'pct_reverso',   a:20,b:80, features:{pct:15}}, frags:['80','15']},
-    {key:'pct_adicao',     item:{key:'pct_adicao',    a:80,b:15, features:{pct:15}}, frags:['80','15']},
-    {key:'pct_subtracao',  item:{key:'pct_subtracao', a:80,b:15, features:{pct:15}}, frags:['80','15']},
-    {key:'pct_duplo',      item:{key:'pct_duplo',     a:2, b:5,  features:{pct:5}},  frags:['(2 × 5)']},
-    {key:'pct_original',      item:{key:'pct_original',      a:84, b:30, features:{pct:30,aumento:false}}, frags:['84','70']},
-    {key:'pct_variacao_alta', item:{key:'pct_variacao_alta', a:80, b:100},                               frags:['80','20']},
-    {key:'pct_variacao_baixa',item:{key:'pct_variacao_baixa',a:100,b:80},                                frags:['100','20']},
-    {key:'pct_sucessivo',     item:{key:'pct_sucessivo',     a:100,b:20,c:10, features:{pct:20}},        frags:['80']}
-  ].forEach(({key,item,frags})=>{
-    const hint=Engine.buildPatternHint('pct', item);
-    frags.forEach(frag=>{ if(!hint || !hint.includes(frag)) throw new Error(key+': dica sem "'+frag+'": '+hint); });
-  });
-  // TTS próprio dos ops novos — não pode cair no fallback aritmético ("a mais b" etc.).
-  ['pt-BR','en-US'].forEach(v=>{
-    const mk=(op,a,b)=>spokenPhrase({op,a,b,key:'k',kcLabel:'l',symbol:'%'}, v);
-    const revPh=mk('porcentagem_inversa',20,80);
-    if(v==='en-US' ? !/20 is what percent of 80/.test(revPh) : !/20 é quantos por cento de 80/.test(revPh)) throw new Error('TTS inversa caiu no fallback: '+revPh);
-    const addPh=mk('porcentagem_acrescimo',80,15);
-    if(v==='en-US' ? !/80 plus 15 percent/.test(addPh) : !/80 mais 15 por cento/.test(addPh)) throw new Error('TTS acréscimo caiu no fallback: '+addPh);
-    const subPh=mk('porcentagem_desconto',80,15);
-    if(v==='en-US' ? !/80 minus 15 percent/.test(subPh) : !/80 menos 15 por cento/.test(subPh)) throw new Error('TTS desconto caiu no fallback: '+subPh);
-    const dupPh=mk('porcentagem_dupla',2,5);
-    if(v==='en-US' ? !/2 percent of 5 percent/.test(dupPh) : !/2 por cento de 5 por cento/.test(dupPh)) throw new Error('TTS dupla caiu no fallback: '+dupPh);
-    // Derivadas II (o original sem features.aumento fala o caminho do desconto; com aumento,
-    // o do acréscimo; a sucessiva lê os DOIS descontos via item.c).
-    const oriPh=mk('porcentagem_original',84,30);
-    if(v==='en-US' ? !/what number minus 30 percent equals 84/.test(oriPh) : !/que número menos 30 por cento é igual a 84/.test(oriPh)) throw new Error('TTS original caiu no fallback: '+oriPh);
-    const oriAumPh=spokenPhrase({op:'porcentagem_original',a:125,b:25,key:'k',kcLabel:'l',symbol:'%',features:{aumento:true}}, v);
-    if(v==='en-US' ? !/plus 25 percent equals 125/.test(oriAumPh) : !/mais 25 por cento é igual a 125/.test(oriAumPh)) throw new Error('TTS original (aumento) caiu no fallback: '+oriAumPh);
-    const vaPh=mk('porcentagem_aumento',80,100);
-    if(v==='en-US' ? !/from 80 to 100, what percent increase/.test(vaPh) : !/de 80 para 100, quantos por cento de aumento/.test(vaPh)) throw new Error('TTS variação alta caiu no fallback: '+vaPh);
-    const vbPh=mk('porcentagem_reducao',100,80);
-    if(v==='en-US' ? !/from 100 to 80, what percent decrease/.test(vbPh) : !/de 100 para 80, quantos por cento de desconto/.test(vbPh)) throw new Error('TTS variação baixa caiu no fallback: '+vbPh);
-    const sucPh=spokenPhrase({op:'porcentagem_sucessiva',a:100,b:20,c:10,key:'k',kcLabel:'l',symbol:'%'}, v);
-    if(v==='en-US' ? !/100 minus 20 percent, minus 10 percent/.test(sucPh) : !/100 menos 20 por cento, menos 10 por cento/.test(sucPh)) throw new Error('TTS sucessiva caiu no fallback: '+sucPh);
-  });
-}catch(e){
-  globalThis.__TEST_RESULTS__.pctVariantsError = e.message;
-}
-
-// Proporções (direta/inversa): consistência da relação, resposta = célula oculta em
-// qualquer posição de x e cobertura real das quatro posições ao longo da curva de
-// dificuldade. A inversa precisa satisfazer a constante do produto a×b = c×d.
-try{
-  Store.data = Store.defaults();
-  const seenPos = {direta:new Set(), inversa:new Set()};
-  for(let i=0;i<400;i++){
-    const t=Math.random();
-    const d=KC_DEFS.proporcao_direta.gen(t);
-    const dv=[d.a,d.b,d.c,d.d];
-    if(dv.some(v=>!Number.isInteger(v)||v<=0)) throw new Error('proporcao_direta: célula não inteira/positiva: '+dv);
-    if(dv[1]*dv[2] !== dv[0]*dv[3]) throw new Error('proporcao_direta: razões entre linhas divergem: '+dv);
-    if(d.answer!==dv[d.xPos] || !Number.isInteger(d.answer)) throw new Error('proporcao_direta: answer não é a célula oculta inteira: '+JSON.stringify(d));
-    seenPos.direta.add(d.xPos);
-    const iv=KC_DEFS.proporcao_inversa.gen(t);
-    const vals=[iv.a,iv.b,iv.c,iv.d];
-    if(vals.some(v=>!Number.isInteger(v)||v<=0)) throw new Error('proporcao_inversa: célula não inteira/positiva: '+vals);
-    if(iv.a*iv.b !== iv.c*iv.d) throw new Error('proporcao_inversa: constante do produto violada: '+vals);
-    const partner = iv.xPos%2===0 ? vals[iv.xPos+1] : vals[iv.xPos-1];
-    if(partner*iv.answer !== iv.a*iv.b || !Number.isInteger(iv.answer)) throw new Error('proporcao_inversa: x não fecha o produto na posição '+iv.xPos+': '+JSON.stringify(iv));
-    seenPos.inversa.add(iv.xPos);
-  }
-  ['direta','inversa'].forEach(kind=>{
-    if(seenPos[kind].size!==4) throw new Error('posição de x não cobriu as 4 células em proporção '+kind+' (saiu: '+[...seenPos[kind]]+')');
-  });
-  // TTS próprio — lê "está para … assim como" com a incógnita no lugar certo.
-  ['pt-BR','en-US'].forEach(v=>{
-    const en=v==='en-US';
-    const ph=spokenPhrase({op:'proporcao_direta',a:3,b:5,c:12,d:20,xPos:3,key:'k'}, v);
-    const want=en ? /3 is to 5 as 12 is to what/ : /3 está para 5, assim como 12 está para quanto/;
-    if(!want.test(ph)) throw new Error('TTS proporção caiu no fallback ('+v+'): '+ph);
-  });
-}catch(e){
-  globalThis.__TEST_RESULTS__.proportionError = e.message;
-}
-
-// Comparação de frações (fracao_comparacao): a resposta codificada é sempre {−1,0,+1}
-// (<, =, >) e bate com o sinal do produto cruzado exato sign(n1·d2 − n2·d1); só frações
-// próprias; os três símbolos e os quatro casos (same_den/same_num/equal/cross) aparecem
-// de fato; igualdade tem cota relevante em qualquer dificuldade (a família não pode virar
-// só "qual é maior"); o peso por padrão desloca casos sem eliminar nenhum; e o TTS lê as
-// duas frações com conectivo próprio nos dois idiomas.
-try{
-  Store.data = Store.defaults();
-  const seen={'-1':0,'0':0,'1':0};
-  const seenCase=new Set();
-  for(let i=0;i<600;i++){
-    const t=Math.random();
-    const g=KC_DEFS.fracao_comparacao.gen(t);
-    if(g.answer!==-1 && g.answer!==0 && g.answer!==1) throw new Error('answer fora do domínio {−1,0,1}: '+g.answer);
-    if(Math.sign(g.a*g.d - g.c*g.b)!==g.answer) throw new Error('sinal não bate com o produto cruzado: '+JSON.stringify(g));
-    [[g.a,g.b],[g.c,g.d]].forEach(pair=>{
-      const [n,d]=pair;
-      if(!Number.isInteger(n) || !Number.isInteger(d) || n<1 || d<2 || n>=d) throw new Error('fração inválida/não própria: '+JSON.stringify(g));
-    });
-    seen[String(g.answer)]++;
-    if(g.features && g.features.case) seenCase.add(g.features.case);
-  }
-  Object.keys(seen).forEach(k=>{ if(!seen[k]) throw new Error('símbolo nunca sorteado ('+k+'): '+JSON.stringify(seen)); });
-  if(seen['0']<30) throw new Error('igualdade rara demais ('+seen['0']+'/600)');
-  ['same_den','same_num','equal','cross'].forEach(c=>{ if(!seenCase.has(c)) throw new Error('caso '+c+' nunca gerado'); });
-  // Peso por padrão no caso (atributo direto, como pct/casas decimais): peso máximo em
-  // "cross" desloca a geração para ele, mas os demais casos continuam possíveis.
-  const p = Engine.profile('fracao_comparacao');
-  p.patternWeights = {'case:same_den':PATTERN_WEIGHT_MIN,'case:same_num':PATTERN_WEIGHT_MIN,'case:equal':PATTERN_WEIGHT_MIN,'case:cross':PATTERN_WEIGHT_MAX};
-  let countCross=0; const total=300;
-  for(let i=0;i<total;i++){
-    if(KC_DEFS.fracao_comparacao.gen(0.5,p).features.case==='cross') countCross++;
-  }
-  if(countCross/total < 0.4) throw new Error('peso por padrão não deslocou o caso gerado (cross='+countCross+'/'+total+')');
-  if(countCross===total) throw new Error('peso por padrão eliminou o piso de aleatoriedade');
-  ['pt-BR','en-US'].forEach(v=>{
-    const ph=spokenPhrase({op:'fracao_comparacao',a:5,b:8,c:2,d:3,key:'k',kcLabel:'l',symbol:'⇔'}, v);
-    const want=v==='en-US' ? /5 over 8 compared with 2 over 3/ : /5 sobre 8 comparado com 2 sobre 3/;
-    if(!want.test(ph)) throw new Error('TTS comparação caiu no fallback ('+v+'): '+ph);
-  });
-}catch(e){
-  globalThis.__TEST_RESULTS__.fractionCompareError = e.message;
-}
-
-// Fluxo de sessão da comparação: com "confirmar resposta" ligado, o toque em < = > só
-// marca a escolha (avalia no ✓); desligado, um toque já avalia. O feedback de erro recebe
-// o item (para mostrar o símbolo, não o código numérico), e teclas < = > fora da família
-// de comparação são ignoradas.
-try{
-  let lastShown=null;
-  UI.updateAnswerDisplay=()=>{}; UI.toast=()=>{}; UI.flashAnswer=()=>{};
-  UI.pushPulse=()=>{}; UI.showCorrectAnswer=(it)=>{ lastShown=it; };
-  UI.clearAnswerFeedback=()=>{};
-  Sound.correct=()=>{}; Sound.wrong=()=>{}; Haptics.correct=()=>{}; Haptics.wrong=()=>{};
-  Store.data = Store.defaults();
-  Store.data.settings.confirmBeforeAccept = true;
-  let item=null;
-  do{ item = Engine.generateItem('fracao_comparacao'); } while(item.answer!==1);
-  Session.active=true; Session.paused=false; Session.current=item;
-  Session.typed=''; Session.records=[]; Session.answering=false; Session.inputLocked=false;
-  Session.qShownAt=U.now(); Session.firstKeyAt=0;
-  Session.submitComparison('>');
-  if(Session.records.length!==0) throw new Error('comparação enviou sozinha com confirmação manual ligada');
-  Session.evaluate(false);
-  if(Session.records.length!==1 || !Session.records[0].correct) throw new Error('> não registrou acerto via ✓');
-  clearTimeout(Session.nextQuestionHandle);
-  Store.data.settings.confirmBeforeAccept = false;
-  Session.records=[]; Session.answering=false; Session.typed=''; Session.firstKeyAt=U.now();
-  Session.submitComparison('<');
-  if(Session.records.length!==1 || Session.records[0].correct) throw new Error('< deveria registrar erro imediato sem confirmação manual');
-  if(!lastShown || lastShown.op!=='fracao_comparacao') throw new Error('feedback de erro não recebeu o item da comparação');
-  clearTimeout(Session.nextQuestionHandle);
-  const other = Engine.generateItem('soma_2d_cc');
-  Session.current=other; Session.records=[]; Session.answering=false;
-  Session.submitComparison('<');
-  if(Session.records.length!==0) throw new Error('submitComparison vazou para família que não é de comparação');
-  Session.active=false;
-}catch(e){
-  globalThis.__TEST_RESULTS__.fractionCompareSessionError = e.message;
-}
+})(ok, sleep);
 `;
 
-eval(harness);
-const RESULTS = global.__TEST_RESULTS__;
-
-// ---------- relatório ----------
-console.log('=== Testes do motor de geração de contas (KC_DEFS) ===\n');
-Object.keys(RESULTS.perFamily).forEach(key=>{
-  const s = RESULTS.perFamily[key];
-  ok(s.badAnswer===0, `${key}: ${s.badAnswer}/${s.total} gerações com resposta inválida`);
-  ok(s.badSpeech===0, `${key}: ${s.badSpeech} falhas de spokenPhrase()`);
-  if(s.examples.length){
-    console.error('   exemplos:', s.examples.slice(0,3).join(' | '));
-  }
-});
-ok(RESULTS.engineSmokeError===null, 'smoke test do motor completo: '+RESULTS.engineSmokeError);
-ok(RESULTS.speedEngineError===null, 'calibração, foco e recordes do motor de velocidade: '+RESULTS.speedEngineError);
-ok(RESULTS.adaptiveFlowError===null, 'fluxo adaptativo (domínio e revisão por retenção): '+RESULTS.adaptiveFlowError);
-ok(RESULTS.timingFlowError===null, 'fluxo de temporização (fim de bloco e descanso): '+RESULTS.timingFlowError);
-ok(RESULTS.confirmFlowError===null, 'fluxo de confirmação da resposta: '+RESULTS.confirmFlowError);
-ok(RESULTS.sequencingError===null, 'sequenciamento (interleaving ponderado, anti-repetição): '+RESULTS.sequencingError);
-ok(RESULTS.retryQueueError===null, 'retry pós-erro (modelo C): '+RESULTS.retryQueueError);
-ok(RESULTS.softmaxError===null, 'sorteio softmax (cauda não-zero, fraco domina): '+RESULTS.softmaxError);
-ok(RESULTS.softmaxLargePoolError===null, 'softmax em pool grande (todas ativas — fraca domina e top5 concentra): '+RESULTS.softmaxLargePoolError);
-ok(RESULTS.softmaxTieError===null, 'softmax em empate de scores (quase-uniforme, degradação graciosa): '+RESULTS.softmaxTieError);
-ok(RESULTS.impulseFloorError===null, 'IMPULSE_FLOOR (lapso não contamina janela pontuada): '+RESULTS.impulseFloorError);
-ok(RESULTS.ultimateTimeoutError===null, 'prazo do modo Ultimate (targetMs×multiplicador): '+RESULTS.ultimateTimeoutError);
-ok(RESULTS.patternWeightError===null, 'peso por padrão desloca geração sem eliminar aleatoriedade: '+RESULTS.patternWeightError);
-ok(RESULTS.patternGenError===null, 'geradores com viés de padrão continuam válidos: '+RESULTS.patternGenError);
-ok(RESULTS.decimalInputError===null, 'entrada decimal (tecla de vírgula, confirmação manual, vírgula/ponto): '+RESULTS.decimalInputError);
-ok(RESULTS.decimalComparisonError===null, 'comparação de dificuldade decimal vs. inteiro (dado interno): '+RESULTS.decimalComparisonError);
-ok(RESULTS.digitWeightError===null, 'peso por dígito/linha (deslocamento de geração, sem factKey, nudge por operando): '+RESULTS.digitWeightError);
-ok(RESULTS.cascadeError===null, 'cascata de dificuldade (boost ao pré-requisito, guarda de ruído): '+RESULTS.cascadeError);
-ok(RESULTS.adaptiveCalibrationError===null, 'calibração adaptativa (consistente encerra cedo, inconsistente até o teto): '+RESULTS.adaptiveCalibrationError);
-ok(RESULTS.logStandaloneError===null, 'logaritmo standalone (operação em si, expoente correto, TTS próprio): '+RESULTS.logStandaloneError);
-ok(RESULTS.logExpressionError===null, 'log removido das expressões (potência/radical/encadeada sem termos de log): '+RESULTS.logExpressionError);
-ok(RESULTS.pctVariantsError===null, 'porcentagens derivadas I/II (inversa/±%/%%/original/variação/sucessiva exatas, dica por base, TTS próprio): '+RESULTS.pctVariantsError);
-ok(RESULTS.proportionError===null, 'proporções direta/inversa (relação exata, x nas 4 posições, constante do produto, TTS próprio): '+RESULTS.proportionError);
-ok(RESULTS.fractionCompareError===null, 'comparação de frações (sinal = produto cruzado, 3 símbolos + igualdade, peso por caso, TTS próprio): '+RESULTS.fractionCompareError);
-ok(RESULTS.fractionCompareSessionError===null, 'fluxo de sessão da comparação (< = >, confirmação manual, feedback com símbolo): '+RESULTS.fractionCompareSessionError);
-
-console.log(`\n${passed} verificações passaram, ${failures} falharam.`);
-if(failures>0){
-  console.error('\n💥 Suíte de testes FALHOU.');
-  process.exit(1);
-} else {
-  console.log('\n✅ Suíte de testes passou.');
-  process.exit(0);
-}
+(async()=>{
+  try{
+    await new Function('ok','sleep','require','Buffer','setImmediate', harness)(ok, sleep, require, Buffer, setImmediate);
+  }catch(e){ failures++; console.error('❌ EXCEÇÃO NA SUÍTE:', e && e.stack || e); }
+  console.log(failures===0 ? `✅ ${passed} verificações passaram.` : `\n${failures} falha(s), ${passed} verificações passaram.`);
+  process.exit(failures===0 ? 0 : 1);
+})();

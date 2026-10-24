@@ -3,21 +3,20 @@
    exercício (spokenPhrase), Text-to-Speech (TTS), som (Sound) e vibração
    (Haptics).
    Depende de: 04-operations.js, 05-expression-terms.js, 07-storage.js.
-   Usado por: 10-session.js.
+   Usado por: 11-session.js e 14-ui.js.
    ===================================================================== */
 
 /* ---------- 7. TTS / SOM / VIBRAÇÃO (feedback multissensorial) ---------- */
 /* Monta a frase falada no idioma da VOZ selecionado (independente do idioma do app) */
 const EXPR_WORDS = {
   'pt-BR':{soma:'mais', subtracao:'menos', multiplicacao:'vezes', divisao:'dividido por', open:'abre parênteses', close:'fecha parênteses',
-    root:'raiz quadrada de', pow:'elevado a', logof:'log na base', of:'de', over:'sobre', equals:'igual a', compare:'comparado com'},
+    root:'raiz quadrada de', croot:'raiz cúbica de', pow:'elevado a', of:'de', over:'sobre', equals:'igual a', compare:'comparado com'},
   'en-US':{soma:'plus', subtracao:'minus', multiplicacao:'times', divisao:'divided by', open:'open parenthesis', close:'close parenthesis',
-    root:'square root of', pow:'to the power of', logof:'log base', of:'of', over:'over', equals:'equals', compare:'compared with'}
+    root:'square root of', croot:'cube root of', pow:'to the power of', of:'of', over:'over', equals:'equals', compare:'compared with'}
 };
 function speakTerm(term, w){
   if(term.kind==='power') return `${term.base<0?w.subtracao+' '+Math.abs(term.base):term.base} ${w.pow} ${term.exp}`;
-  if(term.kind==='radical') return `${w.root} ${term.radicand}`;
-  if(term.kind==='log') return `${w.logof} ${term.base_log} ${w.of} ${term.arg_log}`;
+  if(term.kind==='radical') return `${term.index===3?w.croot:w.root} ${term.radicand}`;
   if(term.kind==='fraction') return `${term.num} ${w.over} ${term.den}`;
   return term.value<0 ? `${w.subtracao} ${Math.abs(term.value)}` : `${term.value}`;
 }
@@ -56,18 +55,6 @@ function spokenPhrase(item, voiceLang){
       .split('?').join(unknownWord);
     return s;
   }
-  // Log standalone: a operação é a questão — "log na base 2 de 32" / "log base 2 of 32".
-  if(item.op==='logaritmo') return `${w.logof} ${a} ${w.of} ${b}`;
-  // Proporção (direta/inversa): lê os dois pares na ordem, com "quanto"/"what" exatamente
-  // na posição da incógnita — a voz nunca entrega o número que a pessoa precisa digitar.
-  if(item.op==='proporcao_direta'||item.op==='proporcao_inversa'){
-    const en = voiceLang==='en-US';
-    const link = en ? ' is to ' : ' está para ';
-    const asSo = en ? ' as ' : ', assim como ';
-    const vals = [item.a,item.b,item.c,item.d].map((v,i)=>
-      i===item.xPos ? (en?'what':'quanto') : spokenNum(v,voiceLang));
-    return vals[0]+link+vals[1]+asSo+vals[2]+link+vals[3];
-  }
   // Comparação de frações: lê as duas frações com o conectivo "comparado com" — nunca
   // revela a relação entre elas (a resposta É justamente <, > ou =).
   if(item.op==='fracao_comparacao'){
@@ -85,7 +72,6 @@ function spokenPhrase(item, voiceLang){
     if(item.op==='porcentagem_inversa') return `${a} is what percent of ${b}`;
     if(item.op==='porcentagem_acrescimo') return `${a} plus ${b} percent`;
     if(item.op==='porcentagem_desconto') return `${a} minus ${b} percent`;
-    if(item.op==='porcentagem_dupla') return `${a} percent of ${b} percent`;
     if(item.op==='porcentagem_original') return item.features&&item.features.aumento ? `what number plus ${b} percent equals ${a}` : `what number minus ${b} percent equals ${a}`;
     if(item.op==='porcentagem_aumento') return `from ${a} to ${b}, what percent increase`;
     if(item.op==='porcentagem_reducao') return `from ${a} to ${b}, what percent decrease`;
@@ -100,7 +86,6 @@ function spokenPhrase(item, voiceLang){
   if(item.op==='porcentagem_inversa') return `${a} é quantos por cento de ${b}`;
   if(item.op==='porcentagem_acrescimo') return `${a} mais ${b} por cento`;
   if(item.op==='porcentagem_desconto') return `${a} menos ${b} por cento`;
-  if(item.op==='porcentagem_dupla') return `${a} por cento de ${b} por cento`;
   if(item.op==='porcentagem_original') return item.features&&item.features.aumento ? `que número mais ${b} por cento é igual a ${a}` : `que número menos ${b} por cento é igual a ${a}`;
   if(item.op==='porcentagem_aumento') return `de ${a} para ${b}, quantos por cento de aumento`;
   if(item.op==='porcentagem_reducao') return `de ${a} para ${b}, quantos por cento de desconto`;
@@ -173,12 +158,17 @@ const Sound = {
   correct(){ this.beep(880, 0.12); },
   // Erro mais suave, mas ainda claramente "erro": tom mais baixo, curto e com volume menor
   // — mantém o feedback de falha sem estourar o ritmo/ouvido no meio da sessão.
-  wrong(){ this.beep(250, 0.15, 0.12); }
+  wrong(){ this.beep(250, 0.15, 0.12); },
+  // Pequena fanfarra ascendente (conquista de level / meta do dia / prova)
+  levelUp(){ [523,659,784,1047].forEach((f,i)=>setTimeout(()=>this.beep(f, 0.16, 0.16), i*110)); },
+  combo(){ this.beep(1175, 0.08, 0.12); },
+  tick(){ this.beep(660, 0.06, 0.1); }
 };
 
 const Haptics = {
   supported(){ return 'vibrate' in navigator; },
   correct(){ if(Store.data.settings.vibration && this.supported()) navigator.vibrate(15); },
-  wrong(){ if(Store.data.settings.vibration && this.supported()) navigator.vibrate([50,40,50]); }
+  wrong(){ if(Store.data.settings.vibration && this.supported()) navigator.vibrate([50,40,50]); },
+  celebrate(){ if(Store.data.settings.vibration && this.supported()) navigator.vibrate([30,40,30,40,80]); }
 };
 

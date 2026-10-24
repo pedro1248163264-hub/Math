@@ -1,290 +1,185 @@
 /* =====================================================================
-   assets/js/08-speed-engine.js — motor de velocidade/adaptação (Engine):
-   escolha da próxima KC, geração de item, Elo contínuo, metas de tempo,
-   critérios de domínio e agendamento de revisão por retenção.
-   Depende de: 01-utils.js, 02-engine-constants.js, 06-skills-graph.js,
-   07-storage.js.
-   Usado por: 10-session.js e 13-ui.js.
+   assets/js/08-speed-engine.js — motor adaptativo (Engine): planejamento da
+   rodada em blocos, geração de conta, adaptação contínua (m), XP, nivelamento,
+   prova de nível, reforço suave e recordes.
+   Depende de: 01-utils.js, 02-engine-constants.js, 03-i18n.js, 04, 05,
+   06-tracks.js, 07-storage.js.
+   Usado por: 10-progress.js, 11-session.js, 13-export.js e 14-ui.js.
    ===================================================================== */
 
-/* ---------- 6. MOTOR DE VELOCIDADE ----------
-   A unidade é a família de cálculo. Não há pré-requisito, desbloqueio ou repetição
-   corretiva: cada perfil é calibrado e depois recebe dificuldade pela performance. */
+/* ---------- 6. MOTOR ----------
+   Modelo mental:
+   • Cada TRILHA (soma, multiplicação...) tem um level de trabalho L e uma posição contínua m
+     dentro dele. As contas de um bloco saem sempre do level L (forma fixa de operandos).
+   • m sobe/desce um pouquinho a cada conta, mirando a taxa de acerto desejada (ρ*).
+   • O XP de cada conta enche a barra do level; barra cheia → prova de nível; passou → L+1.
+   • Nunca existe "descer de level": se a pessoa patina, m cai e, no limite, um bloco de
+     reforço roda no level anterior — sem perder nada. */
 const Engine = {
-  recentKeys:[],
-  errorRetryQueue:{},   // key -> itemCounter a partir do qual o erro deve "resurgir" (seç. 2, modelo C)
-  itemCounter:0,        // itens gerados na sessão atual — resetado em Session.start()
-  defaultBaseline(op){ return (OPS[op] && OPS[op].baseline) || 1800; },
-  cv(arr){ if(arr.length<2) return 0; const m=U.mean(arr); if(!m) return 0; return Math.sqrt(U.mean(arr.map(v=>(v-m)*(v-m)))/Math.abs(m)); },
-  selectedKeys(){
-    const keys = (Store.data.settings.selectedSkills||[]).filter(k=>KC_DEFS[k]);
-    return keys.length ? keys : [DEFAULT_SELECTED_SKILLS[0]];
+  block:null,           // bloco em andamento ({kind,key,level,count,...})
+  newTrack(key){
+    return {key, level:1, xp:0, m:M_START, rank:0, placed:false, testReady:false, done:false,
+      stars:{}, strength:0.6, window:[], items:0, lastPracticeAt:0, reinforce:0, recentPairs:[],
+      patternWeights:{}, digitWeights:{}, patternErrorStreak:{}, hotPairs:{}, bestMedian:{}};
   },
-  profile(key){
-    const profiles = Store.data.speedProfiles || (Store.data.speedProfiles={});
-    if(!profiles[key]){
-      const baseline = this.defaultBaseline(KC_DEFS[key].op);
-      // Dificuldade inicial não é sempre 0.3: um perfil novo de família avançada já começa no
-      // nível dos pré-requisitos que a pessoa tem (média deles), evitando aquecer em contas
-      // triviais ao entrar em famílias de números maiores. Sem pré-requisitos ainda criados,
-      // cai no padrão 0.3.
-      const prereqDiffs = (KC_DEFS[key].prereqs||[])
-        .map(pk=>profiles[pk] && profiles[pk].difficulty)
-        .filter(Number.isFinite);
-      const difficulty = prereqDiffs.length ? U.mean(prereqDiffs) : 0.3;
-      profiles[key] = {key, calibration:[], baselineMs:baseline, targetMs:Math.round(baseline*0.85), difficulty, level:0, window:[], bestMs:null, lastPracticeAt:0,
-        retentionPasses:0, reviewResults:[], masteredAt:0, nextReviewAt:0, lastReviewAt:0,
-        samplesInStage:0, patternWeights:{}, digitWeights:{}, patternErrorStreak:{}, hotPairs:{}};
-    }
-    return profiles[key];
+  track(key){
+    const ts = Store.data.tracks || (Store.data.tracks={});
+    if(!ts[key]) ts[key] = this.newTrack(key);
+    return ts[key];
   },
-  isCalibrating(profile){ return !profile.calibratedAt && (profile.calibration||[]).length < CALIBRATION_ITEMS; },
-  scoredWindow(profile, size=12){ return (profile.window||[]).filter(x=>!x.calibration && !x.lapse).slice(-size); },
-  // ---------- Peso por padrão dentro da família (seç. 3 da revisão do motor) ----------
-  // Nunca repete um enunciado específico (isso continua garantido só por recentPairs, sem
-  // relação com isto) — só torna mais provável, na PRÓXIMA geração, o atributo (vai-um,
-  // empréstimo, grupo de %) onde o perfil está mais lento/errando mais. Interno ao
-  // algoritmo; não é exposto em nenhuma tela.
-  patternAttrs:{
-    soma_2d_cc:['carries'], soma_3_4d:['carries'],
-    sub_2d_ce:['borrows'], sub_3_4d:['borrows'],
-    pct_basico:['pct'], pct_intermediario:['pct'], pct_avancado:['pct'],
-    pct_reverso:['pct'], pct_adicao:['pct'], pct_subtracao:['pct'], pct_duplo:['pct'],
-    pct_original:['pct'], pct_variacao_alta:['pct'], pct_variacao_baixa:['pct'], pct_sucessivo:['pct'],
-    soma_decimal:['decimalPlaces'], sub_decimal:['decimalPlaces'],
-    mult_decimal:['decimalPlaces'], div_decimal:['decimalPlaces'],
-    fracao_comparacao:['case']
+  activeKeys(){
+    const keys = (Store.data.settings.activeTracks||[]).filter(k=>TRACKS[k]);
+    return keys.length ? keys : [...DEFAULT_ACTIVE_TRACKS];
   },
-  // Atributos cujo valor bruto (não uma contagem sem/um/vários) já é a própria chave do
-  // bucket — pct (10/20/25...), decimalPlaces (1/2 casas) e o caso de comparação de
-  // frações (same_den/same_num/equal/cross) funcionam assim.
+  rho(){ return CHALLENGE_LEVELS[Store.data.settings.challenge] || CHALLENGE_LEVELS.balanced; },
+  goalMs(tr, level){ return levelGoalMs(tr.key, level||tr.level, tr.done ? tr.rank : 0); },
+  zone(ms, goal){ const r=ms/goal; return r<=ZONE_FAST ? 'fast' : r<=ZONE_OK ? 'ok' : 'slow'; },
+  xpNeed(tr){ return tr.done ? RANK_XP : TRACK_XP_BASE + TRACK_XP_STEP*(tr.level-1); },
+  levelCount(key){ return TRACKS[key].levels.length; },
+  // 0..1: quão cheia está a barra do level (ou da patente, na trilha concluída)
+  barFrac(tr){ return U.clamp(tr.xp / this.xpNeed(tr), 0, 1); },
+  startLevel(key){ return Math.max(1, Math.round(this.levelCount(key)*PLACEMENT_START_FRAC)); },
+
+  /* ----- estatística curta de uma trilha (para a UI) ----- */
+  recent(tr, n=20){ return (tr.window||[]).filter(w=>!w.lapse && w.kind==='practice' && !w.old).slice(-n); },
+  recentAccuracy(tr){ const w=this.recent(tr); return w.length ? U.mean(w.map(x=>x.correct?1:0)) : null; },
+  recentMedian(tr){ const c=this.recent(tr).filter(x=>x.correct).map(x=>x.ms); return c.length ? U.median(c) : null; },
+  starsTotal(tr){ return Object.values(tr.stars||{}).reduce((a,b)=>a+b,0); },
+  starsMax(key){ return this.levelCount(key)*3; },
+  levelsPassed(tr){ return tr.done ? this.levelCount(tr.key) : Math.max(0, tr.level-1); },
+
+  /* ----- pesos por padrão / dígito / par (herdados do motor anterior) ----- */
+  patternAttrs:{ soma:['carries'], subtracao:['borrows'], porcentagem:['pct'], decimais:['decimalPlaces'], fracoes:['case'] },
   directBucketAttrs:['pct','decimalPlaces','case'],
-  bucketFromCount(attr, count){
-    if(count<=0) return 'sem';
-    if(count===1) return 'um';
-    return 'varios';
-  },
-  // Sorteio ponderado por peso: cada opção sempre tem alguma chance (PATTERN_WEIGHT_MIN),
-  // nunca fica 100% previsível mesmo com peso máximo — mantém aleatoriedade real.
-  weightedBucket(profile, attr, options){
-    const weights = (profile && profile.patternWeights) || {};
+  bucketFromCount(attr, count){ return count<=0 ? 'sem' : count===1 ? 'um' : 'varios'; },
+  // Sorteio ponderado: cada opção sempre tem alguma chance (PATTERN_WEIGHT_MIN) — nunca 100% previsível.
+  weightedBucket(tr, attr, options){
+    const weights = (tr && tr.patternWeights) || {};
     const arr = options.map(o=>({o, w: weights[attr+':'+String(o)]!=null ? weights[attr+':'+String(o)] : 1}));
     const total = arr.reduce((s,x)=>s+x.w,0);
     let r = Math.random()*total;
     for(const x of arr){ if(r<x.w) return x.o; r-=x.w; }
     return arr[arr.length-1].o;
   },
-  nudgePatternWeight(profile, item, correct, targetHit){
+  nudgePatternWeight(tr, item, correct, good){
     const attrs = this.patternAttrs[item.key];
     if(!attrs || !item.features) return null;
-    profile.patternWeights = profile.patternWeights || {};
-    profile.patternErrorStreak = profile.patternErrorStreak || {};
+    tr.patternWeights = tr.patternWeights || {};
+    tr.patternErrorStreak = tr.patternErrorStreak || {};
     let hint = null;
     attrs.forEach(attr=>{
       const raw = item.features[attr];
       if(raw===undefined) return;
       const bucket = this.directBucketAttrs.includes(attr) ? String(raw) : this.bucketFromCount(attr, raw);
       const wKey = attr+':'+bucket;
-      const cur = profile.patternWeights[wKey]!=null ? profile.patternWeights[wKey] : 1;
-      const good = correct && targetHit;
-      const next = good ? cur - PATTERN_WEIGHT_NUDGE : cur + PATTERN_WEIGHT_NUDGE;
-      profile.patternWeights[wKey] = U.clamp(next, PATTERN_WEIGHT_MIN, PATTERN_WEIGHT_MAX);
-      // ---------- Hint por padrão de erro (Andaime, Pilar 3) ----------
-      // Conta erros SEGUIDOS no mesmo atributo/bucket; zera em qualquer acerto. Ao bater
-      // PATTERN_HINT_STREAK, monta a dica (se houver uma pro atributo) e zera de novo —
-      // assim ela aparece só quando o padrão insiste, nunca em toda resposta errada.
-      if(correct){
-        profile.patternErrorStreak[wKey] = 0;
-      } else {
-        profile.patternErrorStreak[wKey] = (profile.patternErrorStreak[wKey]||0) + 1;
-        if(profile.patternErrorStreak[wKey] >= PATTERN_HINT_STREAK){
+      const cur = tr.patternWeights[wKey]!=null ? tr.patternWeights[wKey] : 1;
+      tr.patternWeights[wKey] = U.clamp(good ? cur-PATTERN_WEIGHT_NUDGE : cur+PATTERN_WEIGHT_NUDGE, PATTERN_WEIGHT_MIN, PATTERN_WEIGHT_MAX);
+      // Andaime: conta erros SEGUIDOS no mesmo padrão; ao bater PATTERN_HINT_STREAK monta a dica.
+      if(correct){ tr.patternErrorStreak[wKey] = 0; }
+      else {
+        tr.patternErrorStreak[wKey] = (tr.patternErrorStreak[wKey]||0) + 1;
+        if(tr.patternErrorStreak[wKey] >= PATTERN_HINT_STREAK){
           const built = this.buildPatternHint(attr, item);
-          if(built){ hint = built; profile.patternErrorStreak[wKey] = 0; }
+          if(built){ hint = built; tr.patternErrorStreak[wKey] = 0; }
         }
       }
     });
     return hint;
   },
-  // Estratégia de compensação por 10 (mesma lógica para vai-um e empréstimo — só muda o
-  // sinal): arredonda b para a dezena mais próxima acima e devolve o ajuste, pra virar
-  // "a ± bRound ∓ diff" — ex.: 52−18 → "Tente 52 − 20 + 2"; 47+38 → "Tente 47 + 40 − 2".
+  // Compensação por 10 (vai-um e empréstimo): 52−18 → "Tente 52 − 20 + 2"; 47+38 → "Tente 47 + 40 − 2".
   buildPatternHint(attr, item){
-    if(attr==='borrows'){
-      const a=item.a, b=item.b, bRound=Math.ceil(b/10)*10, diff=bRound-b;
+    if(attr==='borrows' || attr==='carries'){
+      const a=item.a, b=item.b;
+      if(!Number.isInteger(a) || !Number.isInteger(b)) return null;
+      const bRound=Math.ceil(b/10)*10, diff=bRound-b;
       if(diff<=0 || diff>=10) return null;
-      return tf('hint_borrow', {a, bRound, diff});
-    }
-    if(attr==='carries'){
-      const a=item.a, b=item.b, bRound=Math.ceil(b/10)*10, diff=bRound-b;
-      if(diff<=0 || diff>=10) return null;
-      return tf('hint_carry', {a, bRound, diff});
+      return tf(attr==='borrows' ? 'hint_borrow' : 'hint_carry', {a, bRound, diff});
     }
     if(attr==='pct') return this.pctHintFor(item);
     if(attr==='decimalPlaces') return t('hint_decimal');
     return null;
   },
-    // Dica de porcentagem: sempre ancora em "10% é só mover a vírgula" (Engine.pctHint usa
-    // item.a=pct, item.b=base — mesma convenção dos geradores de pct_*), com atalhos pros
-    // casos redondos (metade/quarto/três-quartos) e um fallback genérico pros valores ímpares.
-    // Nas famílias derivadas a convenção a/b muda (a=base nas de ±%, a=parte na inversa, e a
-    // taxa fica em features.pct) — usa a base certa de cada enunciado; no pct_duplo a dica é
-    // o método em si (transformar em multiplicação), não a decomposição por 10%.
-    pctHint(pct, base){
-      const ten = base/10;
-      if(pct===10) return tf('hint_pct_ten', {base, ten});
-      if(pct===50) return tf('hint_pct_half', {base});
-      if(pct===25) return tf('hint_pct_quarter', {base});
-      if(pct===75) return tf('hint_pct_three_quarter', {base});
-      if(pct===5) return tf('hint_pct_five', {base, ten, half:ten/2});
-      if(pct%10===0) return tf('hint_pct_tens', {pct, base, ten, mult:pct/10});
-      return tf('hint_pct_generic', {pct, base, ten});
-    },
-    pctHintFor(item){
-      if(item.key==='pct_reverso') return this.pctHint(item.features.pct, item.b);
-      if(item.key==='pct_adicao'||item.key==='pct_subtracao') return this.pctHint(item.features.pct, item.a);
-      if(item.key==='pct_duplo') return tf('hint_pct_duplo', {a:item.a, b:item.b});
-      // Derivadas II: cada uma ancora na referência certa — no original, o final representa
-      // (100±p)% do valor procurado; nas variações, a taxa incide sobre o INICIAL; no
-      // sucessivo, o segundo desconto incide sobre o meio (já reduzido), não sobre a base.
-      if(item.key==='pct_original'){
-        const fator = item.features.aumento ? 100+item.features.pct : 100-item.features.pct;
-        return tf('hint_pct_original', {final:item.a, fator});
-      }
-      if(item.key==='pct_variacao_alta') return tf('hint_pct_variacao', {inicial:item.a, delta:item.b-item.a});
-      if(item.key==='pct_variacao_baixa') return tf('hint_pct_variacao', {inicial:item.a, delta:item.a-item.b});
-      if(item.key==='pct_sucessivo'){
-        const meio = item.a - item.a*item.features.pct/100;
-        return tf('hint_pct_sucessivo', {base:item.a, p1:item.features.pct, meio, p2:item.c});
-      }
-      return this.pctHint(item.a, item.b);
-    },
-  // ---------- Peso por dígito/linha (substitui os "fatos fracos" da tabuada) ----------
-  // Em vez de rastrear pares específicos (ex.: 7×8 — decoreba de resultado pronto), o motor
-  // rastreia a dificuldade por DÍGITO/linha (ex.: multiplicar por 7). Onde a pessoa erra ou
-  // demora mais, a próxima geração fica enviesada para a linha em que o dígito fraco aparece —
-  // sempre dentro da faixa da família, com piso de aleatoriedade (PATTERN_WEIGHT_MIN) e sem
-  // nunca repetir um enunciado (recentPairs já garante isso). O que se mede é "lidar com o
-  // dígito 7", não memorizar o produto 7×8.
-  // digitTrack diz quais dígitos de um item alimentam o peso de cada família.
-  digitTrack:{
-    mult_tabuada: item=>[item.a, item.b], // ambos os fatores são dígitos (2 a 9+)
-    mult_11_19: item=>[item.a],           // a "linha" é o fator 11–19; o outro é só o multiplicador
-    div_tabuada: item=>[item.b]           // a "linha" é o divisor (por quem a pessoa divide)
+  pctHint(pct, base){
+    const ten = base/10;
+    if(pct===10) return tf('hint_pct_ten', {base, ten});
+    if(pct===50) return tf('hint_pct_half', {base});
+    if(pct===25) return tf('hint_pct_quarter', {base});
+    if(pct===75) return tf('hint_pct_three_quarter', {base});
+    if(pct===5) return tf('hint_pct_five', {base, ten, half:ten/2});
+    if(pct%10===0) return tf('hint_pct_tens', {pct, base, ten, mult:pct/10});
+    return tf('hint_pct_generic', {pct, base, ten});
   },
-  // Sorteio ponderado por dígito dentro da faixa [min,max]: cada dígito sempre tem alguma
-  // chance (piso PATTERN_WEIGHT_MIN), nunca fica 100% previsível mesmo com peso máximo.
-  pickRow(profile, key, min, max){
-    const weights = (profile && profile.digitWeights) || {};
-    const arr=[];
-    for(let d=min; d<=max; d++){
-      const w = weights[key+':d'+d]!=null ? weights[key+':d'+d] : 1;
-      arr.push({d,w});
+  pctHintFor(item){
+    const f = item.features || {};
+    switch(item.op){
+      case 'porcentagem_inversa': return this.pctHint(f.pct, item.b);
+      case 'porcentagem_acrescimo': case 'porcentagem_desconto': return this.pctHint(f.pct, item.a);
+      case 'porcentagem_original': return tf('hint_pct_original', {final:item.a, fator: f.aumento ? 100+f.pct : 100-f.pct});
+      case 'porcentagem_aumento': return tf('hint_pct_variacao', {inicial:item.a, delta:item.b-item.a});
+      case 'porcentagem_reducao': return tf('hint_pct_variacao', {inicial:item.a, delta:item.a-item.b});
+      case 'porcentagem_sucessiva': {
+        const meio = item.a - item.a*f.pct/100;
+        return tf('hint_pct_sucessivo', {base:item.a, p1:f.pct, meio, p2:item.c});
+      }
+      default: return this.pctHint(item.a, item.b);
     }
+  },
+  // Peso por dígito/linha da tabuada: onde a pessoa erra/demora mais com um dígito, a próxima
+  // geração fica enviesada para ele (mede "lidar com o 7", não decorar 7×8).
+  pickRow(tr, key, min, max){
+    const weights = (tr && tr.digitWeights) || {};
+    const arr=[];
+    for(let d=min; d<=max; d++) arr.push({d, w: weights[key+':d'+d]!=null ? weights[key+':d'+d] : 1});
     const total=arr.reduce((s,x)=>s+x.w,0);
     let r=Math.random()*total;
     for(const x of arr){ if(r<x.w) return x.d; r-=x.w; }
     return arr[arr.length-1].d;
   },
-  nudgeDigits(profile, key, digits, correct, targetHit){
-    if(!digits || !digits.length) return;
-    profile.digitWeights = profile.digitWeights || {};
+  nudgeDigits(tr, key, digits, good){
+    if(!key || !digits || !digits.length) return;
+    tr.digitWeights = tr.digitWeights || {};
     digits.forEach(d=>{
-      if(d===undefined || d===null) return;
-      const wKey = key+':d'+d;
-      const cur = profile.digitWeights[wKey]!=null ? profile.digitWeights[wKey] : 1;
-      const next = (correct && targetHit) ? cur - PATTERN_WEIGHT_NUDGE : cur + PATTERN_WEIGHT_NUDGE;
-      profile.digitWeights[wKey] = U.clamp(next, PATTERN_WEIGHT_MIN, PATTERN_WEIGHT_MAX);
+      if(d==null) return;
+      const wKey = key+':d'+d, cur = tr.digitWeights[wKey]!=null ? tr.digitWeights[wKey] : 1;
+      tr.digitWeights[wKey] = U.clamp(good ? cur-PATTERN_WEIGHT_NUDGE : cur+PATTERN_WEIGHT_NUDGE, PATTERN_WEIGHT_MIN, PATTERN_WEIGHT_MAX);
     });
   },
-  // ---------- hotPairs: ponto cego silencioso dentro do dígito ----------
-  // Só mult_tabuada/div_tabuada têm essa granularidade fina fazendo sentido (fato único,
-  // a×b comutativo). Roda fora do bloco de calibração/lapso, igual nudgeDigits.
-  registerPairRt(profile, item, cognitiveMs, correct, targetHit){
-    if(item.key!=='mult_tabuada' && item.key!=='div_tabuada') return;
-    if(item.isReversePath) return; // reverse path tem dinâmica de RT diferente — não misturar
-    const lo = Math.min(item.a, item.b), hi = Math.max(item.a, item.b);
-    const pairKey = lo+'_'+hi;
-    profile.hotPairs = profile.hotPairs || {};
-    const entry = profile.hotPairs[pairKey];
-    if(correct){
-      const prevRt = entry ? entry.rtEwma : cognitiveMs;
-      const rtEwma = prevRt + HOTPAIR_EWMA_ALPHA*(cognitiveMs - prevRt);
-      const n = (entry ? entry.n : 0) + 1;
-      const streakGood = targetHit ? (entry ? entry.streakGood : 0) + 1 : 0;
-      if(entry){
-        entry.rtEwma = rtEwma; entry.n = n; entry.streakGood = streakGood;
-        if(streakGood >= HOTPAIR_CLEAR_STREAK) delete profile.hotPairs[pairKey];
-      } else if(n >= HOTPAIR_MIN_SAMPLES && rtEwma > profile.targetMs*HOTPAIR_RT_RATIO){
-        profile.hotPairs[pairKey] = {rtEwma, n, streakGood};
-      }
+  // Pontos cegos dentro do dígito: pares específicos lentos voltam com mais frequência até limpar.
+  registerPairRt(tr, item, ms, correct, fast){
+    if(!item.pairKind || item.isReversePath || !item.pair) return;
+    const lo = Math.min(...item.pair), hi = Math.max(...item.pair);
+    const pairKey = item.pairKind+':'+lo+'_'+hi;
+    tr.hotPairs = tr.hotPairs || {};
+    if(!correct) return;
+    const entry = tr.hotPairs[pairKey];
+    const prev = entry ? entry.rtEwma : ms;
+    const rtEwma = prev + HOTPAIR_EWMA_ALPHA*(ms-prev);
+    const n = (entry ? entry.n : 0) + 1;
+    const streakGood = fast ? (entry ? entry.streakGood : 0)+1 : 0;
+    if(entry){
+      entry.rtEwma = rtEwma; entry.n = n; entry.streakGood = streakGood;
+      if(streakGood >= HOTPAIR_CLEAR_STREAK) delete tr.hotPairs[pairKey];
+    } else if(n >= HOTPAIR_MIN_SAMPLES && rtEwma > item.goalMs*HOTPAIR_RT_RATIO){
+      tr.hotPairs[pairKey] = {rtEwma, n, streakGood};
+    } else if(!entry){
+      // ainda sem amostras suficientes: guarda contagem leve em memória de curto prazo
+      tr._pairN = tr._pairN || {}; tr._pairN[pairKey] = n;
     }
   },
-  // Procura, entre os pares quentes do perfil mult_tabuada, um cujo par envolva o dígito
-  // `d` (dentro da faixa atual do gerador — se o range mudou e o parceiro ficou fora,
-  // ignora). Se houver mais de um, pega o mais "quente" (rtEwma mais alto relativo ao alvo).
-  // A fonte de verdade é SEMPRE Engine.profile('mult_tabuada').hotPairs — quem chama não
-  // importa; isso garante que a regra "escrita única" não depende de coincidência de chamada.
-  pickHotPartner(d, lo, hi){
-    const hp = (Engine.profile('mult_tabuada').hotPairs)||{};
-    if(!hp) return null;
+  pickHotPartner(tr, kind, d, lo, hi){
+    const hp = (tr && tr.hotPairs) || {};
     let best=null, bestScore=-Infinity;
     Object.keys(hp).forEach(pairKey=>{
-      const [x,y] = pairKey.split('_').map(Number);
-      let partner=null;
-      if(x===d) partner=y; else if(y===d) partner=x;
+      if(!pairKey.startsWith(kind+':')) return;
+      const [x,y] = pairKey.slice(kind.length+1).split('_').map(Number);
+      const partner = x===d ? y : y===d ? x : null;
       if(partner==null || partner<lo || partner>hi) return;
-      const score = hp[pairKey].rtEwma;
-      if(score>bestScore){ bestScore=score; best=partner; }
+      if(hp[pairKey].rtEwma>bestScore){ bestScore=hp[pairKey].rtEwma; best=partner; }
     });
     return best;
   },
-  // ---------- Comparação decimal vs. inteiro (dado interno, não exposto em tela) ----------
-  // Mede o quanto a vírgula em si pesa: compara tempo/acerto da família decimal com os da
-  // família inteira "irmã" (DECIMAL_PAIR_KC, seç. 2d das constantes) e confere se a
-  // diferença está dentro do que já era esperado (EXPECTED_DECIMAL_*) ou se está
-  // desproporcional — sinal de que vale treinar vírgula separadamente. Não decide nada
-  // sozinho (não muda dificuldade/sequenciamento); é só um dado que a tela de estatísticas
-  // poderá exibir depois de revisada.
-  decimalComparison(key){
-    const refKey = DECIMAL_PAIR_KC[key];
-    if(!refKey || !KC_DEFS[refKey]) return null;
-    const dProfile = this.profile(key), rProfile = this.profile(refKey);
-    const dWindow = this.scoredWindow(dProfile, 20), rWindow = this.scoredWindow(rProfile, 20);
-    if(dWindow.length < DECIMAL_COMPARISON_MIN_SAMPLES || rWindow.length < DECIMAL_COMPARISON_MIN_SAMPLES) return null;
-    const dCorrectMs = dWindow.filter(x=>x.correct).map(x=>x.ms), rCorrectMs = rWindow.filter(x=>x.correct).map(x=>x.ms);
-    if(!dCorrectMs.length || !rCorrectMs.length) return null;
-    const decimalMedianMs = U.median(dCorrectMs), refMedianMs = U.median(rCorrectMs);
-    const decimalAcc = U.mean(dWindow.map(x=>x.correct?1:0)), refAcc = U.mean(rWindow.map(x=>x.correct?1:0));
-    const timeRatio = refMedianMs>0 ? decimalMedianMs/refMedianMs : null;
-    const accDrop = refAcc - decimalAcc; // positivo = decimal pior que a versão inteira
-    const timeWithinExpected = timeRatio==null ? true : timeRatio <= EXPECTED_DECIMAL_TIME_MULT;
-    const accWithinExpected = accDrop <= EXPECTED_DECIMAL_ACC_DROP;
-    return {
-      key, refKey,
-      decimalMedianMs, refMedianMs, timeRatio, expectedTimeRatio:EXPECTED_DECIMAL_TIME_MULT,
-      decimalAcc, refAcc, accDrop, expectedAccDrop:EXPECTED_DECIMAL_ACC_DROP,
-      withinExpected: timeWithinExpected && accWithinExpected,
-      sampleSize:{decimal:dWindow.length, ref:rWindow.length}
-    };
-  },
-  // Roda decimalComparison() para todas as famílias decimais com par definido; ignora as
-  // que ainda não têm dado suficiente (retorna null em decimalComparison).
-  allDecimalComparisons(){
-    return Object.keys(DECIMAL_PAIR_KC).map(key=>this.decimalComparison(key)).filter(Boolean);
-  },
-  recentAccuracy(profile){ const w=this.scoredWindow(profile); return w.length ? U.mean(w.map(x=>x.correct?1:0)) : 1; },
-  targetRate(profile){ const w=this.scoredWindow(profile); return w.length ? U.mean(w.map(x=>x.targetHit?1:0)) : 0; },
-  hasMasteryEvidence(profile){
-    const w=this.scoredWindow(profile), correct=w.filter(x=>x.correct).map(x=>x.ms);
-    return w.length>=MASTERY_MIN_ITEMS && correct.length>=MASTERY_MIN_ITEMS*MASTERY_MIN_ACC &&
-      this.recentAccuracy(profile)>=MASTERY_MIN_ACC && this.targetRate(profile)>=MASTERY_MIN_TARGET_RATE && this.cv(correct)<=0.35;
-  },
-  // ---------- Filtro de typos (Levenshtein Lite, Pilar 1) ----------
-  // Compara só a sequência de dígitos (sinal e separador decimal fora): se o que foi
-  // digitado é o INVERSO da resposta (45 vs 54) ou difere em exatamente 1 dígito na mesma
-  // posição (57 vs 56 — tecla vizinha), é lapso motor, não erro de cálculo. Mesmo efeito do
-  // IMPULSE_FLOOR (não pune dificuldade/meta/domínio/peso de padrão), só que pelo padrão do
-  // erro em vez do tempo de resposta.
+  // Filtro de typos: o INVERSO da resposta (45 vs 54) ou 1 dígito trocado na mesma posição
+  // (57 vs 56) é lapso motor, não erro de cálculo — fica no histórico mas não pune nada.
   isTypoLapse(typedRaw, answer){
     if(typedRaw==null) return false;
     const typedNorm = String(typedRaw).replace(',', '.');
@@ -299,245 +194,244 @@ const Engine = {
     for(let i=0; i<a.length; i++) if(a[i]!==b[i]) diff++;
     return diff===1;
   },
-  isReviewDue(profile, now=Date.now()){
-    return !!(profile.masteredAt && profile.nextReviewAt && now>=profile.nextReviewAt);
-  },
-  stage(profile, now=Date.now()){
-    if(this.isCalibrating(profile)) return 'calibrating';
-    if(this.isReviewDue(profile, now)) return 'review_due';
-    if(profile.masteredAt) return 'mastered';
-    const w=this.scoredWindow(profile);
-    return w.length>=ACQ_MIN_ITEMS && this.recentAccuracy(profile)>=0.80 ? 'consolidating' : 'acquisition';
-  },
-  prereqsReady(key){ return (KC_DEFS[key].prereqs||[]).every(prereq=>!!this.profile(prereq).masteredAt); },
-  // Cascata de dificuldade (seç. "Cascata"): pontua cada pré-requisito NÃO dominado por
-  // quão longe está de dominar (1 = nada feito, 0 = dominado). Retorna o mais fraco deles e
-  // se já não resta nenhum (mastered=true). Usado pelo sequenciador para puxar o alicerce
-  // de volta quando a família filha está afundando.
-  prereqReadiness(key){
-    const prereqs = KC_DEFS[key].prereqs || [];
-    let weakest=null, weakestScore=Infinity;
-    prereqs.forEach(pk=>{
-      if(this.profile(pk).masteredAt) return;
-      const p=this.profile(pk);
-      const acc=this.recentAccuracy(p), rate=this.targetRate(p);
-      const score = 1 - (0.6*acc + 0.4*rate);
-      if(score<weakestScore){ weakestScore=score; weakest=pk; }
-    });
-    return {key:weakest, weakestScore: weakest===null ? 0 : weakestScore, mastered:weakest===null};
-  },
-  // Aplica o boost de cascata a um array de {key, score} já computado: para cada família que
-  // está sofrendo (acerto recente < CASCADE_ACC_FLOOR, com pelo menos CASCADE_MIN_ITEMS
-  // pontuados), soma CASCADE_BOOST ao score do pré-requisito mais fraco ainda não dominado,
-  // quando ele estiver presente no array. Separado do chooseKey só para o teste verificar o
-  // efeito diretamente.
-  applyCascadeBoost(scored){
-    scored.forEach(s=>{
-      const p=this.profile(s.key);
-      const w=this.scoredWindow(p);
-      if(w.length<CASCADE_MIN_ITEMS || this.recentAccuracy(p)>=CASCADE_ACC_FLOOR) return;
-      const rd=this.prereqReadiness(s.key);
-      if(!rd || rd.mastered || !rd.key) return;
-      const target=scored.find(x=>x.key===rd.key);
-      if(target) target.score += CASCADE_BOOST;
-    });
-  },
-  chooseKey(){
-    const keys=this.selectedKeys();
-    const now=Date.now();
-    const reviews=keys.filter(k=>this.isReviewDue(this.profile(k),now));
-    if(reviews.length){
-      const key=reviews.sort((a,b)=>(this.profile(a).nextReviewAt-this.profile(b).nextReviewAt)||((this.profile(a).reviewResults||[]).length-(this.profile(b).reviewResults||[]).length))[0];
-      return {key,isReview:true};
-    }
-    const calibrating=keys.filter(k=>this.isCalibrating(this.profile(k)));
-    if(calibrating.length){
-      const least=calibrating.reduce((min,k)=>Math.min(min,this.profile(k).calibration.length), Infinity);
-      const pool=calibrating.filter(k=>this.profile(k).calibration.length<=least+1).slice(0,POOL_TARGET);
-      return {key:U.choice(pool),isReview:false};
-    }
-    if(keys.length===1) return {key:keys[0],isReview:false};
-    // Motor de sequência único (substitui Foco/Misto — seç. 2 da revisão): modelo B
-    // (interleaving ponderado) + C (retry pós-erro). Nunca repete a mesma família 2x
-    // seguidas; nenhuma família passa de ANTI_CLUMP_MAX_SHARE das últimas
-    // ANTI_CLUMP_WINDOW escolhas; erro recente reaparece dentro de RETRY_MIN_GAP–
-    // RETRY_MAX_GAP itens via boost temporário de score.
-    const lastKey = this.recentKeys.length ? this.recentKeys[this.recentKeys.length-1] : null;
-    const windowRecent = this.recentKeys.slice(-ANTI_CLUMP_WINDOW);
-    let scored=keys.map(key=>{
-      const p=this.profile(key), median=U.median((p.window||[]).filter(x=>x.correct).map(x=>x.ms)) || p.baselineMs;
-      const slow=median/(p.targetMs||p.baselineMs), misses=1-this.targetRate(p), errors=1-this.recentAccuracy(p);
-      const prereqPenalty=this.prereqsReady(key)?0:0.28;
-      let score=slow*0.55+misses*0.3+errors*0.35-prereqPenalty;
-      const shareCount=windowRecent.filter(k=>k===key).length;
-      if(windowRecent.length>=ANTI_CLUMP_WINDOW && shareCount/ANTI_CLUMP_WINDOW>=ANTI_CLUMP_MAX_SHARE) score-=0.9;
-      const retryDue=this.errorRetryQueue[key];
-      if(retryDue!=null && this.itemCounter>=retryDue) score+=0.6;
-      return {key, score};
-    });
-    // Cascata de dificuldade: família sofrendo (acerto recente baixo, com amostra suficiente)
-    // dá boost forte ao pré-requisito mais fraco ainda não dominado — o interleaving passa a
-    // puxar o alicerce em vez de só baixar a dificuldade da própria família.
-    this.applyCascadeBoost(scored);
-    if(lastKey!=null && scored.length>1) scored=scored.filter(s=>s.key!==lastKey);
-    scored.sort((a,b)=>b.score-a.score);
-    // Sorteio softmax sobre TODAS as famílias selecionadas (sem corte duro): o score é
-    // normalizado por min-max dentro do pool (min→0, max→1) e então ponderado por exp com
-    // temperatura RELATIVA (SEQUENCING_SOFTMAX_TEMP_REL). A normalização remove a dependência
-    // da escala absoluta dos scores — sem ela, num pool grande como "todas as contas" a
-    // maioria das famílias carrega a mesma penalidade fixa de pré-requisito e o spread real
-    // de necessidade fica comprimido, esvaziando a concentração. O piso de spread
-    // (SEQUENCING_SPREAD_FLOOR) faz o sorteio degradar graciosamente para quase-uniforme
-    // quando os scores estão quase-empate (começo do app). A família mais fraca domina o
-    // peso, mas nenhuma fica com probabilidade zero (piso de aleatoriedade do motor).
-    const minScore = scored.length ? scored[scored.length-1].score : 0;
-    const maxScore = scored.length ? scored[0].score : 0;
-    const denom = Math.max(maxScore - minScore, SEQUENCING_SPREAD_FLOOR);
-    const wOf = s => Math.exp(((s.score - minScore) / denom) / SEQUENCING_SOFTMAX_TEMP_REL);
-    const totalW = scored.reduce((s,x)=>s+wOf(x),0);
-    let r=Math.random()*totalW, chosen=scored.length ? scored[scored.length-1].key : null;
-    for(const x of scored){
-      const w=wOf(x);
-      if(r<w){ chosen=x.key; break; } r-=w;
-    }
-    if(chosen!=null && this.errorRetryQueue[chosen]!=null && this.itemCounter>=this.errorRetryQueue[chosen]) delete this.errorRetryQueue[chosen];
-    return {key:chosen,isReview:false};
-  },
-  next(){
-    const selection=this.chooseKey();
-    return this.generateItem(selection.key, {isCalibration:this.isCalibrating(this.profile(selection.key)), isReview:selection.isReview});
-  },
-  generateItem(key, meta={}){
-    const def=KC_DEFS[key], profile=this.profile(key);
-    const t=U.clamp((profile.difficulty||0.3)+U.rint(-8,8)/100, 0, 1);
-    let gen, tries=0, pairKey;
-    profile.recentPairs=profile.recentPairs||[];
-    do { gen=def.gen(t, profile); pairKey=gen.exprText || (gen.a+'_'+gen.b); tries++; }
-    while(profile.recentPairs.includes(pairKey) && tries<6);
-    profile.recentPairs.push(pairKey); if(profile.recentPairs.length>24) profile.recentPairs.shift();
-    this.recentKeys.push(key); if(this.recentKeys.length>ANTI_CLUMP_WINDOW) this.recentKeys.shift();
-    this.itemCounter=(this.itemCounter||0)+1;
-    const opDef=OPS[def.op], targetMs=profile.targetMs||this.defaultBaseline(def.op);
-    // Ocultação progressiva (Mastery Flash, Pilar 2): só entra quando a família já está
-    // Mastered (ou em revisão de retenção — ainda "mastered" pra esse fim) e a opção está
-    // ligada em Ajustes. A UI (Session/13-ui.js) decide o timing exato de quando borrar.
-    const stg = this.stage(profile);
-    const isMasteredFlash = !!Store.data.settings.masteryFlash && (stg==='mastered' || stg==='review_due');
-    return {op:def.op, a:gen.a, b:gen.b, answer:gen.answer, features:gen.features, key,
-      kcLabel:def.label, timeoutMs:this.computeTimeoutMs(profile, targetMs), targetMs,
-      symbol:opDef.symbol, label:opDef.label, isCalibration:!!meta.isCalibration, isReview:!!meta.isReview,
-      exprText:gen.exprText, c:gen.c, d:gen.d, innerOp:gen.innerOp, outerOp:gen.outerOp,
-      leftOp:gen.leftOp, rightOp:gen.rightOp, midOp:gen.midOp, terms:gen.terms, ops:gen.ops,
-      xPos:gen.xPos,
-      isEquation:!!gen.isEquation, isReversePath:!!gen.isReversePath, isMasteredFlash };
-  },
-  // Prazo de resposta (seç. 2 da revisão): no modo Ultimate, targetMs × multiplicador por
-  // fase, com piso de segurança — substitui o segundo fixo global só nesse modo. Nos
-  // demais modos (Intervalado/HIIT), continua sendo o ajuste manual em Opções.
-  computeTimeoutMs(profile, targetMs){
-    if(typeof Session==='undefined' || Session.mode!=='ultimate'){
-      return Store.data.settings.answerTimeoutSeconds*1000;
-    }
-    const stage=this.stage(profile);
-    const mult=ULTIMATE_TIMEOUT_MULT[stage] || ULTIMATE_TIMEOUT_MULT.acquisition;
-    return Math.max(ULTIMATE_TIMEOUT_FLOOR_MS, Math.round(targetMs*mult));
-  },
-  registerResult(item, cognitiveMs, correct, timedOut, typedRaw){
-    const p=this.profile(item.key), now=Date.now();
-    const targetHit=!!(correct && cognitiveMs<=item.targetMs && !item.isCalibration);
-    // Lapso motor (seç. 9/IMPULSE_FLOOR + filtro de typo, Pilar 1): um erro digitado rápido
-    // demais pra ter sido raciocínio real (tempo) OU cujo padrão de dígitos é claramente um
-    // erro de tecla (inverso do resultado, ou 1 dígito errado no mesmo tamanho) ainda fica
-    // salvo no histórico — mas não conta para acerto/meta/domínio, dificuldade contínua ou
-    // peso de padrão. Não tem relação com o tipo do erro mostrado na sessão (etype continua
-    // 'erro' normalmente).
-    const isLapse = !item.isCalibration && !correct && !timedOut &&
-      (cognitiveMs < IMPULSE_FLOOR || this.isTypoLapse(typedRaw, item.answer));
-    const result={ms:cognitiveMs, correct:!!correct, targetHit, calibration:!!item.isCalibration, lapse:isLapse, at:now};
-    p.window.push(result); if(p.window.length>30) p.window.shift();
-    if(item.isCalibration && correct) p.calibration.push(cognitiveMs);
-    // Calibração adaptativa (seç. "Calibração"): CALIBRATION_ITEMS vira teto — encerra antes
-    // (mín. CALIBRATION_MIN_ITEMS acertos) quando os tempos estão consistentes (CV baixo),
-    // tornando "Treinar todas as contas" viável; senão segue até o teto. O resto do fluxo
-    // (baseline/meta a partir da mediana) não muda.
-    if(!p.calibratedAt && p.calibration.length>=CALIBRATION_MIN_ITEMS){
-      const consistent = p.calibration.length>=CALIBRATION_ITEMS || this.cv(p.calibration)<=CALIBRATION_CONSISTENT_CV;
-      if(consistent){
-        const initial=U.median(p.calibration);
-        p.baselineMs=Math.round(initial);
-        p.targetMs=Math.round(U.clamp(initial*0.85, 450, 10000));
-        p.calibratedAt=now;
-        p.samplesInStage=0;
-      }
-    }
-    const accuracy=this.recentAccuracy(p), hitRate=this.targetRate(p);
-    // Elo contínuo (substitui o ajuste em lote de 8 — seç. 4 da revisão do motor): cada
-    // resposta pontuada, não-calibração e não-lapso, move difficulty/targetMs um passo
-    // pequeno. K decai conforme mais amostras se acumulam nesta fase — alto no início
-    // (acha o nível certo rápido), baixo depois de estabilizado (resistente a uma
-    // sequência ruim isolada). As decisões grandes (domínio, revisão) continuam em lote,
-    // com evidência acumulada, logo abaixo — isso aqui só afeta o dia a dia.
-    if(!item.isCalibration && !isLapse){
-      p.samplesInStage=(p.samplesInStage||0)+1;
-      const K=U.clamp(K_BASE/Math.sqrt(1+p.samplesInStage), K_MIN, K_MAX);
-      if(correct && targetHit){
-        p.difficulty=U.clamp(p.difficulty+K,0,1);
-        p.targetMs=Math.round(Math.max(350,p.targetMs*(1-K*0.4)));
-        p.level=(p.level||0)+1;
-      } else if(correct){
-        p.targetMs=Math.round(Math.min(p.baselineMs,p.targetMs*(1+K*0.2)));
-      } else {
-        p.difficulty=U.clamp(p.difficulty-K*1.3,0,1);
-        p.targetMs=Math.round(Math.min(p.baselineMs,p.targetMs*(1+K*0.6)));
-      }
-    }
-    // Peso por padrão (seç. 3): só famílias com atributo categórico mapeado em
-    // patternAttrs; nunca expõe nada em tela, só influencia a próxima geração — exceto o
-    // hint por padrão de erro (Andaime, Pilar 3), que É mostrado, mas só ao bater a
-    // sequência de erros (PATTERN_HINT_STREAK).
-    // Peso por dígito/linha: mesma ideia para dígitos (2–9 / 11–19) — mede a dificuldade
-    // em "multiplicar por 7", não a decoreba do par 7×8. Interno, não exposto em tela.
-    let hint = null;
-    if(!item.isCalibration && !isLapse){
-      hint = this.nudgePatternWeight(p, item, correct, targetHit);
-      const track = this.digitTrack[item.key];
-      if(track) this.nudgeDigits(p, item.key, track(item), correct, targetHit);
-      this.registerPairRt(p, item, cognitiveMs, correct, targetHit);
-    }
-    // Retry pós-erro (modelo C, seç. 2): um erro real (não lapso, não calibração) agenda
-    // a família para reaparecer dentro de RETRY_MIN_GAP–RETRY_MAX_GAP itens.
-    if(!item.isCalibration && !correct && !isLapse){
-      this.errorRetryQueue[item.key]=(this.itemCounter||0)+RETRY_MIN_GAP+U.rint(0,RETRY_MAX_GAP-RETRY_MIN_GAP);
-    }
-    if(!item.isCalibration && !p.masteredAt && this.hasMasteryEvidence(p)){
-      p.masteredAt=now; p.retentionPasses=0; p.reviewResults=[]; p.nextReviewAt=now+RETENTION_INTERVALS[0];
-      p.samplesInStage=0;
-    }
-    if(item.isReview){
-      p.reviewResults.push({correct:!!correct, ms:cognitiveMs, at:now});
-      p.reviewResults=p.reviewResults.slice(-RETENTION_REVIEW_ITEMS);
-      if(!correct){
-        p.masteredAt=0; p.retentionPasses=0; p.reviewResults=[]; p.nextReviewAt=0;
-        p.difficulty=U.clamp(p.difficulty-0.08,0,1);
-        p.targetMs=Math.round(Math.min(p.baselineMs,p.targetMs*1.05));
-        p.samplesInStage=0;
-      } else if(p.reviewResults.length>=RETENTION_REVIEW_ITEMS){
-        p.retentionPasses++;
-        p.lastReviewAt=now;
-        p.reviewResults=[];
-        p.nextReviewAt=now+RETENTION_INTERVALS[Math.min(p.retentionPasses,RETENTION_INTERVALS.length-1)];
-      }
-    }
-    if(correct && !item.isCalibration && accuracy>=0.85 && (!p.bestMs || cognitiveMs<p.bestMs)) p.bestMs=cognitiveMs;
-    p.lastPracticeAt=now;
-    Store.save();
-    if(timedOut) return {etype:'abandono', targetHit:false, hint};
-    if(!correct) return {etype:'erro', targetHit:false, hint};
-    return {etype:targetHit?'meta':'lento_correto', targetHit, hint:null};
-  }
-};
 
-function classify(result){
-  if(result.etype==='erro' || result.etype==='abandono') return 'err';
-  return result.targetHit ? 'target' : 'slow';
-}
+  /* ----- planejamento da rodada ----- */
+  roundSize(){ return ROUND_SIZES[Store.data.settings.roundSize] || ROUND_SIZES.normal; },
+  // Escolha ponderada da próxima trilha (entre BLOCOS): favorece trilhas mais fracas e há mais
+  // tempo sem treino; nunca repete a anterior (se houver outra) e desestimula repetir na rodada.
+  pickTrack(keys, prev, used){
+    let pool = keys.filter(k=>k!==prev);
+    if(!pool.length) pool = keys;
+    const now = Date.now();
+    const weights = pool.map(k=>{
+      const tr = this.track(k);
+      const recency = tr.lastPracticeAt ? U.clamp((now-tr.lastPracticeAt)/(3*ONE_DAY),0,1) : 1;
+      return Math.max(0.1, 0.6 + (1-tr.strength)*1.2 + recency + (tr.reinforce?0.8:0) - 0.7*(used[k]||0));
+    });
+    const total = weights.reduce((a,b)=>a+b,0);
+    let r = Math.random()*total;
+    for(let i=0;i<pool.length;i++){ if(r<weights[i]) return pool[i]; r-=weights[i]; }
+    return pool[pool.length-1];
+  },
+  // Rodada = lista de blocos. Ordem: nivelamentos → blocos de treino → provas de nível (clímax).
+  planRound(opts={}){
+    const size = opts.size || this.roundSize();
+    // Refazer a prova de um level já conquistado (para melhorar as estrelas): rodada de um bloco só.
+    if(opts.retake && TRACKS[opts.retake.key]){
+      const rk = opts.retake.key, tr = this.track(rk);
+      if(tr.placed && opts.retake.level>=1 && (tr.done || opts.retake.level<tr.level))
+        return [{kind:'test', track:rk, level:opts.retake.level, count:TEST_ITEMS, warmup:0}];
+    }
+    const keys = opts.onlyTrack && TRACKS[opts.onlyTrack] ? [opts.onlyTrack] : this.activeKeys();
+    const blocks = []; let total = 0;
+    keys.filter(k=>!this.track(k).placed).slice(0,MAX_PLACEMENTS_PER_ROUND).forEach(k=>{
+      blocks.push({kind:'placement', track:k, level:this.startLevel(k), count:PLACEMENT_ITEMS, warmup:0});
+      total += PLACEMENT_ITEMS;
+    });
+    const placed = keys.filter(k=>this.track(k).placed);
+    const tests = placed.filter(k=>this.track(k).testReady).slice(0,MAX_TESTS_PER_ROUND);
+    total += tests.length*TEST_ITEMS;
+    let prev = null; const used = {};
+    while(total<size && placed.length){
+      const key = this.pickTrack(placed, prev, used), tr = this.track(key);
+      const remaining = size-total;
+      let len = remaining<=BLOCK_MAX+2 ? Math.max(remaining, 5) : rr(BLOCK_MIN, BLOCK_MAX);
+      const reinforce = !!tr.reinforce && tr.level>1;
+      const level = reinforce ? tr.level-1 : tr.level;
+      const warmup = (!used[key] && !reinforce && level>1) ? WARMUP_ITEMS : 0;
+      blocks.push({kind:'practice', track:key, level, count:len+warmup, warmup, reinforce});
+      total += len; prev = key; used[key] = (used[key]||0)+1;
+    }
+    tests.forEach(k=>blocks.push({kind:'test', track:k, level:this.track(k).level, count:TEST_ITEMS, warmup:0}));
+    return blocks;
+  },
+
+  /* ----- blocos e contas ----- */
+  beginBlock(spec){
+    this.block = {kind:spec.kind, key:spec.track, level:spec.level, count:spec.count, warmup:spec.warmup||0,
+      reinforce:!!spec.reinforce, idx:0, done:0, extra:0, results:[], visited:[], bestSuccess:0,
+      lvl: spec.kind==='placement' ? spec.level : null, startedAt:Date.now()};
+    return this.block;
+  },
+  // Próxima conta do bloco (ou null quando já foram servidas todas).
+  nextItem(){
+    const b = this.block;
+    if(!b || b.idx>=b.count) return null;
+    const tr = this.track(b.key);
+    let level=b.level, m=tr.m, kind='practice', isWarmup=false, isReinforce=false;
+    if(b.kind==='placement'){ level=b.lvl; m=PLACEMENT_M; kind='placement'; }
+    else if(b.kind==='test'){ m=Math.max(tr.m, TEST_MIN_M); kind='test'; }
+    else if(b.reinforce){ m=0.6; isReinforce=true; }
+    else if(b.idx<b.warmup){ level=Math.max(1,b.level-1); m=WARMUP_M; isWarmup=true; }
+    b.idx++;
+    return this.generateItem(b.key, level, m, {kind, isWarmup, isReinforce});
+  },
+  generateItem(key, level, m, ctx={}){
+    const tr = this.track(key), def = levelDef(key, level);
+    let gen, tries=0, pairKey;
+    tr.recentPairs = tr.recentPairs || [];
+    do{ gen = def.gen(m, tr); pairKey = gen.exprText || (gen.a+'_'+gen.b); tries++; }
+    while(tr.recentPairs.includes(pairKey) && tries<6);
+    tr.recentPairs.push(pairKey); if(tr.recentPairs.length>24) tr.recentPairs.shift();
+    const op = gen.op || TRACKS[key].op, opDef = OPS[op];
+    const goal = levelGoalMs(key, level, tr.done && level===tr.level ? tr.rank : 0);
+    const kind = ctx.kind || 'practice';
+    return {key, level, kind, isWarmup:!!ctx.isWarmup, isReinforce:!!ctx.isReinforce, m, op,
+      a:gen.a, b:gen.b, c:gen.c, d:gen.d, answer:gen.answer, features:gen.features||{}, exprText:gen.exprText,
+      terms:gen.terms, ops:gen.ops, innerOp:gen.innerOp, outerOp:gen.outerOp, leftOp:gen.leftOp, rightOp:gen.rightOp,
+      midOp:gen.midOp, isEquation:!!gen.isEquation, isReversePath:!!gen.isReversePath,
+      pairKind:gen.pairKind, pair:gen.pair, digitKey:gen.digitKey, digits:gen.digits,
+      symbol:opDef.symbol, label:opDef.label, kcLabel:trackLabel(key),
+      goalMs:goal, targetMs:goal, timeoutMs:U.clamp(goal*TIMEOUT_MULT, TIMEOUT_MIN_MS, TIMEOUT_MAX_MS),
+      isMasteredFlash: !!Store.data.settings.masteryFlash && !!ctx.isWarmup};
+  },
+  xpFor(item, zone){
+    const base = XP_BY_ZONE[zone];
+    let mult;
+    if(item.kind==='placement') mult = PLACEMENT_XP_MULT;
+    else if(item.kind==='test') mult = 1;
+    else if(item.isWarmup) mult = WARMUP_XP_MULT;
+    else if(item.isReinforce) mult = REINFORCE_XP_MULT;
+    else mult = XP_M_BASE + XP_M_SPAN*item.m;
+    return Math.max(1, Math.round(base*mult));
+  },
+
+  /* ----- resultado de uma conta ----- */
+  // Devolve {etype, zone, targetHit, xp, lapse, hint, events[], blockDone, blockResult}.
+  registerResult(item, ms, correct, timedOut, typedRaw){
+    const tr = this.track(item.key), b = this.block, now = Date.now();
+    const out = {zone:null, xp:0, lapse:false, hint:null, events:[], blockDone:false, blockResult:null};
+    out.lapse = !correct && !timedOut && (ms<IMPULSE_FLOOR || this.isTypoLapse(typedRaw, item.answer));
+    out.zone = correct ? this.zone(ms, item.goalMs) : null;
+    out.targetHit = out.zone==='fast';
+    out.etype = timedOut ? 'abandono' : !correct ? 'erro' : out.zone==='fast' ? 'meta' : out.zone==='ok' ? 'bom' : 'lento_correto';
+    const good = correct && out.zone!=='slow';
+    tr.window.push({ms, correct:!!correct, zone:out.zone, lapse:out.lapse, level:item.level, kind:item.kind, at:now});
+    if(tr.window.length>WINDOW_SIZE) tr.window.shift();
+    tr.lastPracticeAt = now; tr.items++;
+    if(correct) out.xp = this.xpFor(item, out.zone);
+
+    if(!out.lapse){
+      if(item.kind==='practice' && !item.isWarmup){
+        this._practiceUpdate(tr, item, ms, correct, good, out);
+      } else if(item.kind==='practice' && item.isWarmup){
+        // aquecimento: só XP (global) — não mexe em m, barra nem pesos
+      }
+    }
+    if(b && b.key===item.key){
+      if(item.kind==='test' || item.kind==='placement'){
+        if(out.lapse && b.extra<2){ b.extra++; b.count++; }       // lapso não conta: repõe a conta
+        else b.results.push({correct:!!correct, zone:out.zone, ms, level:item.level});
+        if(item.kind==='placement' && !out.lapse) this._placementStep(b, item, good);
+      }
+      b.done++;
+      if(b.done>=b.count) this._finishBlock(b, tr, out);
+    }
+    Store.save();
+    return out;
+  },
+  _practiceUpdate(tr, item, ms, correct, good, out){
+    const reinforce = item.isReinforce;
+    if(!reinforce){
+      tr.m = U.clamp(tr.m + M_ETA*((good?1:0) - this.rho()), 0, 1);
+    }
+    const s = correct ? (out.zone==='fast' ? 1 : out.zone==='ok' ? 0.8 : 0.45) : 0;
+    tr.strength += STRENGTH_ALPHA*(s - tr.strength);
+    // barra do level (ou da patente "Mestre")
+    if(correct && out.xp>0 && !tr.testReady){
+      tr.xp += out.xp;
+      if(tr.done){
+        if(tr.xp>=RANK_XP){
+          if(tr.rank<RANK_MAX){ tr.rank++; tr.xp -= RANK_XP; out.events.push({type:'rankUp', key:tr.key, rank:tr.rank}); }
+          else tr.xp = RANK_XP;
+        }
+      } else if(tr.xp>=this.xpNeed(tr)) tr.xp = this.xpNeed(tr);
+    }
+    // Barra cheia + m na metade de cima do level → prova liberada.
+    if(!tr.done && !tr.testReady && tr.xp>=this.xpNeed(tr) && tr.m>=TEST_READY_M){
+      tr.testReady = true;
+      out.events.push({type:'testReady', key:tr.key, level:tr.level});
+    }
+    this.nudgeDigits(tr, item.digitKey, item.digits, good);
+    out.hint = this.nudgePatternWeight(tr, item, correct, good);
+    this.registerPairRt(tr, item, ms, correct, out.zone==='fast');
+    // Reforço suave: patinando mesmo com m no mínimo → o próximo bloco roda um level abaixo.
+    if(!reinforce && tr.level>1 && !tr.reinforce){
+      const rec = this.recent(tr, REINFORCE_MIN_ITEMS).filter(w=>w.level===tr.level);
+      if(rec.length>=REINFORCE_MIN_ITEMS && U.mean(rec.map(w=>w.correct?1:0))<REINFORCE_ACC && tr.m<=REINFORCE_M){
+        tr.reinforce = 1; tr.m = REINFORCE_M_RESET;
+        tr.window.forEach(w=>{ if(w.level===tr.level) w.old = true; });
+        out.events.push({type:'reinforce', key:tr.key, level:tr.level-1});
+      }
+    }
+  },
+  _placementStep(b, item, good){
+    b.visited.push(item.level);
+    if(good) b.bestSuccess = Math.max(b.bestSuccess, item.level);
+    const n = this.levelCount(b.key);
+    b.lvl = U.clamp(item.level + (good ? 1 : -1), 1, n);
+  },
+  _finishBlock(b, tr, out){
+    out.blockDone = true;
+    const rs = b.results.filter(r=>r);
+    const correctMs = rs.filter(r=>r.correct).map(r=>r.ms);
+    const res = {kind:b.kind, key:b.key, level:b.level, total:rs.length, correct:rs.filter(r=>r.correct).length,
+      hits:rs.filter(r=>r.zone==='fast').length, medianMs:correctMs.length ? U.median(correctMs) : null};
+    if(b.kind==='test') res.test = this._finishTest(b, tr, res, out);
+    else if(b.kind==='placement') res.placed = this._finishPlacement(b, tr, rs, out);
+    else {
+      if(b.reinforce) tr.reinforce = 0;
+      // recorde pessoal do level (mediana do bloco, sem aquecimento)
+      const own = (tr.window||[]).slice(-b.count).filter(w=>w.kind==='practice' && w.level===b.level && w.correct && !w.lapse).map(w=>w.ms);
+      if(!b.reinforce && own.length>=4){
+        const med = U.median(own), prevBest = tr.bestMedian[b.level];
+        if(prevBest==null){ tr.bestMedian[b.level] = med; }
+        else if(med < prevBest*0.97){ tr.bestMedian[b.level] = med; out.events.push({type:'record', key:b.key, level:b.level, ms:med, prev:prevBest}); }
+      }
+    }
+    this.block = null;
+    out.blockResult = res;
+  },
+  _finishTest(b, tr, res, out){
+    const goal = this.goalMs(tr, b.level);
+    const c = res.correct, h = res.hits, med = res.medianMs;
+    const pass = c>=TEST_PASS_CORRECT && med!=null && med<=goal*TEST_PASS_MEDIAN_RATIO;
+    const stars = !pass ? 0 : (c>=TEST_ITEMS && h>=TEST_STAR3_HITS) ? 3 : h>=TEST_STAR2_HITS ? 2 : 1;
+    const isCurrent = b.level===tr.level && !tr.done;
+    const prevStars = tr.stars[b.level]||0;
+    const r = {pass, stars, correct:c, hits:h, medianMs:med, goalMs:goal, retake:!isCurrent, improved:false, leveledUp:false, finished:false};
+    if(pass){
+      if(stars>prevStars){ tr.stars[b.level] = stars; r.improved = isCurrent ? true : stars>prevStars; }
+      if(isCurrent){
+        tr.testReady = false; tr.xp = 0;
+        const n = this.levelCount(tr.key);
+        if(tr.level<n){ tr.level++; tr.m = M_AFTER_LEVELUP; r.leveledUp = true; r.newLevel = tr.level; }
+        else { tr.done = true; tr.rank = 0; r.finished = true; }
+        tr.strength = Math.max(tr.strength, 0.7);
+        out.events.push({type:'levelUp', key:tr.key, level:b.level, newLevel:r.newLevel||null, stars, finished:r.finished});
+      } else {
+        out.events.push({type:'starsUp', key:tr.key, level:b.level, stars});
+      }
+    } else if(isCurrent){
+      tr.testReady = false;
+      tr.xp = Math.round(this.xpNeed(tr)*TEST_FAIL_XP_KEEP);
+      tr.m = Math.max(REINFORCE_M, tr.m - 0.1);
+      out.events.push({type:'testFailed', key:tr.key, level:b.level, correct:c});
+    }
+    return r;
+  },
+  _finishPlacement(b, tr, rs, out){
+    const n = this.levelCount(b.key);
+    const tail = b.visited.slice(-PLACEMENT_TAIL);
+    const est = tail.length ? Math.floor(U.mean(tail)) : 1;
+    const placed = U.clamp(Math.min(est, Math.max(1,b.bestSuccess)), 1, n);
+    tr.level = placed; tr.placed = true; tr.xp = 0; tr.m = M_START; tr.testReady = false; tr.done = false; tr.rank = 0;
+    for(let l=1; l<placed; l++) tr.stars[l] = Math.max(tr.stars[l]||0, 1);
+    const good = rs.filter(r=>r.correct && r.zone!=='slow').length;
+    tr.strength = U.clamp(rs.length ? good/rs.length : 0.6, 0.3, 0.9);
+    out.events.push({type:'placed', key:b.key, level:placed});
+    return placed;
+  },
+  // Ao abandonar no meio de um bloco, descarta o estado dele (nada fica pela metade).
+  abortBlock(){ this.block = null; }
+};

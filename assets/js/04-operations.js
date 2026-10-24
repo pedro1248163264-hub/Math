@@ -1,48 +1,36 @@
 /* =====================================================================
-   assets/js/04-operations.js — operações matemáticas suportadas (soma,
-   subtração, multiplicação etc.): símbolos, rótulos, tempo-base e se
-   iniciam ativas. Fonte única de verdade (ver nota histórica no arquivo).
+   assets/js/04-operations.js — operações usadas para RENDERIZAR e FALAR
+   cada conta (símbolo e rótulo). A progressão não depende mais daqui: ela
+   vive nas trilhas (06-tracks.js).
    Depende de: nada.
-   Usado por: 05, 06, 07, 08, 09, 10 e 13.
+   Usado por: 05, 06, 08, 09, 10 e 13.
    ===================================================================== */
 
 /* ---------- 3. OPERAÇÕES (símbolos/labels) ---------- */
 const OPS = {
-  soma: {key:'soma', label:'Soma', label_en:'Addition', symbol:'+', baseline:1300, active:true},
-  subtracao: {key:'subtracao', label:'Subtração', label_en:'Subtraction', symbol:'−', baseline:1500, active:true},
-  multiplicacao: {key:'multiplicacao', label:'Multiplicação', label_en:'Multiplication', symbol:'×', baseline:1900, active:true},
-  divisao: {key:'divisao', label:'Divisão', label_en:'Division', symbol:'÷', baseline:2300, active:false},
-  porcentagem: {key:'porcentagem', label:'Porcentagem', label_en:'Percentage', symbol:'%', baseline:2700, active:false},
-  porcentagem_inversa: {key:'porcentagem_inversa', label:'Porcentagem inversa', label_en:'Reverse percentage', symbol:'?%', baseline:3200, active:false},
-  porcentagem_acrescimo: {key:'porcentagem_acrescimo', label:'Acréscimo de %', label_en:'Percentage markup', symbol:'+%', baseline:3000, active:false},
-  porcentagem_desconto: {key:'porcentagem_desconto', label:'Desconto de %', label_en:'Percentage discount', symbol:'−%', baseline:3000, active:false},
-  porcentagem_dupla: {key:'porcentagem_dupla', label:'% de %', label_en:'Percent of percent', symbol:'%%', baseline:3400, active:false},
-  porcentagem_original: {key:'porcentagem_original', label:'Valor original após %', label_en:'Original value before %', symbol:'x=%', baseline:3400, active:false},
-  porcentagem_aumento: {key:'porcentagem_aumento', label:'Aumento entre valores', label_en:'Increase between values', symbol:'→+%', baseline:3300, active:false},
-  porcentagem_reducao: {key:'porcentagem_reducao', label:'Redução entre valores', label_en:'Decrease between values', symbol:'→−%', baseline:3300, active:false},
-  porcentagem_sucessiva: {key:'porcentagem_sucessiva', label:'Descontos sucessivos', label_en:'Successive discounts', symbol:'−−%', baseline:3600, active:false},
-  expressao: {key:'expressao', label:'Expressão', label_en:'Expression', symbol:'()', baseline:4200, active:false},
-  expressao_encadeada: {key:'expressao_encadeada', label:'Encadeada', label_en:'Chained', symbol:'⋯', baseline:4000, active:false},
-  fracao: {key:'fracao', label:'Fração', label_en:'Fraction', symbol:'/', baseline:3000, active:false},
-  fracao_comparacao: {key:'fracao_comparacao', label:'Fração — comparação', label_en:'Fraction — comparison', symbol:'⇔', baseline:2400, active:false},
-  potencia: {key:'potencia', label:'Potência', label_en:'Power', symbol:'^', baseline:2600, active:false},
-  radical: {key:'radical', label:'Radical', label_en:'Root', symbol:'√', baseline:2600, active:false},
-  logaritmo: {key:'logaritmo', label:'Logaritmo', label_en:'Logarithm', symbol:'log', baseline:3200, active:false},
-  equacao: {key:'equacao', label:'Equação', label_en:'Equation', symbol:'x', baseline:4500, active:false},
-  proporcao_direta: {key:'proporcao_direta', label:'Proporção — direta', label_en:'Direct proportion', symbol:'→', baseline:2400, active:false},
-  proporcao_inversa: {key:'proporcao_inversa', label:'Proporção — inversa', label_en:'Inverse proportion', symbol:'⇄', baseline:3000, active:false},
+  soma: {key:'soma', label:'Soma', label_en:'Addition', symbol:'+'},
+  subtracao: {key:'subtracao', label:'Subtração', label_en:'Subtraction', symbol:'−'},
+  multiplicacao: {key:'multiplicacao', label:'Multiplicação', label_en:'Multiplication', symbol:'×'},
+  divisao: {key:'divisao', label:'Divisão', label_en:'Division', symbol:'÷'},
+  porcentagem: {key:'porcentagem', label:'Porcentagem', label_en:'Percentage', symbol:'%'},
+  porcentagem_inversa: {key:'porcentagem_inversa', label:'Porcentagem inversa', label_en:'Reverse percentage', symbol:'?%'},
+  porcentagem_acrescimo: {key:'porcentagem_acrescimo', label:'Acréscimo de %', label_en:'Percentage markup', symbol:'+%'},
+  porcentagem_desconto: {key:'porcentagem_desconto', label:'Desconto de %', label_en:'Percentage discount', symbol:'−%'},
+  porcentagem_original: {key:'porcentagem_original', label:'Valor original após %', label_en:'Original value before %', symbol:'x=%'},
+  porcentagem_aumento: {key:'porcentagem_aumento', label:'Aumento entre valores', label_en:'Increase between values', symbol:'→+%'},
+  porcentagem_reducao: {key:'porcentagem_reducao', label:'Redução entre valores', label_en:'Decrease between values', symbol:'→−%'},
+  porcentagem_sucessiva: {key:'porcentagem_sucessiva', label:'Descontos sucessivos', label_en:'Successive discounts', symbol:'−−%'},
+  expressao: {key:'expressao', label:'Expressão', label_en:'Expression', symbol:'()'},
+  expressao_encadeada: {key:'expressao_encadeada', label:'Encadeada', label_en:'Chained', symbol:'⋯'},
+  fracao: {key:'fracao', label:'Fração', label_en:'Fraction', symbol:'/'},
+  fracao_comparacao: {key:'fracao_comparacao', label:'Fração — comparação', label_en:'Fraction — comparison', symbol:'⇔'},
+  potencia: {key:'potencia', label:'Potência', label_en:'Power', symbol:'^'},
+  radical: {key:'radical', label:'Radical', label_en:'Root', symbol:'√'},
+  equacao: {key:'equacao', label:'Equação', label_en:'Equation', symbol:'x'}
 };
-// BUGFIX/3.13: baseline (tempo de reação padrão) e ativação padrão viviam duplicados em
-// Engine.defaultBaseline() e Store.defaults().settings.ops — uma nova operação exigia
-// tocar 3+ lugares e era fácil esquecer um. Agora OPS é a única fonte de verdade; os dois
-// pontos abaixo só leem daqui.
-function defaultOpsMap(){
-  const map = {};
-  Object.keys(OPS).forEach(k=>{ map[k] = !!OPS[k].active; });
-  return map;
-}
+
 // Aplica uma operação básica (pelas chaves de OPS) a dois operandos — usado pelos
-// geradores de expressões com parênteses (seç. "Expressões").
+// geradores de expressões.
 function applyOp2(opKey, x, y){
   if(opKey==='soma') return x+y;
   if(opKey==='subtracao') return x-y;
@@ -52,9 +40,8 @@ function applyOp2(opKey, x, y){
 }
 
 // Comparação de frações: o símbolo respondido (<, > ou =) viaja como inteiro no campo
-// `answer` (mesma exigência de resposta numérica das demais famílias). Fonte única do
+// `answer` (mesma exigência de resposta numérica das demais contas). Fonte única do
 // mapeamento — usada pela correção (10-session.js), pelo teclado e pelo feedback de erro
-// (13-ui.js). O inverso só é seguro para itens da família de comparação (op checada antes).
+// (13-ui.js). O inverso só é seguro para itens de comparação (op checada antes).
 const COMPARE_SYMBOLS = {'<':-1, '=':0, '>':1};
 function compareSymbolOf(code){ return code<0 ? '<' : code>0 ? '>' : '='; }
-

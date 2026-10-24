@@ -1,170 +1,109 @@
 # Mental Math
 
-> **Manutenção:** sempre atualize este README quando mudar o funcionamento do app, especialmente a geração, a seleção ou a progressão das contas.
+> **Manutenção:** sempre atualize este README quando mudar o funcionamento do app, especialmente a geração, a seleção, a progressão ou a recompensa.
 
-## Como o app funciona hoje
+Treino de cálculo mental para virar uma "calculadora humana": poupar tempo em prova e no dia a dia. PWA local — roda direto no navegador (abra `index.html`), funciona offline e guarda tudo no `localStorage` do aparelho. Sem conta, sem servidor.
 
-O Mental Math é um PWA local: funciona diretamente no navegador, pode usar o cache para abrir offline e guarda configurações, perfis de habilidade e histórico no localStorage do próprio dispositivo. Não há conta de usuário nem sincronização em servidor.
+> **Única exceção ao offline:** as fontes do Google Fonts (`index.html`). Depois da primeira visita online ficam em cache; só a primeira abertura offline usa fontes locais de reserva.
 
-## Única exceção ao modo offline
+## Ideia central (v2)
 
-Tudo funciona offline, com **uma única exceção**: as fontes do Google Fonts carregadas no `index.html`. Elas dependem da rede. Depois da primeira visita online elas ficam em cache (como resposta opaca do service worker), então as aberturas seguintes já usam as fontes reais mesmo sem conexão. Apenas a primeira abertura offline logo após instalar o app cai para as fontes de fallback locais. O restante — HTML, CSS, JS, dados — nunca depende da rede.
+A v1 sorteava a próxima conta entre ~40 famílias, uma a uma, e ajustava a dificuldade com limiares duros — daí o "conta de 4 dígitos e depois uma de 2" e as pausas/"vou pegar mais leve". A v2 troca isso por três princípios:
 
-O treino é organizado por **famílias de cálculo** (habilidades), e não por uma conta específica. Há 40 famílias, cobrindo somas, subtrações, multiplicações, divisões, porcentagens (incluindo as oito variações derivadas — seção abaixo), expressões, frações (operações e comparação — seção abaixo), potências, radicais, logaritmos, equações, proporções e contas com vírgula. Na configuração, a pessoa pode escolher uma ou mais delas, ou marcar **Treinar todas as contas** — que é o padrão de uma instalação nova. Todas as famílias ficam selecionáveis desde o início; os pré-requisitos são usados apenas como um sinal de prioridade, não como bloqueio.
+1. **Trilhas com levels.** Cada operação é uma escada de levels. Um level fixa a *forma* das contas (ex.: "3 dígitos × 1 dígito") e uma **meta de tempo** própria. Só o que varia suavemente dentro do level (tamanho dos números, vai-um…) é adaptativo.
+2. **Adaptação contínua e suave.** Dentro do level existe uma posição `m ∈ [0,1]` que anda um passinho a cada conta rumo à **taxa de acerto desejada** (ρ\*). Nunca há salto de dígitos entre contas seguidas.
+3. **Recompensa e motivo para voltar.** XP, level por trilha, level geral, estrelas, prova de nível, rodadas curtas com fim, meta diária, sequência de dias.
 
-O botão **Iniciar treino** começa imediatamente com a configuração salva. Para alterá-la, acesse **Ajustes** e toque em **Configurar treino** para abrir a tela de configuração; as alterações são salvas na hora. Durante a sessão, o cabeçalho mostra apenas o tempo restante.
+## Trilhas e levels
 
-### Escolha da próxima conta
+11 trilhas; 6 ativas por padrão (as demais são ligadas na aba **Trilhas**):
 
-Para cada pergunta, o motor considera somente as famílias selecionadas e segue esta ordem:
-
-1. **Revisão de retenção:** se alguma habilidade já dominada chegou à data de revisão, ela tem prioridade. Entre elas, vem primeiro a que está mais atrasada; em empate, a que tem menos respostas na revisão atual.
-2. **Calibração:** habilidades novas recebem respostas corretas de calibração — **até oito** (`CALIBRATION_ITEMS` vira teto): a calibração pode encerrar antes, a partir de **quatro** acertos, se os tempos estiverem consistentes (coeficiente de variação baixo), o que torna "Treinar todas as contas" viável sem ~230 contas de aquecimento. Enquanto houver famílias nessa fase, o motor distribui as perguntas de forma equilibrada, escolhendo aleatoriamente entre as que têm menos calibrações (ou no máximo uma a mais), em um grupo de até quatro habilidades. A dificuldade de calibração não parte sempre do zero: um perfil novo de família avançada já começa no nível médio dos pré-requisitos existentes, em vez de aquecer em contas triviais.
-3. **Treino adaptativo:** terminada a calibração, cada família recebe uma pontuação de prioridade. Ela aumenta quando a pessoa está lenta em relação à meta, erra mais ou fica menos vezes dentro da meta, e recebe uma pequena penalidade se seus pré-requisitos ainda não foram dominados.
-
-Não existe mais um estilo "Foco" ou "Misto" configurável — há um único motor de sequência, usado em todos os modos:
-
-- **Interleaving ponderado:** em vez de sempre repetir a família de maior pontuação, o motor sorteia entre todas as famílias selecionadas com peso proporcional à pontuação de cada uma — os scores são normalizados pelo spread do pool do momento (min→0, max→1) antes do sorteio, com um piso para que, quando ninguém está claramente fraco, o sorteio fique quase-uniforme (começo do app). A mesma família nunca é escolhida duas vezes seguidas, e nenhuma família passa de 40% das últimas 10 escolhas — mistura de verdade, não só evita repetição imediata. A mesma calibração vale tanto para um pool pequeno (poucas famílias escolhidas) quanto para "Treinar todas as contas" (39 famílias).
-- **Retry pós-erro:** ao errar uma conta de uma família, ela reaparece dentro de 3 a 6 itens depois (nunca no item seguinte, por causa da regra acima) — fecha o ciclo de correção sem virar repetição espaçada de item específico.
-- **Cascata de dificuldade:** quando uma família está bem abaixo do nível (acerto recente < 0.6, com amostra suficiente), o motor dá um boost forte ao pré-requisito mais fraco ainda não dominado — em vez de só baixar o tamanho dos números no lugar, ele puxa o alicerce de volta ao treino.
-- **Peso por padrão dentro da família:** para famílias com um atributo categórico conhecido (vai-um em somas, empréstimo em subtrações, grupo de porcentagem), o motor guarda internamente um peso por atributo — sobe quando a pessoa é mais lenta/erra mais nele, desce quando está rápida. A próxima geração fica enviesada para esse atributo, mas **nunca** repete um enunciado específico, e nunca fica 100% previsível (sempre há piso de aleatoriedade). Isso não é exposto em nenhuma tela — é só um ajuste interno de geração.
-- **Peso por dígito/linha (substitui os "fatos fracos" da tabuada):** em vez de rastrear **pares específicos** (ex.: `7×8` — decoreba de resultado), o motor pesa por **dígito/linha**: onde a pessoa erra ou demora mais com um dígito, a próxima geração fica enviesada para pares que o contêm. Isso vale para `mult_tabuada` (os dois fatores), `mult_11_19` (o fator 11–19) e `div_tabuada` (o divisor). Sempre com piso de aleatoriedade e sem repetir enunciado — mede-se "lidar com o 7", nunca o produto `7×8`.
-
-Se só houver uma habilidade selecionada, ela é sempre usada.
-
-Depois de escolher a família, o gerador cria uma conta compatível com ela. A dificuldade individual parte do perfil da habilidade e recebe uma pequena variação aleatória; o motor tenta evitar repetir os últimos 24 enunciados daquela família. Os geradores produzem respostas inteiras e, quando aplicável, divisões exatas, resultados de frações inteiros e expressões válidas — exceto as cinco famílias com vírgula (seções abaixo), cuja resposta é sempre um decimal exato de 1 ou 2 casas, nunca dízima.
-
-### Porcentagens derivadas
-
-Além das três famílias clássicas de porcentagem (`pct_basico`, `pct_intermediario`, `pct_avancado` — "p% de base"), há oito variações que reutilizam esse cálculo com um passo a mais (ou invertido), cada uma como habilidade própria, com Elo/meta/calibração e peso por grupo de % separados:
-
-| Família | Enunciado | Resposta |
+| Trilha | Levels | Ativa por padrão |
 |---|---|---|
-| `pct_reverso` | "20 é quantos % de 80?" | 25 — raciocínio inverso (parte ÷ base) |
-| `pct_adicao` | "80 + 15%" | 92 — calcula 15% de 80 e soma |
-| `pct_subtracao` | "80 − 15%" | 68 — calcula 15% de 80 e subtrai |
-| `pct_duplo` | "2% de 5% = ?%" | 0,1 — percentual de percentual |
-| `pct_original` | "x − 30% = 84" + "x = ?" | 120 — desfaz a redução: x(1−0,30)=84 |
-| `pct_variacao_alta` | "80 → 100 = +?%" | +25 — aumento relativo ao valor INICIAL (80) |
-| `pct_variacao_baixa` | "100 → 80 = −?%" | −20 — redução relativa ao valor INICIAL (100) |
-| `pct_sucessivo` | "100 − 20% − 10% = ?" | 72 — o segundo desconto incide sobre 80, não sobre 100 |
+| Soma | 8 (unidades → 4 dígitos + 4 dígitos) | sim |
+| Subtração | 8 | sim |
+| Multiplicação | 8 (tabuada 2–5 → 3 dígitos × 2 dígitos) | sim |
+| Divisão | 6 | sim |
+| Potenciação | 5 | sim |
+| Radiciação | 6 (inclui raiz cúbica no level 5) | sim |
+| Porcentagem | 6 (10% e 50% → acréscimo/desconto → "é quantos %?" → valor original, variação e descontos sucessivos) | não |
+| Contas com vírgula | 6 | não |
+| Frações | 5 (soma/subtração, multiplicação/divisão, comparação) | não |
+| Expressões | 5 | não |
+| Equações | 5 | não |
 
-As quatro primeiras respondem "um passo além" do cálculo direto; as quatro últimas (`pct_original`, `pct_variacao_*`, `pct_sucessivo`) existem para desarmar erros conceituais específicos:
+Cada level tem nome, **meta de tempo** (ex.: Soma Nv 1 = 1,0 s … Nv 8 = 5,8 s) e uma **dica de tática** (mostrada na primeira vez que o level aparece, na prova e na aba Trilhas). Os geradores ficam em `06-tracks.js` e garantem resposta exata, resposta inteira (ou decimal de ≤ 2 casas), sem negativos (exceto equação/comparação) e forma de dígitos fixa por level.
 
-- **`pct_original`** é diferente de calcular 30% de 84: a pessoa precisa **desfazer** a redução dividindo por (1−p/100). Em dificuldades maiores entra também a versão com acréscimo ("x + 25% = 125"). Na tela, o enunciado usa a mesma estrutura de equação linear (incógnita `x` e o pedido `x = ?` em linha própria).
-- **A dupla de variação** mostra que voltar ao valor original não usa a mesma taxa: 80 → 100 é +25%, mas 100 → 80 é −20% — porque a referência é sempre o valor inicial. O sinal já vem no enunciado (`+?%`/`−?%`); a resposta digitada é só a magnitude.
-- **`pct_sucessivo`** pega o erro clássico de somar descontos: −20% −10% não equivale a −30%, e sim a −28% sobre o valor inicial, porque os 10% caem sobre o valor já reduzido.
+## Como a dificuldade se ajusta
 
-As respostas são sempre exatas (o gerador ajusta a base/parcela até o acréscimo ou desconto ser inteiro; no duplo, `p1×p2÷100` tem no máximo 2 casas; no sucessivo, ambos os passos da cascata são inteiros). O `pct_duplo` responde em **pontos percentuais** (não na fração bruta `0,001`) e é o único com resposta decimal — ver seção abaixo.
+- **Zonas por conta correta** (tempo ÷ meta do level): `fast ≤ 1,0` (dentro da meta), `ok ≤ 1,7`, `slow` acima. Erro nunca tem zona.
+- **Passo de m:** `m ← m + 0,06 × (y − ρ*)`, com `y = 1` se acertou em zona `fast/ok`. É uma aproximação estocástica (Robbins-Monro): converge ao ponto em que a pessoa acerta ρ\* das contas. O passo por conta é minúsculo (média ≈ 0,01–0,02), sem degraus.
+- **Desafio** (Ajustes): ρ\* = 0,90 *Tranquilo*, 0,82 *Equilibrado* (padrão), 0,72 *Intenso*.
+- **Level nunca cai.** Errar não desconta XP nem derruba level. Se a pessoa patinar (< 55% de acerto em 12 contas com `m` no piso), o **próximo bloco** da trilha roda no level anterior (**reforço**, rende 70% do XP), `m` volta a um ponto confortável e o reforço dura um bloco só — sem aviso humilhante.
+- **Lapso de digitação:** erro em < 350 ms, número invertido (45 vs 54) ou um dígito trocado (57 vs 56) é lapso motor: fica no histórico, mas não mexe em `m`, XP nem pesos (e na prova/nivelamento a conta é reposta).
+- **Pesos internos por padrão** (herdado da v1): vai-um, empréstimo, grupo de %, casas decimais e caso da fração enviesam a geração para onde a pessoa erra/demora mais (sempre com piso de aleatoriedade); pesos por dígito da tabuada + "pontos cegos" (pares específicos lentos voltam até limpar); inversão rara ("? × 8 = 56"); **andaime** — dica de método após 3 erros seguidos no mesmo padrão.
 
-### Contas com vírgula
+## Rodadas e blocos
 
-Além das famílias inteiras, há cinco famílias com números decimais (1 a 2 casas) — `soma_decimal`, `sub_decimal`, `mult_decimal`, `div_decimal` e `pct_duplo`. As quatro primeiras cobrem uma operação básica cada e têm como pré-requisito a família inteira equivalente (soma/subtração de 2 dígitos, multiplicação/divisão por 2 a 9); o `pct_duplo` pertence ao grupo das porcentagens derivadas (seção acima) e entra nesta lista porque sua resposta também é decimal. Todas são tratadas pelo motor como habilidades próprias, com perfil de Elo/meta de tempo próprio — não são variações de exibição das famílias inteiras.
+Uma **rodada** (Curta 16 / Normal 24 / Longa 40 contas — Ajustes) é uma sequência de **blocos**; cada bloco tem 6–8 contas de **uma trilha e um level**. A mistura entre trilhas acontece entre blocos (favorecendo trilhas mais fracas e há mais tempo sem treino; nunca a mesma trilha duas vezes seguidas).
 
-A dificuldade extra da vírgula em si (raciocinar com casas decimais, não o tamanho do número) é tratada como um atributo próprio: assim como o motor já pesa vai-um/empréstimo/grupo de porcentagem dentro de uma família (seção "Escolha da próxima conta" acima), ele também pesa 1 vs. 2 casas decimais, enviesando a próxima geração para a quantidade onde a pessoa está mais lenta ou errando mais — sem nunca eliminar a outra.
+Ordem: **nivelamentos** (trilhas novas) → **treino** → **provas de nível** (clímax, no máximo 2 por rodada). No primeiro bloco de cada trilha na rodada há **aquecimento**: 3 contas um level abaixo (rende metade do XP; com "aquecimento relâmpago" ligado, a conta borra após 1,5 s).
 
-**Comparação interna (ainda não exposta em tela):** o motor consegue calcular, a qualquer momento, o quanto a vírgula pesa de fato — comparando tempo e acerto de cada família decimal com os da família inteira "irmã" (`soma_decimal` ↔ `soma_2d_cc`, `sub_decimal` ↔ `sub_2d_ce`, `mult_decimal` ↔ `mult_tabuada`, `div_decimal` ↔ `div_tabuada`) e checando se a diferença está dentro do que já era esperado (até ~25% mais lento, até 5 p.p. a menos de acerto) ou desproporcional. Isso vive em `Engine.decimalComparison(key)` / `Engine.allDecimalComparisons()` (`assets/js/08-speed-engine.js`) e não altera dificuldade, sequenciamento nem é mostrado em nenhuma tela hoje — a tela de estatísticas precisa de uma revisão à parte antes de exibir esse tipo de dado.
+Não existem mais modos Ultimate/Intervalado/HIIT nem pausas automáticas por "frustração/fadiga": a rodada termina sozinha, e a pessoa pode pausar (também automático ao esconder o app) ou sair a qualquer momento (rodada parcial é salva).
 
-No teclado numérico da sessão, uma tecla extra (vírgula ou ponto, conforme o idioma do app) fica sempre disponível; nas famílias sem vírgula ela simplesmente não se aplica. Respostas decimais sempre exigem toque em ✓ (nunca são enviadas sozinhas por contagem de dígitos), pelo mesmo motivo que respostas negativas já exigiam.
+## Nivelamento
 
-### Proporções
+Na primeira vez numa trilha, 6 contas em escada (acerto bom sobe 1 level, o resto desce 1), começando em ~40% da trilha. O resultado é a média dos últimos 4 levels, sem passar do melhor level acertado — começa um pouco abaixo da habilidade, para as primeiras contas serem vitórias. Levels abaixo recebem 1★.
 
-Duas famílias irmãs — `proporcao_direta` e `proporcao_inversa` — treinam reconhecer a relação entre grandezas **sem enunciado textual**: a questão mostra apenas o rótulo do tipo no topo (`DIRETA`/`INVERSA`; traduzido para `DIRECT`/`INVERSE` no modo inglês) e duas linhas de pares correspondentes, com a incógnita `x` em qualquer uma das quatro posições:
+## XP, barra e prova de nível
 
-| Família | Representação | Relação | Exemplo |
-|---|---|---|---|
-| `proporcao_direta` | `3 → 5` / `12 → x` | razão constante: b/a = d/c | x = 20 |
-| `proporcao_inversa` | `3 → 12` / `6 → x` | constante do produto: a×b = c×d | x = 6 |
+- **XP por acerto:** `fast` 10, `ok` 6, `slow` 3, × (0,8 + 0,4·m). Erro = 0 (nunca negativo). **Combo:** +1 XP a cada 5 acertos seguidos (até +4); erro zera o combo.
+- O mesmo XP enche a **barra do level da trilha** (120 + 40·(L−1) XP) e soma no **XP geral**.
+- Barra cheia **e** `m ≥ 0,55` → **prova de nível** liberada (8 contas no topo do level). Aprova com ≥ 7 acertos **e** mediana ≤ 1,7× a meta. **★** = aprovou; **★★** = ≥ 5 dentro da meta; **★★★** = 8/8 e ≥ 7 dentro da meta. Bônus de XP: 40/70/100.
+- Aprovou → level seguinte (`m` recomeça em 0,15). Reprovou → **nada cai**: a barra volta a 55% e a prova reaparece quando liberar de novo. Na aba Trilhas, toque num level já conquistado com menos de 3★ na escada para **refazer a prova** e melhorar as estrelas (não muda o level atual).
+- Terminou o último level → trilha **concluída** e entra em **Mestre**: até 5 patentes (400 XP cada), e a meta de tempo encolhe 7% por patente — o treino de velocidade nunca acaba.
 
-- **Direta** é construída por multiplicação: a linha de baixo é a linha de cima × m — as quatro células são sempre inteiras e qualquer posição de `x` resolve por multiplicar/dividir exato (nunca quebra). A dificuldade cresce em dois eixos: o tamanho da linha-base (~5 até ~40) e a razão entre linhas m — redonda no começo (2, 3, 5, 10), menos óbvia depois (7, 9, 12, 15, 25).
-- **Inversa** é construída pela constante do produto K = a·c·k: linha 1 = (a → c·k), linha 2 = (c → a·k). Com k = 1 o par só se inverte ("3 → 4 / 4 → 3"), caso de reconhecimento imediato reservado ao início da curva; os fatores crescem de ~8 até ~30 e k até 8.
-- A resposta é digitada no teclado normal (sempre inteira); o TTS lê os dois pares na ordem ("3 está para 5, assim como 12 está para quanto") com a incógnita exatamente onde ela está na tela. Pré-requisitos: tabuada de multiplicação (direta) e também de divisão (inversa).
+## Recompensas e retenção
 
-### Comparação de frações
+- **Level geral** (XP acumulado = 100·(n−1)^1,6) com títulos (Iniciante → Calculadora Humana).
+- **Meta diária** (20/40/80/150 contas; padrão 40) com anel de progresso, **bônus de 50 XP** e **sequência de dias** (+ faixa da semana, aviso de sequência em risco).
+- **Fim de rodada:** 1–3 estrelas (sempre ≥ 1 ao concluir), +20 XP de conclusão, XP com contagem animada, barras das trilhas "de → para", lista de conquistas (level, estrelas, patente, recordes de mediana, prova liberada…).
+- **Recordes pessoais** por level (mediana do bloco), confete, sons/vibração, balões de XP e combo no treino.
 
-A família `fracao_comparacao` treina comparar duas frações **sem calcular seus valores decimais**: a tela mostra `A/B ? C/D` e a resposta é escolher `<`, `=` ou `>`. A resposta correta é sempre o sinal do produto cruzado exato — `sign(n1·d2 − n2·d1)` — codificado como inteiro (−1/0/+1) no campo `answer`, como nas demais famílias.
+## Telas
 
-Quatro casos de raciocínio (o motor pesa internamente o caso onde a pessoa erra ou demora mais, igual ao vai-um/grupo de %):
+Início (nível, meta, sequência, semana, botão **Treinar** ou **Começar nivelamento**, avisos de prova liberada) · Trilhas (liga/desliga, level, barra, estrelas, escada de levels, dica, "treinar só esta", prova) · Treino (barra da rodada, chip da trilha/level, combo e XP, teclado) · Resumo da rodada · Estatísticas (precisão, % dentro da meta, contas por dia, por trilha) · Ajustes (meta, tamanho da rodada, desafio, tema, idioma PT/EN, voz/TTS, vibração, sons, modo foco, exportação CSV/JSON, apagar dados).
 
-- **Mesmo denominador** (`same_den`): basta comparar numeradores — aquecimento do começo da curva.
-- **Mesmo numerador** (`same_num`): relação inversa — denominador maior é a fração menor.
-- **Igualdade** (`equal`): mesma fração escrita em escalas diferentes (8/15 ? 16/30). Tem cota fixa (~1/4 dos itens, em qualquer nível) para a família não virar só "qual é maior". No começo da curva pode ser até fração idêntica ("3/4 ? 3/4") — reconhecimento imediato do `=`.
-- **Multiplicação cruzada** (`cross`): o caso geral (5/8 ? 2/3 → 15 vs 16). Em dificuldade alta o gerador sorteia vários candidatos e fica com o de produtos cruzados mais próximos ("quase-empate").
+## Dados
 
-Só aparecem frações próprias. O teclado numérico da sessão é substituído por três teclas grandes (`<` `=` `>`) apenas nesta família; no teclado físico, as teclas correspondentes também funcionam. Com "confirmar resposta" ligado, o toque só marca a escolha (o ✓ confirma); desligado, um toque já avalia. No erro, o feedback mostra o símbolo correto. Pré-requisito: tabuada de multiplicação.
-
-### Adaptação, metas e domínio
-
-A meta inicial de tempo de uma habilidade é 85% da mediana das oito respostas corretas de calibração (limitada entre 450 ms e 10 s). A partir daí, a dificuldade e a meta de tempo se ajustam **continuamente, resposta a resposta** (não mais em lotes de 8): cada resultado pontuado move `difficulty`/`targetMs` num passo pequeno, na direção certa/errada/lenta. O tamanho do passo (K) é maior logo depois de uma mudança de fase (a calibração acabou de terminar, ou a pessoa acabou de perder o domínio numa revisão) — encontra o nível certo rápido — e diminui conforme mais respostas se acumulam na fase atual, ficando resistente a uma sequência ruim isolada. É o mesmo princípio do K-factor em sistemas de rating tipo Elo.
-
-O domínio e a passagem por revisão continuam exigindo evidência acumulada (não mudou): nas últimas 12 respostas pontuadas, pelo menos 90% de acerto, 75% dentro da meta e regularidade de tempo. Ao dominar uma habilidade, o app agenda revisões após 1, 3, 7, 14 e 30 dias. Cada revisão pede três respostas corretas; um erro remove o status de domínio, reduz a dificuldade e afrouxa a meta.
-
-Um erro digitado em menos de 350 ms (`IMPULSE_FLOOR`) **ou** cujo padrão de dígitos aponta destreza de teclado — inverso do resultado (45 vs. 54) ou 1 dígito trocado na mesma posição (57 vs. 56), filtro Levenshtein-lite em `Engine.isTypoLapse()` — é tratado como lapso motor (typo), não como falha de cálculo genuína. Continua salvo no histórico, mas não entra nas contas de acerto/meta/domínio, no ajuste contínuo de dificuldade nem no peso por padrão.
-
-O tempo usado pelo motor é o tempo cognitivo: por padrão, vai da apresentação da conta até a primeira tecla digitada. Essa opção pode ser desligada para usar o tempo total até a confirmação. O prazo de resposta padrão é cancelado assim que a pessoa começa a digitar, evitando que uma resposta de vários dígitos expire no meio.
-
-### Fluência e memória de trabalho (pós-domínio)
-
-Estas três peças assumem que a base de fatos (o "o que é 7×8") já vem de fora do app (ex.: Anki) — o objetivo delas não é ensinar o fato, é forçar usá-lo sob pressão de tempo e memória. Nenhuma altera acerto/meta/domínio nem entra na cascata de dificuldade; são independentes do peso por padrão/dígito da seção anterior.
-
-- **Ocultação progressiva ("mastery flash"):** quando uma família já está *Mastered* (ou numa revisão de retenção — `Engine.stage()` retornando `'mastered'`/`'review_due'`), o enunciado fica visível por `MASTERY_FLASH_MS` (1,5 s) e depois borra (`UI.setMasteryBlur()`, reaproveitando o efeito CSS já usado para esconder a conta durante o TTS). Obriga reter os operandos de cabeça em vez de poder consultar a tela a qualquer momento. Tem um toggle em Ajustes (`masteryFlash`, ligado por padrão).
-- **Inversão de baixa frequência ("reverse path"):** só em `mult_tabuada`/`div_tabuada`. Em vez do caminho direto ("a × b = ?"), às vezes o enunciado esconde um operando — "? × 8 = 56" ou "? ÷ 8 = 7" — testando reconhecer o fato dentro de uma equação, não só recitá-lo na ordem treinada. Frequência baixa (`REVERSE_PATH_BASE_RATE`, 6%), mais alta (`REVERSE_PATH_FLUENT_RATE`, 10%) quando o perfil já não está mais calibrando/adquirindo — um proxy de "já é fluente no caminho direto" enquanto não existe um sinal mais fino por par específico (ver observação sobre o heatmap 10×10 abaixo). `spokenPhrase()` fala o `exprText` literal nesses itens, para o TTS não entregar o número escondido.
-- **Hint por padrão de erro ("andaime"):** o motor não ensina a técnica de graça — só depois de `PATTERN_HINT_STREAK` (3) erros **seguidos** no mesmo atributo/bucket já rastreado pelo peso por padrão (vai-um, empréstimo, grupo de %, casas decimais) é que `Engine.buildPatternHint()` monta uma dica tática pontual (ex.: para "52 − 18" errado 3x seguidas, "Tente 52 − 20 + 2"; para porcentagem, decomposição em torno de 10%). O contador zera nesse momento e em qualquer acerto, para a dica não repetir a cada erro novo.
-
-**Discutido e deixado de fora por ora:** um heatmap 10×10 por par específico (a,b) de `mult_tabuada`/`div_tabuada`, com prioridade de sorteio por tempo de reação da célula (Softmax). Isso é estruturalmente diferente do peso por dígito/linha acima (que existe justamente para *não* rastrear pares específicos — ver comentário em `KC_DEFS.mult_tabuada`) — fica para uma decisão de design própria antes de implementar.
-
-### Sessões e dados
-
-As sessões podem ser **Ultimate** (aberta, sem configurações — ver seção abaixo), **Intervalado** (trabalho, descanso e ciclos configuráveis) ou **HIIT** (10 blocos de 40 s de trabalho e 20 s de descanso). Ao final — ou ao sair depois de responder ao menos uma conta — o app salva o resumo, incluindo acerto, tempos, taxa dentro da meta, desempenho por habilidade e melhor sequência.
-
-Aplicativo local de treino de cálculo mental. Abra `index.html` no navegador para usá-lo; os dados ficam salvos apenas no dispositivo.
-
-## Modo Ultimate
-
-O Ultimate é o modo com menos configuração possível — a ideia é o algoritmo decidir, não a pessoa. Ao tocar em **Iniciar treino** com esse modo selecionado, o app pergunta (uma vez, opcional) quanto tempo a pessoa pretende treinar; é só uma referência mostrada no anel de progresso, nunca corta a sessão.
-
-Duas coisas ficam automáticas, só nesse modo:
-
-- **Prazo de resposta por família:** em vez do prazo fixo em segundos de Ajustes, o prazo é `targetMs da habilidade × multiplicador`, e o multiplicador diminui conforme a fase (4× durante calibração/aquisição, 3,3× consolidando, 3× já dominado/em revisão) — sempre com um piso de segurança (~1,2 s). Como aperta junto com a própria meta de tempo, o prazo já fica mais curto sozinho conforme a pessoa evolui, sem precisar de um mecanismo separado de "aperto ao longo da sessão".
-- **Pausas automáticas:** o app usa a detecção de estado da sessão (aquecimento/fluxo/fadiga/frustração) para inserir descansos sozinho — uma pausa curta (~13 s) ao detectar frustração (3+ erros recentes, ficando mais lento), e uma pausa mais longa (~35 s) ao detectar fadiga acumulada (tempo subindo e acerto caindo nas últimas 16 respostas). Depois de cada pausa, alguns itens não contam para disparar outra pausa em seguida.
-
-A sessão em si não tem fim fixo — termina quando a pessoa sai manualmente.
-
-## Tempo limite para responder
-
-Em **Ajustes > Treino**, escolha em segundos o prazo para começar uma resposta. Se nenhuma tecla for digitada até o prazo, a conta é registrada como incorreta. Depois que a pessoa começa a digitar, esse prazo é cancelado para que uma resposta com vários dígitos não seja interrompida. **Esse ajuste não se aplica ao modo Ultimate**, que calcula seu próprio prazo por habilidade (ver seção acima).
-
-Esse mesmo prazo vale como "tempo da conta" no **Intervalado** e no **HIIT**: se um bloco de trabalho terminar no meio de uma conta, o app **não cancela** a conta. Ele espera ela ser respondida — ou o prazo dela acabar — e só então entra no descanso (ou encerra a sessão, se era o último bloco). O relógio do bloco é estendido até o prazo da conta para acompanhar essa espera.
-
-Sugestão para melhorar sem transformar o treino em frustração: comece em **10 segundos**. Quando conseguir manter cerca de **80% a 90% de acerto** por algumas sessões, reduza um segundo por vez (por exemplo, para 9 s e depois 8 s). Se a precisão cair de forma consistente, volte um segundo. O melhor limite é o que exige rapidez, mas ainda permite raciocinar corretamente.
+`localStorage`, chave `calcrapido_db_v3`. Na primeira abertura, ajustes, histórico e melhor sequência do formato antigo (`calcrapido_db_v2`) são aproveitados; o progresso por família não tem equivalente nas trilhas, então o **nivelamento recomeça**.
 
 ## Estrutura do código
 
-O motor do app fica em `assets/js/`, dividido em módulos por responsabilidade e carregados em `index.html` na ordem de dependência (por isso os nomes começam com números — `01-utils.js`, `02-engine-constants.js`, etc.). São `<script>` comuns, sem bundler nem `type="module"`, então o app continua funcionando abrindo `index.html` direto do disco. Cada arquivo começa com um comentário explicando o que ele contém e de quais outros módulos depende:
+`assets/js/`, `<script>` comuns carregados em ordem de dependência (funciona também via `file://`):
 
 | Arquivo | Conteúdo |
 |---|---|
-| `01-utils.js` | Funções utilitárias genéricas (RNG, formatação, estatística). |
-| `02-engine-constants.js` | Constantes do motor de progressão. |
-| `03-i18n.js` | Textos PT/EN e helpers de tradução. |
-| `04-operations.js` | Operações suportadas (soma, subtração, ...). |
-| `05-expression-terms.js` | Geração de termos avançados (potência, raiz). |
-| `06-skills-graph.js` | Grafo de habilidades (KC_DEFS) e geradores de exercício. |
-| `07-storage.js` | Persistência local (`Store`). |
-| `08-speed-engine.js` | Motor de velocidade/adaptação (`Engine`). |
-| `09-feedback.js` | Fala do exercício, TTS, som e vibração. |
-| `10-session.js` | Controlador de uma sessão de treino (`Session`). |
-| `11-analytics.js` | Estatísticas agregadas do histórico. |
-| `12-export.js` | Exportação dos dados salvos. |
-| `13-ui.js` | Camada de interface (navegação e renderização das telas). |
-| `14-init.js` | Inicialização do app (bootstrap, service worker). |
-
-`tests/run-tests.js` carrega esses mesmos módulos, na mesma ordem, exceto `14-init.js` (para controlar a inicialização manualmente durante os testes).
+| `01-utils.js` | Utilitários (RNG, estatística, formatação). |
+| `02-engine-constants.js` | **Todas** as constantes de ajuste (zonas, XP, prova, adaptação, rodadas, nível geral). |
+| `03-i18n.js` | Textos PT/EN. |
+| `04-operations.js` | Operações e comparações. |
+| `05-expression-terms.js` | Termos (potência, raiz quadrada/cúbica) e contadores de vai-um/empréstimo. |
+| `06-tracks.js` | Trilhas, levels (meta, forma, dica) e geradores de conta. |
+| `07-storage.js` | `Store`: persistência, saneamento, migração v2 → v3. |
+| `08-speed-engine.js` | `Engine`: planejamento da rodada, geração, `m`, XP, nivelamento, prova, reforço. |
+| `09-feedback.js` | Fala (TTS), sons, vibração. |
+| `10-progress.js` | `Progress`: XP/level geral, meta diária, sequência, semana, estrelas da rodada. |
+| `11-session.js` | `Session`: percorre blocos, mede tempo, aplica XP/combo/meta, fecha a rodada. |
+| `12-analytics.js` | Resumo da rodada e agregados do histórico. |
+| `13-export.js` | CSV/JSON. |
+| `14-ui.js` | Interface. |
+| `15-init.js` | Inicialização e service worker (fora dos testes). |
 
 ## Testes
-
-Com Node.js instalado:
 
 ```sh
 node run-tests.js
 ```
+
+Sem dependências (só Node.js). Cobre geradores (exatidão, forma por level), fala, nivelamento, passo/convergência de `m`, XP, prova, reforço, patentes, simulação de usuários virtuais, `Progress`, saneamento/migração do `Store` e uma rodada completa do `Session` com UI "muda". Layout, teclado e TTS reais não são cobertos: teste manualmente no navegador (ou com Playwright).

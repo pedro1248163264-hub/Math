@@ -1,7 +1,7 @@
 // Mude esta versão sempre que um arquivo listado em ASSETS for alterado.
 // Sem isso, um PWA já instalado pode continuar executando uma cópia antiga
 // dos módulos em assets/js/ no celular, mesmo depois de uma nova publicação.
-const CACHE = 'calculo-rapido-v15';
+const CACHE = 'mental-math-v2-0';
 const ASSETS = [
   './',
   './index.html',
@@ -11,15 +11,16 @@ const ASSETS = [
   './assets/js/03-i18n.js',
   './assets/js/04-operations.js',
   './assets/js/05-expression-terms.js',
-  './assets/js/06-skills-graph.js',
+  './assets/js/06-tracks.js',
   './assets/js/07-storage.js',
   './assets/js/08-speed-engine.js',
   './assets/js/09-feedback.js',
-  './assets/js/10-session.js',
-  './assets/js/11-analytics.js',
-  './assets/js/12-export.js',
-  './assets/js/13-ui.js',
-  './assets/js/14-init.js',
+  './assets/js/10-progress.js',
+  './assets/js/11-session.js',
+  './assets/js/12-analytics.js',
+  './assets/js/13-export.js',
+  './assets/js/14-ui.js',
+  './assets/js/15-init.js',
   './manifest.json',
   './icon.svg'
 ];

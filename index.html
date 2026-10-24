@@ -22,38 +22,75 @@
 
   <!-- ================= HOME ================= -->
   <section class="screen active" id="screen-home">
-    <h1>Mental <span style="color:var(--accent)">Math</span></h1>
-    <p data-i18n="home_tagline">Treine mais rápido. Pense mais afiado. Todos os dias.</p>
-
-    <div class="section-title" style="margin-top:18px;"><h2 data-i18n="home_today">Desempenho de hoje</h2></div>
-    <div class="home-stats">
-      <div class="home-stat"><div class="eyebrow" data-i18n="home_reaction">Tempo de reação</div><div class="v" id="homeReaction" style="color:var(--accent);">-</div><div class="s" id="homeReactionSub">sem dados hoje</div></div>
-      <div class="home-stat"><div class="eyebrow" data-i18n="home_accuracy">Precisão</div><div class="v" id="homeAccuracy" style="color:var(--good);">-</div><div class="s" id="homeAccuracySub">sem dados hoje</div></div>
+    <div class="home-top">
+      <h1>Mental <span style="color:var(--accent)">Math</span></h1>
     </div>
 
-    <button class="btn btn-primary" id="btnStartFromHome" style="margin-top:6px;" data-i18n="start_training">Iniciar treino →</button>
+    <div class="card player-card">
+      <div class="pc-row">
+        <div class="lvl-badge"><span id="homeLevel">1</span></div>
+        <div class="pc-main">
+          <div class="eyebrow" data-i18n="level_word">Nível</div>
+          <div class="pc-title" id="homeTitle">Iniciante</div>
+          <div class="xpbar"><i id="homeXpFill"></i></div>
+          <div class="pc-xp" id="homeXpText">0 / 100 XP</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card goal-card">
+      <div class="goal-row">
+        <div class="goal-ring">
+          <svg viewBox="0 0 100 100"><circle class="gr-bg" cx="50" cy="50" r="44"/><circle class="gr-fg" id="goalRingFg" cx="50" cy="50" r="44"/></svg>
+          <div class="goal-center"><b id="goalNum">0</b><span id="goalOf">/ 40</span></div>
+        </div>
+        <div class="goal-main">
+          <div class="eyebrow" data-i18n="home_today">Meta de hoje</div>
+          <div class="goal-sub" id="goalSub">—</div>
+          <div class="streak-box" id="streakBox"><span class="flame">🔥</span><b id="streakNum">0</b><span id="streakLabel">dias seguidos</span></div>
+          <div class="streak-note" id="streakNote"></div>
+        </div>
+      </div>
+      <div class="week-strip" id="weekStrip"></div>
+    </div>
+
+    <div class="card placement-card hidden" id="placementCard">
+      <h2 data-i18n="placement_card_title">Vamos achar seu ponto de partida</h2>
+      <p data-i18n="placement_card_sub">Contas rápidas em cada trilha ativa.</p>
+    </div>
+
+    <div id="testBanners"></div>
+
+    <button class="btn btn-primary cta" id="btnStart" data-i18n="start_round">Treinar</button>
 
     <div class="quick-row">
       <div class="q"><div class="v" id="homeTotal">0</div><div class="l" data-i18n="exercises">Exercícios</div></div>
-      <div class="q"><div class="v" id="homeSessions">0</div><div class="l" data-i18n="sessions">Sessões</div></div>
-      <div class="q"><div class="v" id="homeStreak">0</div><div class="l" data-i18n="best_streak">Melhor sequência</div></div>
+      <div class="q"><div class="v" id="homeRounds">0</div><div class="l" data-i18n="sessions">Rodadas</div></div>
+      <div class="q"><div class="v" id="homeCombo">0</div><div class="l" data-i18n="best_streak">Melhor sequência</div></div>
     </div>
+  </section>
+
+  <!-- ================= TRACKS ================= -->
+  <section class="screen" id="screen-tracks">
+    <div class="navbar"><div class="title" data-i18n="tracks_title">Trilhas</div></div>
+    <p style="margin:-8px 0 14px 0;" data-i18n="tracks_sub">Cada trilha é uma escada de levels.</p>
+    <div id="trackList"></div>
   </section>
 
   <!-- ================= TRAINING ================= -->
   <section class="screen" id="screen-training">
     <div class="train-top">
-      <div class="ring-wrap">
-        <svg viewBox="0 0 52 52"><circle class="ring-bg" cx="26" cy="26" r="22"/><circle class="ring-fg" id="ringFg" cx="26" cy="26" r="22" stroke-dasharray="138" stroke-dashoffset="0"/></svg>
-        <div class="ring-label" id="ringLabel">--</div>
-      </div>
-      <div class="training-time-spacer"></div>
-      <button class="pause-btn" id="btnPause">⏸</button>
-      <button class="pause-btn" id="btnExitTraining" style="margin-left:8px;" data-i18n-aria="exit_training" aria-label="Sair do treino">✕</button>
+      <button class="pause-btn" id="btnExitTraining" data-i18n-aria="exit_training" aria-label="Sair do treino">✕</button>
+      <div class="hud-bar"><i id="hudBarFill"></i></div>
+      <button class="pause-btn" id="btnPause" aria-label="Pausar">⏸</button>
+    </div>
+    <div class="hud-row">
+      <div class="hud-chip" id="hudChip" data-kind="practice"><span class="cs" id="chipSym">+</span><span class="cn" id="chipName">Soma</span><span class="cl" id="chipLevel"></span><span class="ct" id="chipTag"></span></div>
+      <div class="hud-right"><span class="hud-combo" id="hudCombo"></span><span class="hud-xp" id="hudXp">+0 XP</span></div>
     </div>
 
     <div class="equation-zone" id="equationZone">
-      <div class="math-card"><div class="equation" id="equationText">7 × 8</div></div>
+      <div class="math-card"><div class="equation" id="equationText">7 × 8</div><div class="xp-pop-wrap" id="xpPop"></div></div>
       <div class="feedback-answer" id="feedbackAnswer"></div>
       <div class="feedback-hint" id="feedbackHint"></div>
       <div class="pulse-strip" id="pulseStrip"></div>
@@ -63,64 +100,94 @@
       <div id="answerDisplay">&nbsp;</div>
       <div class="keypad" id="keypad"></div>
     </div>
-  </section>
 
-  <!-- ================= TRAINING CONFIG ================= -->
-  <section class="screen" id="screen-config">
-    <div class="navbar">
-      <button class="back" id="btnBackSettings">‹</button>
-      <div class="title" data-i18n="config_title">Configurar sessão</div>
+    <div class="overlay hidden" id="overlayIntro">
+      <div class="ov-card">
+        <div class="ov-sym" id="ovSym">+</div>
+        <div class="eyebrow" id="ovKind"></div>
+        <h2 id="ovTitle"></h2>
+        <p id="ovSub"></p>
+        <div class="ov-goal" id="ovGoal"></div>
+        <div class="ov-tip hidden" id="ovTip"></div>
+        <button class="btn btn-primary" id="ovGo">Vamos!</button>
+      </div>
     </div>
-    <div class="card">
-      <div class="section-title"><h2 data-i18n="speed_skills">Habilidades em foco</h2></div>
-      <p data-i18n="speed_skills_sub">Escolha uma ou mais famílias. Todas já estão disponíveis.</p>
-      <div id="skillSelectAllRow" style="margin-top:6px;"></div>
-      <div class="chip-grid" id="skillChips" style="margin-top:10px;"></div>
+    <div class="overlay hidden" id="overlayResult">
+      <div class="ov-card">
+        <div class="ov-sym" id="resSym">+</div>
+        <h2 id="resTitle"></h2>
+        <div class="res-stars" id="resStars"></div>
+        <p id="resLine"></p>
+        <div class="res-note" id="resNote"></div>
+        <div class="res-xp" id="resXp"></div>
+        <button class="btn btn-primary" id="resGo">Continuar</button>
+      </div>
     </div>
-    <div class="card">
-      <div class="section-title"><h2 data-i18n="training_mode">Modo de treino</h2></div>
-      <div class="chip-grid" id="modeChips"></div>
-      <div id="modeParams" style="margin-top:12px;"></div>
-    </div>
-    <div class="card" id="settingsCard">
-      <div class="section-title"><h2 data-i18n="options">Opções</h2></div>
-      <div id="sessionOptionsList"></div>
-    </div>
-  </section>
-
-  <!-- ================= REST / HIIT ================= -->
-  <section class="screen" id="screen-rest">
-    <div class="rest-overlay">
-      <div class="eyebrow" data-i18n="rest">Descanso</div>
-      <div class="big" id="restCount">10</div>
-      <p data-i18n="rest_msg">Respire. O próximo bloco começa em instantes.</p>
+    <div class="overlay hidden" id="overlayPause">
+      <div class="ov-card">
+        <h2 data-i18n="paused">Pausado</h2>
+        <button class="btn btn-primary" id="btnResume" data-i18n="continue_btn">Continuar</button>
+        <button class="btn btn-ghost" id="btnPauseExit" style="margin-top:10px;" data-i18n="exit_training">Sair do treino</button>
+      </div>
     </div>
   </section>
 
   <!-- ================= SUMMARY ================= -->
   <section class="screen" id="screen-summary">
-    <h1 data-i18n="summary_title">Resumo da sessão</h1>
+    <div class="sum-hero">
+      <div class="eyebrow" id="sumKicker">Rodada concluída</div>
+      <div class="sum-stars" id="sumStars"></div>
+      <div class="sum-xp" id="sumXp">+0 XP</div>
+      <div class="sum-xp-sub" id="sumXpSub"></div>
+    </div>
+
     <div class="card">
-      <div class="metric-grid">
-        <div class="metric"><div class="val" id="sumAvg">-</div><div class="lab" data-i18n="median_cognitive">Tempo mediano</div></div>
-        <div class="metric"><div class="val" id="sumAcc">-</div><div class="lab" data-i18n="accuracy_cap">Precisão</div></div>
-        <div class="metric"><div class="val" id="sumCog">-</div><div class="lab" data-i18n="cognitive_time">Tempo cognitivo</div></div>
-        <div class="metric"><div class="val" id="sumMotor">-</div><div class="lab" data-i18n="motor_time">Tempo motor</div></div>
-        <div class="metric"><div class="val" id="sumFluency">-</div><div class="lab" data-i18n="target_rate">Dentro da meta</div></div>
+      <div class="pc-row">
+        <div class="pc-main">
+          <div class="sum-lvl-row"><b id="sumPlayerLevel">Nível 1</b><span id="sumPlayerTitle"></span><span class="lvl-up hidden" id="sumPlayerUp">▲</span></div>
+          <div class="xpbar"><i id="sumPlayerFill"></i></div>
+          <div class="pc-xp" id="sumPlayerText"></div>
+        </div>
       </div>
     </div>
+
+    <div class="card">
+      <div class="sum-lvl-row"><b data-i18n="home_today">Meta de hoje</b><span id="sumGoalCount"></span><span id="sumStreak" class="sum-streak"></span></div>
+      <div class="xpbar goal"><i id="sumGoalFill"></i></div>
+      <div class="pc-xp" id="sumGoalText"></div>
+    </div>
+
+    <div class="card">
+      <div class="metric-grid">
+        <div class="metric"><div class="val" id="sumAcc">-</div><div class="lab" data-i18n="accuracy_cap">Precisão</div></div>
+        <div class="metric"><div class="val" id="sumTarget">-</div><div class="lab" data-i18n="target_rate">Dentro da meta</div></div>
+        <div class="metric"><div class="val" id="sumCombo">-</div><div class="lab" data-i18n="max_combo">Melhor combo</div></div>
+        <div class="metric"><div class="val" id="sumTotal">-</div><div class="lab" data-i18n="exercises">Contas</div></div>
+      </div>
+    </div>
+
+    <div class="card" id="sumTracksCard">
+      <div class="section-title"><h2 data-i18n="by_track">Por trilha</h2></div>
+      <div id="sumTracks"></div>
+    </div>
+
+    <div class="card">
+      <div class="section-title"><h2 data-i18n="rewards">Conquistas</h2></div>
+      <div id="sumRewards"></div>
+    </div>
+
     <div class="card">
       <div class="section-title"><h2 data-i18n="biggest_gain">Maior evolução</h2></div>
       <p id="sumEvolution">—</p>
-    </div>
-    <div class="card">
-      <div class="section-title"><h2 data-i18n="main_bottleneck">Principal gargalo</h2></div>
+      <div class="section-title" style="margin-top:14px;"><h2 data-i18n="main_bottleneck">Ponto de atenção</h2></div>
       <p id="sumBottleneck">—</p>
     </div>
-    <div class="btn-row">
-      <button class="btn btn-ghost" id="btnGoHistory" data-i18n="view_history">Ver histórico</button>
-      <button class="btn btn-primary" id="btnNewSession" data-i18n="new_training">Novo treino</button>
+
+    <div class="btn-row sticky-actions">
+      <button class="btn btn-ghost" id="btnFinish" data-i18n="finish">Concluir</button>
+      <button class="btn btn-primary" id="btnAnotherRound" data-i18n="another_round">Mais uma rodada</button>
     </div>
+    <button class="link-btn" id="btnGoHistory" data-i18n="view_history">Ver histórico</button>
   </section>
 
   <!-- ================= STATS ================= -->
@@ -128,46 +195,56 @@
     <div class="navbar"><div class="title" data-i18n="stats_title">Estatísticas</div></div>
 
     <div class="home-stats">
-      <div class="home-stat"><div class="eyebrow" data-i18n="avg_accuracy">Precisão média</div><div class="v" id="statAccAvg" style="color:var(--good);">-</div><div class="s" id="statAccAvgSub">-</div></div>
-      <div class="home-stat"><div class="eyebrow" data-i18n="avg_time_item">Tempo médio / conta</div><div class="v" id="statTimeAvg" style="color:var(--accent);">-</div><div class="s" data-i18n="all_operations">todas as operações</div></div>
+      <div class="home-stat"><div class="eyebrow" data-i18n="avg_accuracy">Precisão média</div><div class="v" id="statAcc" style="color:var(--good);">-</div><div class="s" id="statAccSub">-</div></div>
+      <div class="home-stat"><div class="eyebrow" data-i18n="target_rate">Dentro da meta</div><div class="v" id="statTarget" style="color:var(--accent);">-</div><div class="s" id="statTargetSub">-</div></div>
     </div>
 
     <div class="card">
-      <div class="section-title"><h2 data-i18n="evolution_time">Evolução — tempo médio</h2></div>
-      <svg class="chart" id="chartAvg"></svg>
+      <div class="section-title"><h2 data-i18n="daily_chart">Contas por dia</h2></div>
+      <svg class="chart" id="chartDaily"></svg>
     </div>
     <div class="card">
       <div class="section-title"><h2 data-i18n="evolution_acc">Evolução — precisão</h2></div>
       <svg class="chart" id="chartAcc"></svg>
     </div>
+    <div class="card">
+      <div class="section-title"><h2 data-i18n="evolution_target">Evolução — dentro da meta</h2></div>
+      <svg class="chart" id="chartTarget"></svg>
+    </div>
+
+    <div class="card" id="statTracksCard">
+      <div class="section-title"><h2 data-i18n="by_track">Por trilha</h2></div>
+      <div id="statTracks"></div>
+    </div>
 
     <div class="card">
       <div class="metric-grid">
-        <div class="metric"><div class="val" id="histMedian">-</div><div class="lab" data-i18n="median">Mediana</div></div>
-        <div class="metric"><div class="val" id="histP90">-</div><div class="lab" data-i18n="p90">Percentil 90</div></div>
-        <div class="metric"><div class="val" id="histStreak">-</div><div class="lab" data-i18n="best_streak">Melhor sequência</div></div>
-        <div class="metric"><div class="val" id="histSessions">-</div><div class="lab" data-i18n="sessions">Sessões</div></div>
-        <div class="metric"><div class="val" id="histFluency">-</div><div class="lab" data-i18n="target_rate">Dentro da meta</div></div>
+        <div class="metric"><div class="val" id="histItems">-</div><div class="lab" data-i18n="exercises">Contas</div></div>
+        <div class="metric"><div class="val" id="histRounds">-</div><div class="lab" data-i18n="sessions">Rodadas</div></div>
+        <div class="metric"><div class="val" id="histXp">-</div><div class="lab" data-i18n="xp_word">XP</div></div>
+        <div class="metric"><div class="val" id="histStars">-</div><div class="lab" data-i18n="stars_word">Estrelas</div></div>
+        <div class="metric"><div class="val" id="histCombo">-</div><div class="lab" data-i18n="max_combo">Melhor combo</div></div>
+        <div class="metric"><div class="val" id="histStreakBest">-</div><div class="lab" data-i18n="best_day_streak">Melhor sequência de dias</div></div>
       </div>
     </div>
-
   </section>
 
   <!-- ================= SETTINGS ================= -->
   <section class="screen" id="screen-settings">
     <div class="navbar"><div class="title" data-i18n="settings_title">Ajustes</div></div>
-    <button class="btn btn-primary" id="btnToggleTrainingConfig" data-i18n="configure_training">Configurar treino</button>
     <div id="appSettingsList"></div>
-    <div class="app-version">Mental Math v1.0.1</div>
+    <div class="app-version">Mental Math v2.0.0</div>
   </section>
 
   <nav class="tabbar">
     <button class="tab active" data-tab="home"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><path d="M9 22V12h6v10"/></svg><span data-i18n="tab_home">Início</span></button>
+    <button class="tab" data-tab="tracks"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 20h4v-5H4zM10 20h4V9h-4zM16 20h4V4h-4z"/></svg><span data-i18n="tab_tracks">Trilhas</span></button>
     <button class="tab" data-tab="stats"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18"/><path d="M18.7 8l-5.1 5.1-2.8-2.8L7 14"/></svg><span data-i18n="tab_stats">Estatísticas</span></button>
     <button class="tab" data-tab="settings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06A1.65 1.65 0 004.6 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06A1.65 1.65 0 009 4.6a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 112.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg><span data-i18n="tab_settings">Ajustes</span></button>
   </nav>
 </div>
 <div class="toast" id="toast"></div>
+<canvas id="confetti"></canvas>
   <!-- Motor do app dividido em módulos por responsabilidade (assets/js/).
        São <script> comuns (sem type="module") carregados em ordem de
        dependência, para que o app funcione também abrindo index.html
@@ -177,14 +254,15 @@
   <script src="assets/js/03-i18n.js"></script>
   <script src="assets/js/04-operations.js"></script>
   <script src="assets/js/05-expression-terms.js"></script>
-  <script src="assets/js/06-skills-graph.js"></script>
+  <script src="assets/js/06-tracks.js"></script>
   <script src="assets/js/07-storage.js"></script>
   <script src="assets/js/08-speed-engine.js"></script>
   <script src="assets/js/09-feedback.js"></script>
-  <script src="assets/js/10-session.js"></script>
-  <script src="assets/js/11-analytics.js"></script>
-  <script src="assets/js/12-export.js"></script>
-  <script src="assets/js/13-ui.js"></script>
-  <script src="assets/js/14-init.js"></script>
+  <script src="assets/js/10-progress.js"></script>
+  <script src="assets/js/11-session.js"></script>
+  <script src="assets/js/12-analytics.js"></script>
+  <script src="assets/js/13-export.js"></script>
+  <script src="assets/js/14-ui.js"></script>
+  <script src="assets/js/15-init.js"></script>
 </body>
 </html>

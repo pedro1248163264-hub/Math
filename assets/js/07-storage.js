@@ -1,152 +1,140 @@
 /* =====================================================================
    assets/js/07-storage.js — persistência local (localStorage): defaults,
-   migração de versões antigas de settings e o objeto Store usado por todo
-   o app para ler/gravar estado.
-   Depende de: 02-engine-constants.js, 04-operations.js.
-   Usado por: todos os módulos que leem configurações, perfis de
-   habilidade ou histórico (Engine, Session, Analytics, Export, UI).
+   migração (inclusive do formato antigo "v2") e o objeto Store usado por
+   todo o app para ler/gravar estado.
+   Depende de: 01-utils.js, 02-engine-constants.js, 06-tracks.js.
+   Usado por: todos os módulos que leem configurações, trilhas, XP ou
+   histórico (Engine, Progress, Session, Analytics, Export, UI).
    ===================================================================== */
 
 /* ---------- 5. STORAGE LOCAL (localStorage, tudo offline) ---------- */
-const DB_KEY = 'calcrapido_db_v2';
-const SETTINGS_VERSION = 5;
-const CALIBRATION_ITEMS = 8;
-const DEFAULT_SELECTED_SKILLS = ['soma_2d_cc','sub_2d_ce','mult_11_19','mult_2d','pct_intermediario','potencia_basica','radical_quad'];
+const DB_KEY = 'calcrapido_db_v3';
+const OLD_DB_KEY = 'calcrapido_db_v2';   // formato anterior (famílias de cálculo) — só migramos histórico e ajustes
+const SETTINGS_VERSION = 6;
+// Ajustes do formato antigo que continuam valendo no novo.
+const CARRIED_SETTINGS = ['appLang','theme','fontScale','tts','hideDuringTts','voiceRate','voiceLang',
+  'vibration','sounds','gapMs','correctAnswerShowMs','confirmBeforeAccept','stopClockOnFirstKey','focusMode','masteryFlash'];
+
 const Store = {
   data: null,
   defaults(){
     return {
       settings:{
-        ops:defaultOpsMap(),
-        mode:'ultimate',
-        intWork:30, intRest:10, intCycles:4,
-        ultimateGoalMinutes:20,
-        tts:false, hideDuringTts:false,
+        appLang:'pt', theme:'dark', fontScale:1,
+        tts:false, hideDuringTts:false, voiceRate:1.0, voiceLang:'pt-BR',
         vibration:true, sounds:true,
         gapMs:400, correctAnswerShowMs:900,
-        answerTimeoutSeconds:10,
-        voiceRate:1.0, voiceLang:'pt-BR',
-        theme:'dark', fontScale:1,
-        appLang:'pt',         stopClockOnFirstKey:true,
-        confirmBeforeAccept:true,
-        focusMode:false,
-        masteryFlash:true,
-        selectedSkills:[...DEFAULT_SELECTED_SKILLS],
-        selectAllSkills:true
+        confirmBeforeAccept:true, stopClockOnFirstKey:true,
+        focusMode:false, masteryFlash:true,
+        dailyGoal:DEFAULT_DAILY_GOAL,   // contas por dia
+        roundSize:'normal',             // short | normal | long
+        challenge:'balanced',           // gentle | balanced | intense  (taxa de acerto desejada)
+        activeTracks:[...DEFAULT_ACTIVE_TRACKS]
       },
       settingsVersion:SETTINGS_VERSION,
-      kc:{},
-      speedProfiles:{},
+      tracks:{},                        // estado de cada trilha (ver Engine.newTrack)
+      player:{xp:0, rounds:0, items:0, createdAt:Date.now()},
+      daily:{},                         // 'AAAA-MM-DD' → {items, correct, xp, goalHit}
+      streak:{current:0, best:0, lastGoalDay:''},
+      seenTips:{},                      // 'trilha:level' → true (dica do level já mostrada)
+      onboarded:false,
       history:[],
-      bestStreak:0
+      bestStreak:0                      // melhor sequência de acertos (dentro de uma rodada)
     };
+  },
+  // Mescla um objeto salvo sobre os defaults e saneia cada campo (nunca confia no que veio).
+  normalize(raw){
+    const d = this.defaults(), base = this.defaults().settings;
+    const out = d;
+    const src = (raw && typeof raw==='object') ? raw : {};
+    out.settings = Object.assign({}, d.settings, src.settings||{});
+    const s = out.settings;
+    if(!['pt','en'].includes(s.appLang)) s.appLang = 'pt';
+    if(!['dark','light','auto'].includes(s.theme)) s.theme = 'dark';
+    if(!['pt-BR','en-US'].includes(s.voiceLang)) s.voiceLang = 'pt-BR';
+    s.fontScale = [0.9,1,1.15].includes(+s.fontScale) ? +s.fontScale : 1;
+    if(!DAILY_GOALS.includes(+s.dailyGoal)) s.dailyGoal = DEFAULT_DAILY_GOAL; else s.dailyGoal = +s.dailyGoal;
+    if(!ROUND_SIZES[s.roundSize]) s.roundSize = 'normal';
+    if(!CHALLENGE_LEVELS[s.challenge]) s.challenge = 'balanced';
+    s.activeTracks = Array.isArray(s.activeTracks) ? s.activeTracks.filter(k=>TRACKS[k]) : [];
+    if(!s.activeTracks.length) s.activeTracks = [...DEFAULT_ACTIVE_TRACKS];
+    ['tts','hideDuringTts','vibration','sounds','confirmBeforeAccept','stopClockOnFirstKey','focusMode','masteryFlash']
+      .forEach(k=>{ s[k] = !!s[k]; });
+    s.gapMs = U.clamp(Math.round(+s.gapMs)||base.gapMs, 100, 1200);
+    s.correctAnswerShowMs = U.clamp(Math.round(+s.correctAnswerShowMs)||base.correctAnswerShowMs, 500, 2000);
+    s.voiceRate = U.clamp(+s.voiceRate||1, 0.5, 2);
+
+    out.tracks = {};
+    const rawTracks = (src.tracks && typeof src.tracks==='object') ? src.tracks : {};
+    Object.keys(rawTracks).forEach(key=>{
+      if(!TRACKS[key]) return;
+      const t = rawTracks[key] || {}, n = TRACKS[key].levels.length;
+      const tr = Engine.newTrack(key);
+      tr.level = U.clamp(Math.round(+t.level)||1, 1, n);
+      tr.xp = Math.max(0, +t.xp||0);
+      tr.m = U.clamp(Number.isFinite(+t.m) ? +t.m : M_START, 0, 1);
+      tr.rank = U.clamp(Math.round(+t.rank)||0, 0, RANK_MAX);
+      tr.placed = !!t.placed; tr.testReady = !!t.testReady; tr.done = !!t.done;
+      tr.reinforce = t.reinforce ? 1 : 0;
+      tr.stars = {};
+      if(t.stars && typeof t.stars==='object') Object.keys(t.stars).forEach(l=>{ const v=+t.stars[l]; if(+l>=1 && +l<=n && v>=1) tr.stars[l] = Math.min(3, Math.round(v)); });
+      tr.strength = U.clamp(Number.isFinite(+t.strength) ? +t.strength : 0.6, 0, 1);
+      tr.window = Array.isArray(t.window) ? t.window.filter(w=>w && Number.isFinite(w.ms)).slice(-WINDOW_SIZE) : [];
+      tr.items = Math.max(0, Math.round(+t.items)||0);
+      tr.lastPracticeAt = Number.isFinite(+t.lastPracticeAt) ? +t.lastPracticeAt : 0;
+      tr.recentPairs = Array.isArray(t.recentPairs) ? t.recentPairs.filter(x=>typeof x==='string').slice(-24) : [];
+      ['patternWeights','digitWeights','patternErrorStreak','hotPairs','bestMedian'].forEach(f=>{
+        tr[f] = (t[f] && typeof t[f]==='object') ? t[f] : {};
+      });
+      if(tr.done && tr.level!==n) tr.level = n;
+      out.tracks[key] = tr;
+    });
+
+    const p = (src.player && typeof src.player==='object') ? src.player : {};
+    out.player = {xp:Math.max(0,Math.round(+p.xp)||0), rounds:Math.max(0,Math.round(+p.rounds)||0),
+      items:Math.max(0,Math.round(+p.items)||0), createdAt:Number.isFinite(+p.createdAt)?+p.createdAt:Date.now()};
+    out.daily = (src.daily && typeof src.daily==='object') ? src.daily : {};
+    Object.keys(out.daily).forEach(k=>{
+      const e = out.daily[k];
+      if(!/^\d{4}-\d{2}-\d{2}$/.test(k) || !e || typeof e!=='object'){ delete out.daily[k]; return; }
+      out.daily[k] = {items:Math.max(0,+e.items||0), correct:Math.max(0,+e.correct||0), xp:Math.max(0,+e.xp||0), goalHit:!!e.goalHit};
+    });
+    const st = (src.streak && typeof src.streak==='object') ? src.streak : {};
+    out.streak = {current:Math.max(0,Math.round(+st.current)||0), best:Math.max(0,Math.round(+st.best)||0),
+      lastGoalDay:/^\d{4}-\d{2}-\d{2}$/.test(st.lastGoalDay||'') ? st.lastGoalDay : ''};
+    out.seenTips = (src.seenTips && typeof src.seenTips==='object') ? src.seenTips : {};
+    out.onboarded = !!src.onboarded;
+    out.history = Array.isArray(src.history) ? src.history.filter(h=>h && typeof h==='object') : [];
+    out.bestStreak = Math.max(0, Math.round(+src.bestStreak)||0);
+    out.settingsVersion = SETTINGS_VERSION;
+    return out;
   },
   load(){
     try{
       const raw = localStorage.getItem(DB_KEY);
-      this.data = raw ? JSON.parse(raw) : this.defaults();
-      const d = this.defaults();
-      this.data.settings = Object.assign({}, d.settings, this.data.settings||{});
-      // Migra instalações antigas, que tinham aceitação automática como padrão.
-      // A pessoa ainda pode desligar a opção nas configurações, mas uma atualização
-      // não deve manter silenciosamente o comportamento que causava o problema.
-      const oldSettingsVersion = this.data.settingsVersion||0;
-      const mustEnableManualConfirmation = oldSettingsVersion < 2;
-      if(mustEnableManualConfirmation){
-        this.data.settings.confirmBeforeAccept = true;
+      if(raw){
+        this.data = this.normalize(JSON.parse(raw));
+      } else {
+        // Primeira abertura com o formato novo: aproveita ajustes e histórico do formato antigo
+        // (as famílias antigas não têm equivalente 1:1 nas trilhas — recomeça pelo nivelamento).
+        const oldRaw = localStorage.getItem(OLD_DB_KEY);
+        if(oldRaw){
+          const old = JSON.parse(oldRaw) || {};
+          const carried = {};
+          CARRIED_SETTINGS.forEach(k=>{ if(old.settings && old.settings[k]!==undefined) carried[k] = old.settings[k]; });
+          this.data = this.normalize({settings:carried, history:old.history, bestStreak:old.bestStreak});
+          this.data.onboarded = false;
+          this._persist();
+        } else {
+          this.data = this.normalize({});
+        }
       }
-      // BUGFIX: "ops" é um objeto aninhado, então o Object.assign acima troca o objeto
-      // inteiro pelo salvo — qualquer operação nova adicionada em uma atualização do app
-      // (como "expressao") ficaria invisível para quem já tinha dados salvos. Mesclamos
-      // o nível de "ops" também, preservando as escolhas do usuário para as já existentes.
-      this.data.settings.ops = Object.assign({}, d.settings.ops, this.data.settings.ops||{});
-      // BUGFIX/revisão v2: os modos "Rapidez" (sprint) e "Resistência" (resistencia) foram
-      // removidos (substituídos pelo modo único "ultimate"). Uma instalação antiga com um
-      // desses salvo em settings.mode cairia num modo que não existe mais no seletor —
-      // migra silenciosamente para "ultimate" em vez de deixar a sessão sem iniciar.
-      if(!['ultimate','intervalado','hiit'].includes(this.data.settings.mode)){
-        this.data.settings.mode = 'ultimate';
-      }
-      const savedGoal = Number(this.data.settings.ultimateGoalMinutes);
-      this.data.settings.ultimateGoalMinutes = Number.isFinite(savedGoal)
-        ? U.clamp(Math.round(savedGoal), 0, 180) : d.settings.ultimateGoalMinutes;
-      const savedAnswerTimeout = Number(this.data.settings.answerTimeoutSeconds);
-      this.data.settings.answerTimeoutSeconds = Number.isFinite(savedAnswerTimeout)
-        ? U.clamp(Math.round(savedAnswerTimeout), 3, 60)
-        : d.settings.answerTimeoutSeconds;
-      // BUGFIX: espanhol (es-ES) foi removido das vozes suportadas — quem tinha essa opção
-      // salva de uma versão anterior cairia numa opção que não existe mais no seletor.
-      if(!['pt-BR','en-US'].includes(this.data.settings.voiceLang)) this.data.settings.voiceLang = 'pt-BR';
-      this.data.kc = this.data.kc || {};
-      this.data.speedProfiles = this.data.speedProfiles || {};
-      // Migra o histórico adaptativo anterior para perfis de velocidade, sem apagar
-      // medições já coletadas. Famílias ainda não usadas são calibradas ao serem escolhidas.
-      Object.keys(this.data.kc).forEach(key=>{
-        if(!KC_DEFS[key] || this.data.speedProfiles[key]) return;
-        const old = this.data.kc[key];
-        const samples = (old.window||[]).filter(w=>w && Number.isFinite(w.ms)).slice(-20)
-          .map(w=>({ms:w.ms, correct:!!w.correct, targetHit:false, at:w.t||Date.now()}));
-        const correct = samples.filter(s=>s.correct).map(s=>s.ms);
-        const baseline = correct.length ? U.median(correct) : (old.rtBaseline||Engine.defaultBaseline(KC_DEFS[key].op));
-        this.data.speedProfiles[key] = {
-          key, calibration:correct.slice(0,CALIBRATION_ITEMS), baselineMs:Math.round(baseline),
-          targetMs:Math.round(baseline*0.85), difficulty:0.3, level:0,
-          window:samples, bestMs:null, lastPracticeAt:old.lastPracticeAt||0
-        };
-      });
-      Object.keys(this.data.speedProfiles).forEach(key=>{
-        if(!KC_DEFS[key]){ delete this.data.speedProfiles[key]; return; }
-        const p=this.data.speedProfiles[key];
-        p.calibration=Array.isArray(p.calibration)?p.calibration.filter(Number.isFinite):[];
-        p.window=Array.isArray(p.window)?p.window.filter(w=>w&&Number.isFinite(w.ms)).map(w=>Object.assign({calibration:false},w)):[];
-        p.difficulty=Number.isFinite(p.difficulty)?U.clamp(p.difficulty,0,1):0.3;
-        p.retentionPasses=Number.isFinite(p.retentionPasses)?p.retentionPasses:0;
-        p.reviewResults=Array.isArray(p.reviewResults)?p.reviewResults.filter(r=>r&&typeof r.correct==='boolean').slice(-RETENTION_REVIEW_ITEMS):[];
-        p.masteredAt=Number.isFinite(p.masteredAt)?p.masteredAt:0;
-        p.nextReviewAt=Number.isFinite(p.nextReviewAt)?p.nextReviewAt:0;
-        p.lastReviewAt=Number.isFinite(p.lastReviewAt)?p.lastReviewAt:0;
-        // Revisão v2: novos campos por perfil — Elo contínuo (samplesInStage, ver K-factor
-        // em 08-speed-engine.js) e peso por padrão interno (patternWeights, seç. 3, nunca
-        // exposto em tela). Perfis salvos antes desta versão simplesmente começam neutros.
-        p.samplesInStage=Number.isFinite(p.samplesInStage)?p.samplesInStage:0;
-        p.patternWeights=(p.patternWeights&&typeof p.patternWeights==='object')?p.patternWeights:{};
-        // Peso por dígito/linha (substitui os "fatos fracos" da tabuada): pesos por dígito
-        // (2–9 / 11–19) das famílias de multiplicação/divisão de dígitos únicos — mede a
-        // dificuldade com o dígito, não com o produto exato. Perfis salvos antes desta versão
-        // começam neutros (factWeights antigos ficam inertes no objeto, sem serem lidos).
-        p.digitWeights=(p.digitWeights&&typeof p.digitWeights==='object')?p.digitWeights:{};
-        // Hint por padrão de erro (Andaime): contador de erros SEGUIDOS por atributo/bucket
-        // (mesma chave usada em patternWeights) — usado só para decidir quando mostrar uma
-        // dica tática (PATTERN_HINT_STREAK), nunca persiste nada visível em tela.
-        p.patternErrorStreak=(p.patternErrorStreak&&typeof p.patternErrorStreak==='object')?p.patternErrorStreak:{};
-        // hotPairs: dicionário esparso "a_b" -> {rtEwma, n, streakGood}. Só existe pra pares que
-        // já dispararam o gatilho — a maioria das combinações nunca aparece aqui.
-        p.hotPairs=(p.hotPairs&&typeof p.hotPairs==='object')?p.hotPairs:{};
-      });
-      if(!Array.isArray(this.data.settings.selectedSkills) || !this.data.settings.selectedSkills.length){
-        this.data.settings.selectedSkills = [...DEFAULT_SELECTED_SKILLS];
-      }
-      this.data.settings.selectedSkills = this.data.settings.selectedSkills.filter(k=>KC_DEFS[k]);
-      // Se "todas as contas" estava ativo, garante que famílias novas (adicionadas em
-      // atualizações do app) também entrem na seleção, e não fiquem de fora silenciosamente.
-      if(this.data.settings.selectAllSkills) this.data.settings.selectedSkills = [...KC_ORDER];
-      // BUGFIX/revisão v2: "drillMode" (Foco/Misto) foi removido — o motor de sequência
-      // único (interleaving ponderado + retry pós-erro) substitui os dois. Instalações
-      // antigas podem ter o campo salvo; ele simplesmente não é mais lido em lugar nenhum.
-      delete this.data.settings.drillMode;
-      this.data.history = this.data.history || [];
-      this.data.bestStreak = this.data.bestStreak || 0;
-      this.data.settingsVersion = SETTINGS_VERSION;
-      if(oldSettingsVersion < SETTINGS_VERSION) this.save();
-    }catch(e){ this.data = this.defaults(); }
+    }catch(e){ this.data = this.normalize({}); }
     return this.data;
   },
-  // Persistência não-bloqueante: gravar no localStorage é síncrono e acontece no caminho
-  // de cada resposta (o Engine salva a cada conta fechada). No celular esse write no meio
-  // do handler do teclado congela a thread principal por alguns ms — é o "teclado lento".
-  // save() agora adia e consolida: chamadas seguidas geram UMA escrita, numa tarefa
-  // separada, fora do caminho do toque. Para não perder dados ao fechar/enviar a aba a
-  // background logo depois, um flush final acontece em visibilitychange/pagehide.
+  // Persistência não-bloqueante: gravar no localStorage é síncrono e acontece a cada resposta.
+  // save() adia e consolida: chamadas seguidas geram UMA escrita, fora do caminho do toque.
+  // Um flush final acontece em visibilitychange/pagehide para não perder dados.
   save(){
     if(this._saveTimer) clearTimeout(this._saveTimer);
     this._saveTimer = setTimeout(()=>{ this._saveTimer=null; this._persist(); }, 200);
@@ -169,6 +157,5 @@ const Store = {
       window.addEventListener('pagehide', flush);
     }
   },
-  reset(){ this.data = this.defaults(); this._persist(); }
+  reset(){ this.data = this.normalize({}); this._persist(); }
 };
-
