@@ -351,11 +351,11 @@ const UI = {
       grid.appendChild(btn);
     });
     const decBtn = document.createElement('button');
-    decBtn.className = 'key func wide3'; decBtn.textContent = U.decimalSep();
+    decBtn.className = 'key func'; decBtn.textContent = U.decimalSep();
     this.pressKey(decBtn, ()=>Session.submitDigit('dec'));
     grid.appendChild(decBtn);
     const okBtn = document.createElement('button');
-    okBtn.className = 'key func wide3'; okBtn.dataset.ok = '1'; okBtn.textContent = '✓';
+    okBtn.className = 'key func wide2'; okBtn.dataset.ok = '1'; okBtn.textContent = '✓';
     this.pressKey(okBtn, ()=>Session.evaluate(false));
     grid.appendChild(okBtn);
   },
