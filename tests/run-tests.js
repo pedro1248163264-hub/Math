@@ -72,6 +72,7 @@ function runBlock(spec, user){
 /* ---------- 1. GERADORES ---------- */
 function evalItem(it){
   const f = it.features||{};
+  if(f.neg){ let v=it.terms[0].value; for(let i=0;i<it.ops.length;i++) v=applyOp2(it.ops[i],v,it.terms[i+1].value); return v; }
   switch(it.op){
     case 'soma': return it.a+it.b;
     case 'subtracao': return it.a-it.b;
@@ -88,7 +89,14 @@ function evalItem(it){
     case 'fracao_comparacao': return Math.sign(it.a*it.d-it.c*it.b);
     case 'equacao': return null;
     default:
-      if(it.terms){ let v=it.terms[0].value; for(let i=0;i<it.ops.length;i++) v=applyOp2(it.ops[i],v,it.terms[i+1].value); return v; }
+      if(it.terms){ // precedência: × e ÷ antes de + e −
+        const vals=[it.terms[0].value], ops=[];
+        for(let i=0;i<it.ops.length;i++){
+          if(it.ops[i]==='multiplicacao'||it.ops[i]==='divisao') vals[vals.length-1]=applyOp2(it.ops[i],vals[vals.length-1],it.terms[i+1].value);
+          else { ops.push(it.ops[i]); vals.push(it.terms[i+1].value); }
+        }
+        let v=vals[0]; for(let i=0;i<ops.length;i++) v=applyOp2(ops[i],v,vals[i+1]); return v;
+      }
       if(it.op==='expressao'){
         if(it.midOp){ const l=applyOp2(it.leftOp,it.a,it.b), r=applyOp2(it.rightOp,it.c,it.d); return applyOp2(it.midOp,l,r); }
         return applyOp2(it.outerOp, applyOp2(it.innerOp,it.a,it.b), it.c);
@@ -97,7 +105,7 @@ function evalItem(it){
   return undefined;
 }
 freshStore();
-let genProblems = 0, genTotal = 0; const genSamples = [];
+let genProblems = 0, genTotal = 0, negAnswers = 0; const negItems = {}, negAns = {}; const genSamples = [];
 for(const key of TRACK_ORDER){
   const n = TRACKS[key].levels.length;
   for(let L=1; L<=n; L++){
@@ -119,7 +127,9 @@ for(const key of TRACK_ORDER){
           if(!Number.isInteger(it.answer)) bad('x não inteiro');
         }
         if(it.op!=='fracao_comparacao' && it.op!=='equacao' && !Number.isInteger(it.answer) && !(it.features&&it.features.decimalPlaces)) bad('resposta não inteira');
-        if(it.answer<0 && it.op!=='equacao' && it.op!=='fracao_comparacao') bad('resposta negativa');
+        if(it.answer<0 && it.op!=='equacao' && it.op!=='fracao_comparacao' && key!=='expressoes' && !(it.features&&it.features.neg)) bad('resposta negativa');
+        if(it.features&&it.features.neg){ negItems[key]=(negItems[key]||0)+1; if(it.answer<0) negAns[key]=(negAns[key]||0)+1; if(L<TRACKS[key].levels.length-(NEG_LEVELS[key]||0)) bad('sinais fora dos levels finais'); }
+        if(it.answer<0 && key==='expressoes') negAnswers++;
         if(['soma','subtracao','multiplicacao','divisao'].includes(it.op) && def.shape){
           const sh = [digitCount(it.a),digitCount(it.b)].sort((x,y)=>y-x);
           if(sh[0]!==def.shape[0] || sh[1]!==def.shape[1]) bad('forma '+sh+' != '+def.shape);
@@ -129,6 +139,8 @@ for(const key of TRACK_ORDER){
   }
 }
 ok(genProblems===0, 'geradores: '+genProblems+' problemas em '+genTotal+' itens → '+genSamples.join(' | '));
+ok(['subtracao','multiplicacao','divisao'].every(k=>negItems[k]>0 && negAns[k]>0), 'subtração/multiplicação/divisão têm contas com sinal e respostas negativas nos levels finais '+JSON.stringify(negItems));
+ok(negAnswers>0, 'expressões podem ter resposta negativa ('+negAnswers+' vistas)');
 // metas de tempo crescem ao longo de cada trilha (exceto o salto proposital de multiplicação/raiz) e existe dica nos dois idiomas
 for(const key of TRACK_ORDER){
   TRACKS[key].levels.forEach((l,i)=>{
@@ -138,6 +150,22 @@ for(const key of TRACK_ORDER){
   });
 }
 
+// potência/raiz existem só dentro de expressões e são tranquilas (base ≤ 13)
+ok(!TRACKS.potencia && !TRACKS.raiz, 'não há trilhas próprias de potência/raiz');
+{
+  let seen = 0, tooBig = 0, noPrec = 0, cubes = 0, negs = 0;
+  for(const key of Object.keys(TRACKS)) for(let L=1; L<=TRACKS[key].levels.length; L++) for(let i=0;i<150;i++){
+    const it = Engine.generateItem(key, L, Math.random(), {});
+    (it.terms||[]).forEach(t=>{
+      if(t.kind==='power'){ seen++; if(Math.abs(t.base)>13 || (t.exp!==2 && !(t.exp===3 && Math.abs(t.base)<=5))) tooBig++; if(t.exp===3) cubes++; if(t.base<0) negs++; }
+      if(t.kind==='radical'){ seen++; if(t.value>13 || t.index!==2) tooBig++; }
+    });
+    if(it.ops && it.ops.includes('multiplicacao') && it.ops.length===2 && key==='expressoes'){ noPrec += 0; }
+  }
+  ok(seen>0 && tooBig===0, 'potências/raízes em expressões: quadrados ≤ 13, cubos ≤ 5 ('+seen+' vistas, '+tooBig+' fora do limite)');
+  ok(cubes>0 && negs>0, 'há cubos e bases negativas nas expressões');
+  ok(!Object.keys(TRACKS).some(k=>k!=='expressoes' && Array.from({length:TRACKS[k].levels.length},(_,i)=>i).some(i=>{ for(let j=0;j<60;j++){ const it=Engine.generateItem(k,i+1,Math.random(),{}); if((it.terms||[]).some(t=>t.kind==='power'||t.kind==='radical')) return true; } return false; })), 'potência/raiz não aparecem fora das expressões');
+}
 /* ---------- 2. FALA ---------- */
 {
   let threw = 0;
@@ -328,7 +356,7 @@ for(const key of TRACK_ORDER){
 }
 // 3k. última trilha concluída entra em "Mestre": patentes e meta que encolhe
 {
-  freshStore(); placeAll(1); const key='potencia'; const n = TRACKS[key].levels.length;
+  freshStore(); placeAll(1); const key='divisao'; const n = TRACKS[key].levels.length;
   const tr = Engine.track(key); tr.level = n; tr.m = 0.8; tr.xp = Engine.xpNeed(tr); tr.testReady = true;
   const outs = runBlock({kind:'test', track:key, level:n, count:TEST_ITEMS}, it=>({correct:true, ms:it.goalMs*0.5}));
   ok(tr.done && outs[outs.length-1].out.blockResult.test.finished, 'passar no último level conclui a trilha');

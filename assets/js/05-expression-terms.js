@@ -18,7 +18,7 @@ function fmtCoefTerm(coef){
 }
 function termInt(v){ return {kind:'int', value:v, text:String(v)}; }
 function termPower(base, exp){
-  return {kind:'power', value:Math.pow(base,exp), text:`${base}${toSup(exp)}`, base, exp};
+  return {kind:'power', value:Math.pow(base,exp), text:`${base<0?'(−'+(-base)+')':base}${toSup(exp)}`, base, exp};
 }
 // Raiz quadrada exata de k² (índice 2) ou raiz cúbica exata de k³ (índice 3).
 function termRoot(k, index=2){

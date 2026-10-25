@@ -247,23 +247,54 @@ function exprDouble(m){
   return {op:'expressao', a:L.x, b:L.y, c:R.x, d:R.y, leftOp:L.op, rightOp:R.op, midOp, answer,
     exprText:`(${L.x} ${opSym(L.op)} ${L.y}) ${opSym(midOp)} (${R.x} ${opSym(R.op)} ${R.y})`, features:{}};
 }
+// Potências e raízes só aparecem DENTRO de expressões, de forma tranquila: quadrados de bases
+// até 13, cubos de bases até 5 (e raízes quadradas exatas até √169) — o foco é a ordem das operações, não o cálculo pesado.
+const POW_MAX_BASE = 13;
+// Inclui cubos controlados (base 2–5) e bases negativas, para treinar a regra do sinal:
+// (−3)² = 9, mas (−3)³ = −27. O enunciado sempre mostra a base negativa entre parênteses.
+function gentleTerm(m, maxBase){
+  const k = Math.min(POW_MAX_BASE, maxBase), r = Math.random();
+  if(r<0.35) return termPower(rr(2,k),2);
+  if(r<0.60) return termRoot(rr(2,k));
+  if(r<0.80) return termPower((Math.random()<0.5?-1:1)*rr(2,5),3);
+  return termPower(-rr(2,Math.min(k,9)),2);
+}
 function exprPowerChain(m){
-  const k = mix(9,12,m);
+  const k = Math.round(mix(6,POW_MAX_BASE,m));
   const pool = [
     ()=>termInt(rr(2,30)),
-    ()=>termPower(rr(2,k),2),
-    ()=>termRoot(rr(2,k))
+    ()=>gentleTerm(m,k),
+    ()=>gentleTerm(m,k)
   ];
   let terms;
   do{ terms = [pool[rr(0,2)](), pool[rr(0,2)](), pool[rr(0,2)]()]; }
   while(!terms.some(t=>t.kind!=='int'));
+  // O resultado PODE ser negativo (na prova haverá): a resposta é digitada com a tecla ±.
   const ops = []; let v = terms[0].value;
   for(let i=1;i<3;i++){
-    let op = Math.random()<0.5 ? 'soma' : 'subtracao';
-    if(op==='subtracao' && v<=terms[i].value) op = 'soma';
+    const op = Math.random()<0.5 ? 'soma' : 'subtracao';
     v = applyOp2(op, v, terms[i].value); ops.push(op);
   }
   return {op:'expressao_encadeada', terms, ops, answer:v, exprText:chainText(terms,ops), features:{}};
+}
+// Ordem das operações: a multiplicação vem antes da soma/subtração (A ± B × C ou B × C ± A),
+// com potência/raiz pequena em algum termo. O resultado pode ser negativo.
+function exprOrder(m){
+  const small = ()=>{ // fator de multiplicação: inteiro 2–9, quadrado de 2–5 ou √ de 4–81
+    const r = Math.random();
+    return r<0.5 ? termInt(rr(2,9)) : r<0.75 ? termPower(rr(2,5),2) : termRoot(rr(2,9));
+  };
+  const big = ()=> Math.random()<0.55 ? termInt(rr(5, Math.round(mix(25,60,m)))) : gentleTerm(m, Math.round(mix(8,POW_MAX_BASE,m)));
+  let A, B, C, prodFirst, op, tries = 0;
+  do{
+    A = big(); B = small(); C = small(); prodFirst = Math.random()<0.5; op = Math.random()<0.5 ? 'soma' : 'subtracao';
+    tries++;
+  } while([A,B,C].every(t=>t.kind==='int') && tries<20);
+  const prod = B.value*C.value;
+  const answer = prodFirst ? applyOp2(op, prod, A.value) : applyOp2(op, A.value, prod);
+  const terms = prodFirst ? [B,C,A] : [A,B,C];
+  const ops = prodFirst ? ['multiplicacao', op] : [op, 'multiplicacao'];
+  return {op:'expressao_encadeada', terms, ops, answer, exprText:chainText(terms,ops), features:{}};
 }
 
 // ---- equações ----
@@ -386,57 +417,6 @@ const TRACKS = {
        const it=divExact(d, Math.ceil(1000/d), Math.floor(mix(3000,9999,m)/d)); it.digitKey='div'; it.digits=[d]; return it; }}
   ]},
 
-  potencia:{ sym:'xⁿ', color:'#06B6D4', op:'potencia', label:['Potenciação','Powers'], levels:[
-    {n:['Quadrados até 10','Squares up to 10'], goal:1200, shape:null,
-     tip:['Decore: 6² = 36, 7² = 49, 8² = 64, 9² = 81.','Memorize: 6² = 36, 7² = 49, 8² = 64, 9² = 81.'],
-     gen(m,tr){ return singleTerm(termPower(rr(mix(2,5,m),10),2)); }},
-    {n:['Quadrados até 15 e cubos pequenos','Squares up to 15 and small cubes'], goal:2000, shape:null,
-     tip:['(n+1)² = n² + 2n + 1: 12² → 11² + 23 = 121 + 23 = 144.','(n+1)² = n² + 2n + 1: 12² → 11² + 23 = 121 + 23 = 144.'],
-     gen(m,tr){ return singleTerm(Math.random()<0.7 ? termPower(rr(11,mix(12,15,m)),2) : termPower(rr(2,mix(3,4,m)),3)); }},
-    {n:['Quadrados até 25, cubos e potências de 2','Squares up to 25, cubes and powers of 2'], goal:3000, shape:null,
-     tip:['n² = (n−10)(n+10) + 100: 17² = 7 × 27 + 100 = 289.','n² = (n−10)(n+10) + 100: 17² = 7 × 27 + 100 = 289.'],
-     gen(m,tr){ const r=Math.random();
-       return singleTerm(r<0.5 ? termPower(rr(16,mix(18,25,m)),2) : r<0.8 ? termPower(rr(5,mix(5,7,m)),3) : termPower(2,rr(6,mix(8,10,m)))); }},
-    {n:['Quadrados até 40, cubos e outras bases','Squares up to 40, cubes and other bases'], goal:4000, shape:null,
-     tip:['(a + b)² = a² + 2ab + b²: 32² = 900 + 120 + 4 = 1024.','(a + b)² = a² + 2ab + b²: 32² = 900 + 120 + 4 = 1024.'],
-     gen(m,tr){ const r=Math.random();
-       if(r<0.45) return singleTerm(termPower(rr(26,mix(30,40,m)),2));
-       if(r<0.75) return singleTerm(termPower(rr(7,mix(8,10,m)),3));
-       const o=U.choice([[3,rr(4,6)],[4,rr(3,5)],[5,rr(3,4)],[2,rr(11,12)],[6,rr(3,4)]]); return singleTerm(termPower(o[0],o[1])); }},
-    {n:['Potências combinadas','Combined powers'], goal:5500, shape:null,
-     tip:['Resolva cada potência primeiro, depois some ou subtraia.','Solve each power first, then add or subtract.'],
-     gen(m,tr){
-       const pw=()=>Math.random()<0.6 ? termPower(rr(5,mix(10,20,m)),2) : termPower(rr(3,mix(5,9,m)),3);
-       const t1=pw(), r=Math.random();
-       if(r<0.4) return termPair(t1, termPower(rr(2,mix(6,12,m)),2), 'subtracao');
-       if(r<0.8) return termPair(t1, termInt(rr(5,mix(30,80,m))), Math.random()<0.5?'soma':'subtracao');
-       return termPair(termPower(rr(3,mix(6,12,m)),2), termInt(rr(2,9)), 'multiplicacao'); }}
-  ]},
-
-  raiz:{ sym:'√', color:'#8B5CF6', op:'radical', label:['Radiciação','Roots'], levels:[
-    {n:['Raízes até 10²','Square roots up to 10²'], goal:1300, shape:null,
-     tip:['Quadrados perfeitos terminam em 0, 1, 4, 5, 6 ou 9.','Perfect squares end in 0, 1, 4, 5, 6 or 9.'],
-     gen(m,tr){ return singleTerm(termRoot(rr(mix(2,4,m),10))); }},
-    {n:['Raízes até 15²','Square roots up to 15²'], goal:2000, shape:null,
-     tip:['Termina em 6 → a raiz termina em 4 ou 6. 196 fica entre 13² e 15² → 14.','Ends in 6 → the root ends in 4 or 6. 196 lies between 13² and 15² → 14.'],
-     gen(m,tr){ return singleTerm(termRoot(rr(11,mix(12,15,m)))); }},
-    {n:['Raízes até 25²','Square roots up to 25²'], goal:3000, shape:null,
-     tip:['Dezenas pela vizinhança (20² = 400, 30² = 900); unidades pelo último dígito.','Tens from the neighbours (20² = 400, 30² = 900); units from the last digit.'],
-     gen(m,tr){ return singleTerm(termRoot(rr(16,mix(18,25,m)))); }},
-    {n:['Raízes até 40²','Square roots up to 40²'], goal:4200, shape:null,
-     tip:['Mesma ideia: dezenas pela vizinhança, unidades pelo último dígito.','Same idea: tens from the neighbours, units from the last digit.'],
-     gen(m,tr){ return singleTerm(termRoot(rr(26,mix(30,40,m)))); }},
-    {n:['Raízes cúbicas','Cube roots'], goal:3500, shape:null,
-     tip:['Cubos: 2³=8, 3³=27, 4³=64, 5³=125, 6³=216, 7³=343, 8³=512, 9³=729.','Cubes: 2³=8, 3³=27, 4³=64, 5³=125, 6³=216, 7³=343, 8³=512, 9³=729.'],
-     gen(m,tr){ return singleTerm(termRoot(rr(2,mix(6,10,m)),3)); }},
-    {n:['Raízes combinadas','Combined roots'], goal:5500, shape:null,
-     tip:['Resolva cada raiz primeiro, depois some, subtraia ou multiplique.','Solve each root first, then add, subtract or multiply.'],
-     gen(m,tr){ const r=Math.random(), t1=termRoot(rr(4,mix(10,20,m)));
-       if(r<0.4) return termPair(t1, termRoot(rr(3,mix(9,15,m))), Math.random()<0.5?'soma':'subtracao');
-       if(r<0.8) return termPair(t1, termInt(rr(2,30)), Math.random()<0.5?'soma':'subtracao');
-       return termPair(termRoot(rr(3,mix(9,15,m))), termInt(rr(2,9)), 'multiplicacao'); }}
-  ]},
-
   porcentagem:{ sym:'%', color:'#F97316', op:'porcentagem', label:['Porcentagem','Percentages'], levels:[
     {n:['10% e 50%','10% and 50%'], goal:1800, shape:null,
      tip:['10% = mover a vírgula uma casa. 50% = metade.','10% = move the decimal point one place. 50% = half.'],
@@ -522,9 +502,12 @@ const TRACKS = {
     {n:['Dois parênteses','Two parentheses'], goal:6000, shape:null,
      tip:['Resolva cada parêntese e só então combine os dois resultados.','Solve each parenthesis, then combine the two results.'],
      gen(m,tr){ return exprDouble(m); }},
-    {n:['Potências e raízes em cadeia','Chains with powers and roots'], goal:7000, shape:null,
-     tip:['Potências e raízes primeiro; depois some/subtraia da esquerda para a direita.','Powers and roots first; then add/subtract left to right.'],
-     gen(m,tr){ return exprPowerChain(m); }}
+    {n:['Potências, cubos e raízes simples','Simple powers, cubes and roots'], goal:5500, shape:null,
+     tip:['Potências e raízes primeiro; depois some/subtraia da esquerda para a direita. Cuidado com o sinal: (−3)² = 9, mas (−3)³ = −27.','Powers and roots first; then add/subtract left to right. Mind the sign: (−3)² = 9, but (−3)³ = −27.'],
+     gen(m,tr){ return exprPowerChain(m); }},
+    {n:['Ordem das operações','Order of operations'], goal:7000, shape:null,
+     tip:['Primeiro potências e raízes, depois a multiplicação, por último soma e subtração: 9 + 3 × 4 = 9 + 12.','First powers and roots, then multiplication, last add/subtract: 9 + 3 × 4 = 9 + 12.'],
+     gen(m,tr){ return exprOrder(m); }}
   ]},
 
   equacoes:{ sym:'x', color:'#84CC16', op:'equacao', label:['Equações','Equations'], levels:[
@@ -557,8 +540,46 @@ const TRACKS = {
        return eqItem(a,B,c,d,x); }}
   ]}
 };
-const TRACK_ORDER = ['soma','subtracao','multiplicacao','divisao','potencia','raiz','porcentagem','decimais','fracoes','expressoes','equacoes'];
-const DEFAULT_ACTIVE_TRACKS = ['soma','subtracao','multiplicacao','divisao','potencia','raiz'];
+/* ---------- números negativos nos levels finais ----------
+   Na prova aparecem contas com sinal. Nos últimos levels de subtração, multiplicação e divisão,
+   parte das contas (NEG_RATE, sobe um pouco com m) vira uma variante com sinal, mantendo o nº de
+   dígitos do level: b − a < 0, a − (−b), (−a) × b, (−a) ÷ (−b)... A resposta pode ser negativa
+   (digita-se com ±). Essas contas ficam fora dos pesos de vai-um/empréstimo (features = {neg}). */
+const NEG_RATE = [0.22, 0.38];
+const NEG_LEVELS = {subtracao:3, multiplicacao:3, divisao:2};  // quantos levels finais recebem sinais
+const NEG_TIP = {
+  subtracao:['Sinais: subtrair um negativo é somar (7 − (−3) = 10); e se o 1º número é menor, o resultado é negativo: calcule o maior − menor e ponha o sinal.',
+    'Signs: subtracting a negative means adding (7 − (−3) = 10); if the first number is smaller the result is negative: do bigger − smaller and add the sign.'],
+  multiplicacao:['Sinais: iguais dão positivo, diferentes dão negativo. Calcule sem sinal e depois decida o sinal.','Signs: same signs give positive, different signs give negative. Multiply first, then decide the sign.'],
+  divisao:['Sinais: iguais dão positivo, diferentes dão negativo. Divida sem sinal e depois decida o sinal.','Signs: same signs give positive, different signs give negative. Divide first, then decide the sign.']
+};
+function negify(it, key){
+  if(!it || it.isReversePath || !Number.isInteger(it.a) || !Number.isInteger(it.b) || it.a<=0 || it.b<=0) return it;
+  const a = it.a, b = it.b; let terms, ops, answer;
+  const sgn = ()=>Math.random()<0.5 ? -1 : 1;
+  const op = it.op || TRACKS[key].op;
+  if(op==='subtracao'){
+    if(a===b) return it;
+    if(Math.random()<0.6){ terms=[termInt(Math.min(a,b)), termInt(Math.max(a,b))]; answer=Math.min(a,b)-Math.max(a,b); }   // menor − maior
+    else { terms=[termInt(a), termInt(-b)]; answer=a+b; }                                                                    // a − (−b)
+    ops=['subtracao'];
+  } else if(op==='multiplicacao' || op==='divisao'){
+    let sa = sgn(), sb = sgn(); if(sa>0 && sb>0) sa = -1;
+    terms=[termInt(sa*a), termInt(sb*b)]; ops=[op]; answer = sa*sb*it.answer;
+  } else return it;
+  return Object.assign({}, it, {terms, ops, answer, exprText:chainText(terms,ops), features:{neg:true}});
+}
+Object.keys(NEG_LEVELS).forEach(key=>{
+  const L = TRACKS[key].levels, n = L.length;
+  for(let i=n-NEG_LEVELS[key]; i<n; i++){
+    const lv = L[i], g = lv.gen;
+    lv.gen = (m,tr)=>{ const it = g(m,tr); return Math.random()<NEG_RATE[0]+(NEG_RATE[1]-NEG_RATE[0])*m ? negify(it, key) : it; };
+    lv.tip = [lv.tip[0]+' '+NEG_TIP[key][0], lv.tip[1]+' '+NEG_TIP[key][1]];
+  }
+});
+
+const TRACK_ORDER = ['soma','subtracao','multiplicacao','divisao','porcentagem','decimais','fracoes','expressoes','equacoes'];
+const DEFAULT_ACTIVE_TRACKS = ['soma','subtracao','multiplicacao','divisao'];
 
 function trackLabel(key){ return pickLang(TRACKS[key].label); }
 function trackLevels(key){ return TRACKS[key].levels.length; }

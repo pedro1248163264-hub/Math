@@ -16,7 +16,7 @@ A v1 sorteava a próxima conta entre ~40 famílias, uma a uma, e ajustava a difi
 
 ## Trilhas e levels
 
-11 trilhas; 6 ativas por padrão (as demais são ligadas na aba **Trilhas**):
+9 trilhas; 4 ativas por padrão (as demais são ligadas na aba **Trilhas**):
 
 | Trilha | Levels | Ativa por padrão |
 |---|---|---|
@@ -24,15 +24,17 @@ A v1 sorteava a próxima conta entre ~40 famílias, uma a uma, e ajustava a difi
 | Subtração | 8 | sim |
 | Multiplicação | 8 (tabuada 2–5 → 3 dígitos × 2 dígitos) | sim |
 | Divisão | 6 | sim |
-| Potenciação | 5 | sim |
-| Radiciação | 6 (inclui raiz cúbica no level 5) | sim |
 | Porcentagem | 6 (10% e 50% → acréscimo/desconto → "é quantos %?" → valor original, variação e descontos sucessivos) | não |
 | Contas com vírgula | 6 | não |
 | Frações | 5 (soma/subtração, multiplicação/divisão, comparação) | não |
-| Expressões | 5 | não |
+| Expressões | 6 (parênteses, cadeias, dois parênteses, **potências, cubos e raízes simples** — quadrados até 13², cubos até 5³, com bases negativas para treinar o sinal — e **ordem das operações**) | não |
 | Equações | 5 | não |
 
-Cada level tem nome, **meta de tempo** (ex.: Soma Nv 1 = 1,0 s … Nv 8 = 5,8 s) e uma **dica de tática** (mostrada na primeira vez que o level aparece, na prova e na aba Trilhas). Os geradores ficam em `06-tracks.js` e garantem resposta exata, resposta inteira (ou decimal de ≤ 2 casas), sem negativos (exceto equação/comparação) e forma de dígitos fixa por level.
+Potenciação e radiciação **não são trilhas**: aparecem só dentro das Expressões, de forma leve (quadrados de bases até 13, cubos de bases até 5 — inclusive negativas, p.ex. (−3)³ — e raízes quadradas exatas até √169), para treinar a ordem das operações.
+
+Cada level tem nome, **meta de tempo** (ex.: Soma Nv 1 = 1,0 s … Nv 8 = 5,8 s) e uma **dica de tática** (mostrada na primeira vez que o level aparece, na prova e na aba Trilhas). **Números negativos:** nos últimos levels de Subtração (3 últimos), Multiplicação (3 últimos) e Divisão (2 últimos), de ~22% a ~38% das contas (sobe com `m`) vêm com sinal — `menor − maior`, `a − (−b)`, `(−a) × b`, `(−a) ÷ (−b)` — mantendo o número de dígitos do level. A resposta pode ser negativa (tecla ±, ✓ para confirmar) e a dica do level explica a regra de sinais. Essas contas não entram nos pesos de vai-um/empréstimo.
+
+Os geradores ficam em `06-tracks.js` e garantem resposta exata, resposta inteira (ou decimal de ≤ 2 casas), sem resposta negativa (exceto equação, comparação e Expressões, onde a resposta pode ser negativa — digite com a tecla ±) e forma de dígitos fixa por level.
 
 ## Como a dificuldade se ajusta
 
