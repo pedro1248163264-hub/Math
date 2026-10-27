@@ -20,7 +20,19 @@ const ONE_DAY = 24*ONE_HOUR;
      slow  > ZONE_OK           → correta, porém lenta
    Erro nunca tem zona. */
 const ZONE_FAST = 1.0;
-const ZONE_OK = 1.7;
+const ZONE_OK = 1.7;   // (só como padrão de Engine.zone quando não se informa o limite do item)
+
+/* ---------- 1b. CONTA PEQUENA × GRANDE: LIMITE × META ----------
+   Metade das contas de cada level é GRANDE (parte alta do level, mais tempo) e metade é
+   PEQUENA (parte baixa, rápida). Cada conta tem um LIMITE de tempo (só ele decide acerto
+   "no tempo" e a prova) e uma META um pouco abaixo dele (só rende XP extra, nunca bloqueia).
+   Com G = goal do level (06-tracks.js):  limite pequena = 1,25·G · limite grande = 2,0·G
+   (ex.: Soma Nv8, G=5,8 s → pequena 7,3 s, grande 11,6 s). Meta = limite − folga, com
+   folga = 20% do limite, entre 0,3 s e 2 s. 'mid' (1,7·G) é a medida antiga, usada no
+   aquecimento, reforço e nivelamento. */
+const LIMIT_MULT = {small:1.25, mid:1.7, big:2.0};
+const BIG_SHARE = 0.5;
+const META_GAP_FRAC = 0.2, META_GAP_MIN_MS = 300, META_GAP_MAX_MS = 2000;
 const IMPULSE_FLOOR = 350; // ms — erro abaixo disso é lapso motor, não erro de cálculo
 
 /* ---------- 2. XP ----------
@@ -49,11 +61,26 @@ const RANK_XP = 400, RANK_MAX = 5, RANK_GOAL_DECAY = 0.93;
    dentro da meta. Reprovar nunca derruba o level: só devolve a barra a TEST_FAIL_XP_KEEP. */
 const TEST_ITEMS = 8;
 const TEST_PASS_CORRECT = 7;
-const TEST_PASS_MEDIAN_RATIO = 1.7;
+const TEST_PASS_MEDIAN_RATIO = 1.1;   // mediana de (tempo ÷ LIMITE da própria conta) — não da meta
 const TEST_STAR2_HITS = 5, TEST_STAR3_HITS = 7;
 const TEST_FAIL_XP_KEEP = 0.55;
 const TEST_READY_M = 0.55; // barra cheia só libera a prova quando m já está na metade de cima do level
 const TEST_MIN_M = 0.6;    // a prova mira o topo do level
+
+/* ---------- 3b. SUBIDA DE LEVEL PEDIDA PELA PESSOA ----------
+   A qualquer momento a pessoa pede para subir de level numa trilha. O app passa a misturar,
+   nas rodadas, CLIMB_ITEMS contas do level seguinte DAQUELA trilha (blocos "subida") e, ao
+   fim, decide: sobe com ≥ CLIMB_PASS_FRAC de acertos E mediana de (tempo ÷ limite da conta) ≤ TEST_PASS_MEDIAN_RATIO
+   do level novo. Se não passar, nada se perde (o pedido some e dá para pedir de novo).
+   A barra cheia (+ m alto) só passa a RECOMENDAR o pedido — não há mais prova automática. */
+/* Subida AUTOMÁTICA: só quando o app está "100% seguro" — barra cheia, m no topo do level e
+   AUTO_UP_ITEMS contas recentes do level com ≥ AUTO_UP_ACC de acerto e ≥ AUTO_UP_FAST dentro da meta. */
+const AUTO_UP_M = 0.92, AUTO_UP_ITEMS = 20, AUTO_UP_ACC = 0.95, AUTO_UP_FAST = 0.5;
+const CLIMB_ITEMS = 12;
+const CLIMB_PASS_FRAC = 0.75;
+const CLIMB_M = 0.4;            // posição fixa dentro do level novo (parte mais fácil dele)
+const CLIMB_BLOCK_MAX = 8;      // por rodada geral, no máx. 8 contas de subida seguidas (o resto vem na próxima)
+const CLIMB_MAX_PER_ROUND = 2;  // trilhas com subida em andamento tratadas por rodada
 
 /* ---------- 4. NIVELAMENTO (primeira vez numa trilha) ----------
    Escada simples: acerto "bom" sobe um level, o resto desce um. O resultado é a média dos
@@ -97,13 +124,14 @@ const WARMUP_M = 0.7;
 const ROUND_SIZES = { short:16, normal:24, long:40 };
 const MAX_TESTS_PER_ROUND = 2;
 const MAX_PLACEMENTS_PER_ROUND = 6;
-const TIMEOUT_MULT = 4, TIMEOUT_MIN_MS = 6000, TIMEOUT_MAX_MS = 25000;
+const TIMEOUT_MULT = 2.4, TIMEOUT_MIN_MS = 6000, TIMEOUT_MAX_MS = 25000;
 
 /* ---------- 7. JOGADOR (level geral) ---------- */
 const PLAYER_LEVEL_EXP = 1.6, PLAYER_LEVEL_SCALE = 100; // XP acumulado p/ nível n = SCALE*(n-1)^EXP
 const DAILY_GOALS = [20, 40, 80, 150];
 const DEFAULT_DAILY_GOAL = 40;
 const DAILY_KEEP_DAYS = 400;
+const LOG_MAX = 5000, EVENTS_MAX = 400;   // registro por conta / eventos (para o relatório de IA)
 const HISTORY_MAX = 500;          // rodadas guardadas no histórico
 
 /* ---------- 8. PADRÕES DENTRO DO LEVEL (herdado do motor anterior) ---------- */
@@ -122,3 +150,4 @@ const HOTPAIR_EWMA_ALPHA = 0.3;
 const REVERSE_PATH_RATE = 0.08;
 // Ocultação progressiva: no aquecimento (level já conquistado) a conta borra após este tempo.
 const MASTERY_FLASH_MS = 1500;
+const FLASH_TRACKS = ['soma','subtracao','multiplicacao','divisao']; // trilhas onde o aquecimento relâmpago vale

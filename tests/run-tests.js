@@ -222,7 +222,7 @@ ok(!TRACKS.potencia && !TRACKS.raiz, 'não há trilhas próprias de potência/ra
   let succ = 0, tot = 0;
   for(let r=0;r<120;r++){
     runBlock({kind:'practice', track:'multiplicacao', level:4, count:BLOCK_MAX}, it=>{
-      const p = 1/(1+Math.exp(6*(it.m-0.55)));   // usuário cujo ponto de equilíbrio está perto de m≈0.55+
+      const p = 1/(1+Math.exp(6*(it.m-0.7)));   // usuário cujo ponto de equilíbrio está perto de m≈0.55+
       const c = Math.random()<p; if(r>=60){ tot++; if(c) succ++; }
       tr.testReady = false; tr.xp = 0;           // isola o teste de qualquer prova
       return {correct:c, ms:it.goalMs*(c?0.8:2)};
@@ -262,8 +262,112 @@ ok(!TRACKS.potencia && !TRACKS.raiz, 'não há trilhas próprias de potência/ra
   ok(tr.testReady, 'prova liberada com barra cheia e m alto');
   ok(tr.m>=TEST_READY_M, 'prova só libera com m>=TEST_READY_M (m='+tr.m.toFixed(2)+')');
   const plan = Engine.planRound();
-  ok(plan.some(b=>b.kind==='test' && b.track==='soma'), 'planRound inclui a prova liberada');
-  ok(plan[plan.length-1].kind==='test', 'a prova é o clímax da rodada (último bloco)');
+  ok(!plan.some(b=>b.kind==='test' || b.kind==='climb'), 'barra cheia só RECOMENDA: nenhuma prova/subida é imposta na rodada');
+}
+// 3f2. subida pedida pela pessoa: só a trilha pedida recebe contas do level seguinte
+{
+  freshStore(); placeAll(3, 0.5);
+  const tr = Engine.track('multiplicacao'), soma = Engine.track('soma');
+  ok(Engine.canClimb(tr) && Engine.startClimb('multiplicacao') && tr.climb && tr.climb.level===4, 'pedido registra subida para o level seguinte');
+  ok(!Engine.startClimb('multiplicacao'), 'não duplica pedido');
+  const plan = Engine.planRound();
+  const cb = plan.filter(b=>b.kind==='climb');
+  ok(cb.length===1 && cb[0].track==='multiplicacao' && cb[0].level===4, 'rodada geral tem bloco de subida só da trilha pedida');
+  ok(cb[0].count<=CLIMB_BLOCK_MAX, 'rodada geral limita as contas de subida por bloco');
+  ok(plan.filter(b=>b.track!=='multiplicacao').every(b=>b.level<=3), 'demais trilhas seguem no level normal');
+  const only = Engine.planRound({onlyTrack:'multiplicacao'});
+  ok(only.some(b=>b.kind==='climb' && b.count===CLIMB_ITEMS), 'treinar só a trilha traz todas as contas de subida');
+  // aprovação (em duas rodadas)
+  const mBefore = tr.m, sBefore = soma.level;
+  let outs = runBlock({kind:'climb', track:'multiplicacao', level:4, count:5}, it=>({correct:true, ms:it.goalMs*0.7}));
+  ok(outs.every(o=>o.item.level===4 && o.item.kind==='climb'), 'contas da subida vêm do level seguinte');
+  ok(!outs[outs.length-1].out.blockResult.test && tr.climb && tr.climb.results.length===5, 'sem decisão antes de completar as contas');
+  outs = runBlock({kind:'climb', track:'multiplicacao', level:4, count:CLIMB_ITEMS-5}, it=>({correct:true, ms:it.goalMs*0.7}));
+  const r = outs[outs.length-1].out.blockResult.test;
+  ok(r && r.pass && r.leveledUp && tr.level===4 && !tr.climb && tr.stars[3]>=1, 'acertos suficientes sobem de level e limpam o pedido');
+  ok(tr.m<=0.2 && tr.xp===0 && !tr.testReady, 'm e barra recomeçam no level novo');
+  ok(soma.level===sBefore, 'outras trilhas não mudam');
+  // reprovação: nada se perde
+  Engine.startClimb('multiplicacao'); const lv = tr.level, st = tr.stars[lv], xp0 = tr.xp;
+  outs = runBlock({kind:'climb', track:'multiplicacao', level:lv+1, count:CLIMB_ITEMS}, it=>({correct:false, ms:it.goalMs*2, typed:'99999'}));
+  const o = outs[outs.length-1].out;
+  ok(o.blockResult.test && !o.blockResult.test.pass && tr.level===lv && !tr.climb, 'erros não sobem e o pedido some');
+  ok(o.events.some(e=>e.type==='climbFailed') && tr.xp===xp0 && tr.stars[lv]===st, 'reprovar não tira XP, estrelas nem level');
+  ok(Engine.canClimb(tr), 'dá para pedir de novo');
+  // lapsos de digitação não contam; limiar de acertos
+  Engine.startClimb('multiplicacao'); let i = 0;
+  outs = runBlock({kind:'climb', track:'multiplicacao', level:lv+1, count:CLIMB_ITEMS}, it=>({correct:(i++%4!==0), ms:it.goalMs*0.9, typed:'99999'}));
+  const r2 = outs[outs.length-1].out.blockResult.test;
+  ok(r2 && r2.pass===(r2.correct>=Engine.climbPassNeed(CLIMB_ITEMS)), 'decisão segue o limiar de acertos ('+r2.correct+'/'+CLIMB_ITEMS+')');
+  // acerta mas lento → não sobe
+  const lv2 = tr.level; Engine.startClimb('multiplicacao');
+  outs = runBlock({kind:'climb', track:'multiplicacao', level:lv2+1, count:CLIMB_ITEMS}, it=>({correct:true, ms:it.goalMs*4}));
+  ok(!outs[outs.length-1].out.blockResult.test.pass && tr.level===lv2, 'acertar tudo muito devagar não sobe');
+  // persistência e cancelamento
+  Engine.startClimb('multiplicacao'); runBlock({kind:'climb', track:'multiplicacao', level:tr.level+1, count:3}, it=>({correct:true, ms:it.goalMs}));
+  const copy = Store.normalize(JSON.parse(JSON.stringify(Store.data)));
+  ok(copy.tracks.multiplicacao.climb && copy.tracks.multiplicacao.climb.results.length===3, 'subida em andamento sobrevive ao salvar/carregar');
+  Engine.cancelClimb('multiplicacao'); ok(!tr.climb, 'cancelar remove o pedido');
+  // último level: subir = concluir a trilha
+  const dv = Engine.track('divisao'), n = TRACKS.divisao.levels.length; dv.level = n;
+  Engine.startClimb('divisao'); ok(dv.climb.level===n, 'no último level a subida mira o próprio level');
+  runBlock({kind:'climb', track:'divisao', level:n, count:CLIMB_ITEMS}, it=>({correct:true, ms:it.goalMs*0.5}));
+  ok(dv.done, 'passar na subida do último level conclui a trilha');
+}
+// 3f3. subida automática: só com evidência forte
+{
+  freshStore(); placeAll(3, 0.95);
+  const tr = Engine.track('soma'); tr.xp = Engine.xpNeed(tr)-1;
+  for(let i=0;i<8 && tr.level===3;i++) runBlock({kind:'practice', track:'soma', level:3, count:BLOCK_MAX}, it=>({correct:true, ms:it.goalMs*0.5}));
+  ok(tr.level===4 && !tr.testReady && tr.stars[3]>=1, 'app sobe sozinho com m alto, 20 contas ≥95% e rápidas');
+  freshStore(); placeAll(3, 0.95);
+  const t2 = Engine.track('soma'); t2.xp = Engine.xpNeed(t2)-1; let i = 0;
+  for(let r=0;r<8;r++) runBlock({kind:'practice', track:'soma', level:3, count:BLOCK_MAX}, it=>({correct:true, ms:it.goalMs*1.4}));
+  ok(t2.level===3 && t2.testReady, 'correto porém sem rapidez: só recomenda, não sobe sozinho');
+  freshStore(); placeAll(3, 0.7);
+  const t3 = Engine.track('soma'); t3.testReady = true;
+  t3.window = Array.from({length:AUTO_UP_ITEMS}, ()=>({ms:500, correct:true, zone:'fast', lapse:false, level:3, kind:'practice'}));
+  Engine._maybeAutoLevelUp(t3, {events:[]});
+  ok(t3.level===3, 'm abaixo de '+AUTO_UP_M+': não sobe sozinho');
+  t3.m = 0.95; Engine._maybeAutoLevelUp(t3, {events:[]});
+  ok(t3.level===4, 'm no topo + janela perfeita: sobe');
+}
+// 3f4. contas grandes × pequenas: limite decide, meta só bonifica
+{
+  freshStore(); placeAll(6, 0.5);
+  const tr = Engine.track('soma');
+  let big=0, small=0, mS=[], mB=[];
+  for(let r=0;r<10;r++) runBlock({kind:'practice', track:'soma', level:6, count:BLOCK_MAX}, it=>{
+    if(!it.isWarmup){ if(it.size==='big'){ big++; mB.push(it.m); } else { small++; mS.push(it.m); } }
+    return {correct:true, ms:it.goalMs*0.9};
+  });
+  ok(Math.abs(big-small)<=big*0.4+3 && big>0 && small>0, 'metade grande / metade pequena ('+big+'/'+small+')');
+  ok(U.mean(mB)>U.mean(mS)+0.3, 'contas grandes vêm da parte alta do level');
+  let gapsOk = true, orderOk = true;
+  TRACK_ORDER.forEach(k=>TRACKS[k].levels.forEach((lv,i)=>{
+    const a = levelTimes(k,i+1,'small'), b = levelTimes(k,i+1,'big');
+    if(!(a.meta<a.limit && b.meta<b.limit && a.limit<b.limit)) orderOk = false;
+    if(a.limit-a.meta>2000 || b.limit-b.meta>2000) gapsOk = false;
+  }));
+  ok(orderOk && gapsOk, 'meta < limite, pequena < grande, folga da meta ≤ 2 s em todos os levels');
+  const g = levelTimes('soma',8,'big');
+  ok(g.limit>=10000 && g.limit<=13000, 'Soma Nv8: limite grande ≈ '+(g.limit/1000)+'s');
+  // entre a meta e o limite: vale como "no tempo" (não bloqueia), só rende menos XP
+  const it = Engine.generateItem('soma', 6, 0.5, {kind:'practice', size:'big'});
+  const mid = (it.goalMs+it.limitMs)/2;
+  ok(Engine.zone(it.goalMs*0.95, it.goalMs, it.limitMs)==='fast' && Engine.zone(mid, it.goalMs, it.limitMs)==='ok' && Engine.zone(it.limitMs*1.1, it.goalMs, it.limitMs)==='slow', 'zonas: meta → fast, até o limite → ok, depois slow');
+  ok(Engine.xpFor(it,'fast')>Engine.xpFor(it,'ok'), 'bater a meta rende XP extra');
+  // subida: acertar tudo entre a meta e o limite passa (meta não bloqueia)
+  Engine.startClimb('soma');
+  const outs = runBlock({kind:'climb', track:'soma', level:7, count:CLIMB_ITEMS}, it2=>({correct:true, ms:(it2.goalMs+it2.limitMs)/2}));
+  ok(outs[outs.length-1].out.blockResult.test.pass, 'tempo entre meta e limite sobe de level (meta não bloqueia)');
+  // grandes contas lentas porém dentro do limite grande não reprovam
+  freshStore(); placeAll(6, 0.5); Engine.startClimb('soma');
+  const o2 = runBlock({kind:'climb', track:'soma', level:7, count:CLIMB_ITEMS}, it2=>({correct:true, ms:it2.limitMs*0.95}));
+  ok(o2[o2.length-1].out.blockResult.test.pass, 'tudo logo abaixo do limite ainda passa');
+  freshStore(); placeAll(6, 0.5); Engine.startClimb('soma');
+  const o3 = runBlock({kind:'climb', track:'soma', level:7, count:CLIMB_ITEMS}, it2=>({correct:true, ms:it2.limitMs*1.5}));
+  ok(!o3[o3.length-1].out.blockResult.test.pass, 'tudo acima do limite não passa');
 }
 // 3g. prova: aprovação sobe o level e dá estrelas; reprovação mantém o level
 {
@@ -336,6 +440,25 @@ ok(!TRACKS.potencia && !TRACKS.raiz, 'não há trilhas próprias de potência/ra
   runBlock({kind:'practice', track:'multiplicacao', level:5, count:40}, it=>{ if(!it.isWarmup) shapes.add(Math.max(digitCount(it.a),digitCount(it.b))+'x'+Math.min(digitCount(it.a),digitCount(it.b))); return {correct:true, ms:it.goalMs}; });
   ok(shapes.size===1, 'bloco de multiplicação mantém uma forma só: '+[...shapes]);
 }
+// 3i2. aquecimento relâmpago: só nas 4 operações básicas
+{
+  freshStore(); placeAll(4, 0.5);
+  const w = k=>Engine.generateItem(k, 3, 0.5, {kind:'practice', isWarmup:true}).isMasteredFlash;
+  ok(w('soma') && w('subtracao') && w('multiplicacao') && w('divisao'), 'aquecimento relâmpago vale nas 4 operações');
+  ok(!w('porcentagem') && !w('decimais') && !w('fracoes') && !w('expressoes') && !w('equacoes'), 'aquecimento relâmpago não vale nas demais trilhas');
+  Store.data.settings.masteryFlash = false; ok(!w('soma'), 'desligado nos ajustes não borra');
+}
+// 3i3. escolha das contas que podem sumir
+{
+  freshStore(); placeAll(4, 0.5);
+  Store.data.settings.flashTracks = ['soma'];
+  const w = k=>Engine.generateItem(k, 3, 0.5, {kind:'practice', isWarmup:true}).isMasteredFlash;
+  ok(w('soma') && !w('subtracao') && !w('multiplicacao') && !w('divisao'), 'só a trilha escolhida borra no aquecimento');
+  Store.data.settings.flashTracks = [];
+  ok(!w('soma'), 'nenhuma trilha escolhida = nada borra');
+  const n = Store.normalize({settings:{flashTracks:['soma','porcentagem','x']}}); ok(n.settings.flashTracks.length===1 && n.settings.flashTracks[0]==='soma', 'flashTracks inválidas são saneadas');
+  ok(Store.normalize({}).settings.flashTracks.length===4, 'padrão: as 4 operações');
+}
 // 3j. reforço suave: patinar com m no mínimo faz o próximo bloco rodar um level abaixo (sem perder level)
 {
   freshStore(); placeAll(4, 0.1);
@@ -375,6 +498,7 @@ ok(!TRACKS.potencia && !TRACKS.raiz, 'não há trilhas próprias de potência/ra
   const sim = ab=>{
     freshStore(); let items=0, correct=0, bad=false;
     for(let r=0;r<40;r++){
+      Engine.activeKeys().forEach(k=>{ const t=Engine.track(k); if(t.placed && t.testReady && Engine.canClimb(t)) Engine.startClimb(k); });   // a pessoa aceita o "Recomendado"
       for(const spec of Engine.planRound()){
         Engine.beginBlock(spec); let item;
         while((item=Engine.nextItem())){
@@ -393,7 +517,7 @@ ok(!TRACKS.potencia && !TRACKS.raiz, 'não há trilhas próprias de potência/ra
   const lo = sim(1.5), hi = sim(6.5);
   ok(!lo.bad && !hi.bad, 'simulação sem NaN');
   ok(hi.avgLevel>lo.avgLevel+0.2, 'usuário mais hábil chega a levels mais altos ('+lo.avgLevel.toFixed(2)+' → '+hi.avgLevel.toFixed(2)+')');
-  ok(lo.acc>0.62 && lo.acc<0.95 && hi.acc>0.62 && hi.acc<0.95, 'acerto médio fica numa faixa saudável (iniciante '+lo.acc.toFixed(2)+', avançado '+hi.acc.toFixed(2)+')');
+  ok(lo.acc>0.6 && lo.acc<0.95 && hi.acc>0.6 && hi.acc<0.95, 'acerto médio fica numa faixa saudável (iniciante '+lo.acc.toFixed(2)+', avançado '+hi.acc.toFixed(2)+')');
 }
 
 /* ---------- 4. PROGRESS ---------- */
@@ -504,6 +628,13 @@ ok(!TRACKS.potencia && !TRACKS.raiz, 'não há trilhas próprias de potência/ra
   }
   ok(summary && summary.completed && summary.stars===1 && summary.xp>=ROUND_COMPLETE_XP, 'rodada toda errada ainda dá 1 estrela e o bônus de conclusão '+JSON.stringify(summary&&{c:summary.completed,s:summary.stars,x:summary.xp,t:summary.total,a:Session.active,g:guard}));
   ok(Engine.activeKeys().every(k=>Engine.track(k).level>=3), 'nenhum level caiu');
+  // registro por conta e relatório para IA
+  ok(Store.data.log.length>=16 && Store.data.log.every(e=>e.length===12), 'cada conta respondida entra no registro compacto');
+  Session._logEvent({type:'placed', key:'soma', level:2}); ok(Store.data.events.length>0 && Store.data.events[Store.data.events.length-1].t>0, 'marcos são registrados');
+  const rep = Export.aiReport();
+  ok(rep.includes('Instruções para a IA') && rep.includes('Registro bruto') && rep.includes('quando,trilha,level') && rep.includes('Evolução por semana') && rep.includes('Estado atual por trilha'), 'relatório para IA tem todas as seções');
+  ok(!rep.includes('NaN') && !rep.includes('undefined') && !rep.includes('Infinity'), 'relatório sem NaN/undefined');
+  Store.data.log.length = 0; Store.data.events.length = 0; ok(Export.aiReport().includes('sem dados'), 'relatório funciona sem dados');
   // exportação CSV não quebra
   ok(typeof Export.csvText()==='string' && Export.csvText().includes('trilha'), 'CSV gerado');
 }

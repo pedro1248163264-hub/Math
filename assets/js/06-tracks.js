@@ -587,6 +587,12 @@ function levelDef(key, level){ const L=TRACKS[key].levels; return L[U.clamp(leve
 function levelName(key, level){ return pickLang(levelDef(key,level).n); }
 function levelTip(key, level){ return pickLang(levelDef(key,level).tip); }
 // Meta de tempo do level (ms). Na patente "Mestre" ela encolhe RANK_GOAL_DECAY por patente.
+// Limite e meta de uma conta ('small' | 'mid' | 'big'), em ms. Ver 1b em 02-engine-constants.js.
+function levelTimes(key, level, size='small', rank=0){
+  const G = levelGoalMs(key, level, rank), limit = Math.round(G*(LIMIT_MULT[size]||LIMIT_MULT.small));
+  const gap = U.clamp(limit*META_GAP_FRAC, META_GAP_MIN_MS, META_GAP_MAX_MS);
+  return {limit, meta:Math.round(limit-Math.min(gap, limit*0.5))};
+}
 function levelGoalMs(key, level, rank=0){
   return Math.round(levelDef(key,level).goal * Math.pow(RANK_GOAL_DECAY, rank||0));
 }

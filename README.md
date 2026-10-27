@@ -38,7 +38,7 @@ Os geradores ficam em `06-tracks.js` e garantem resposta exata, resposta inteira
 
 ## Como a dificuldade se ajusta
 
-- **Zonas por conta correta** (tempo ÷ meta do level): `fast ≤ 1,0` (dentro da meta), `ok ≤ 1,7`, `slow` acima. Erro nunca tem zona.
+- **Zonas por conta correta:** `fast` = dentro da meta (XP extra), `ok` = acima da meta mas dentro do limite, `slow` = acima do limite (ver "Contas grandes × pequenas"). Erro nunca tem zona.
 - **Passo de m:** `m ← m + 0,06 × (y − ρ*)`, com `y = 1` se acertou em zona `fast/ok`. É uma aproximação estocástica (Robbins-Monro): converge ao ponto em que a pessoa acerta ρ\* das contas. O passo por conta é minúsculo (média ≈ 0,01–0,02), sem degraus.
 - **Desafio** (Ajustes): ρ\* = 0,90 *Tranquilo*, 0,82 *Equilibrado* (padrão), 0,72 *Intenso*.
 - **Level nunca cai.** Errar não desconta XP nem derruba level. Se a pessoa patinar (< 55% de acerto em 12 contas com `m` no piso), o **próximo bloco** da trilha roda no level anterior (**reforço**, rende 70% do XP), `m` volta a um ponto confortável e o reforço dura um bloco só — sem aviso humilhante.
@@ -49,7 +49,7 @@ Os geradores ficam em `06-tracks.js` e garantem resposta exata, resposta inteira
 
 Uma **rodada** (Curta 16 / Normal 24 / Longa 40 contas — Ajustes) é uma sequência de **blocos**; cada bloco tem 6–8 contas de **uma trilha e um level**. A mistura entre trilhas acontece entre blocos (favorecendo trilhas mais fracas e há mais tempo sem treino; nunca a mesma trilha duas vezes seguidas).
 
-Ordem: **nivelamentos** (trilhas novas) → **treino** → **provas de nível** (clímax, no máximo 2 por rodada). No primeiro bloco de cada trilha na rodada há **aquecimento**: 3 contas um level abaixo (rende metade do XP; com "aquecimento relâmpago" ligado, a conta borra após 1,5 s).
+Ordem: **nivelamentos** (trilhas novas) → **treino**, com blocos de **subida de level** no meio quando a pessoa pediu (veja abaixo). No primeiro bloco de cada trilha na rodada há **aquecimento**: 3 contas um level abaixo (rende metade do XP; com "aquecimento relâmpago" ligado — só nas 4 operações básicas — a conta borra após 1,5 s, e o app avisa uma vez por rodada, antes das primeiras contas que somem). Em Ajustes você escolhe em quais das 4 operações a conta pode sumir.
 
 Não existem mais modos Ultimate/Intervalado/HIIT nem pausas automáticas por "frustração/fadiga": a rodada termina sozinha, e a pessoa pode pausar (também automático ao esconder o app) ou sair a qualquer momento (rodada parcial é salva).
 
@@ -57,12 +57,21 @@ Não existem mais modos Ultimate/Intervalado/HIIT nem pausas automáticas por "f
 
 Na primeira vez numa trilha, 6 contas em escada (acerto bom sobe 1 level, o resto desce 1), começando em ~40% da trilha. O resultado é a média dos últimos 4 levels, sem passar do melhor level acertado — começa um pouco abaixo da habilidade, para as primeiras contas serem vitórias. Levels abaixo recebem 1★.
 
-## XP, barra e prova de nível
+## Contas grandes × pequenas, limite × meta
+Metade das contas de cada level é **grande** (parte alta do level, mais tempo) e metade é **pequena** (parte baixa, rápida) — o sorteio é balanceado dentro de cada bloco. Cada conta tem:
+- **Limite** (decide): pequena = 1,25 × G, grande = 2,0 × G, onde G é o tempo-base do level (ex.: Soma Nv 8: pequena 7,3 s, grande 11,6 s; Multiplicação Nv 6: 6,3 s / 10 s). Só o limite decide se o acerto valeu "no tempo" e se a subida/prova passa (mediana de *tempo ÷ limite* ≤ 1,1).
+- **Meta** (bônus): o limite menos uma folga de 20% (entre 0,3 s e 2 s). Bater a meta rende XP extra e conta para as estrelas, mas **nunca bloqueia** o avanço.
+Aquecimento, reforço e nivelamento usam uma medida média (1,7 × G, a antiga). Para ajustar: `LIMIT_MULT`, `BIG_SHARE` e `META_GAP_*` em `02-engine-constants.js`, e o `goal` de cada level em `06-tracks.js`. A aba Trilhas mostra, por level, a mediana recente × limite de pequenas e grandes.
+
+## XP, barra e subida de level
 
 - **XP por acerto:** `fast` 10, `ok` 6, `slow` 3, × (0,8 + 0,4·m). Erro = 0 (nunca negativo). **Combo:** +1 XP a cada 5 acertos seguidos (até +4); erro zera o combo.
 - O mesmo XP enche a **barra do level da trilha** (120 + 40·(L−1) XP) e soma no **XP geral**.
-- Barra cheia **e** `m ≥ 0,55` → **prova de nível** liberada (8 contas no topo do level). Aprova com ≥ 7 acertos **e** mediana ≤ 1,7× a meta. **★** = aprovou; **★★** = ≥ 5 dentro da meta; **★★★** = 8/8 e ≥ 7 dentro da meta. Bônus de XP: 40/70/100.
-- Aprovou → level seguinte (`m` recomeça em 0,15). Reprovou → **nada cai**: a barra volta a 55% e a prova reaparece quando liberar de novo. Na aba Trilhas, toque num level já conquistado com menos de 3★ na escada para **refazer a prova** e melhorar as estrelas (não muda o level atual).
+- Barra cheia **e** `m ≥ 0,55` → a trilha ganha o selo **Recomendado** (a barra continua com o efeito visual de 100%). O app **não impõe** mais nenhuma prova: quem decide quando subir é a pessoa.
+- **Subida automática:** se o app estiver *muito* seguro — barra cheia, `m ≥ 0,92` e as últimas 20 contas do level com ≥ 95% de acerto e ≥ 60% dentro da meta — ele sobe o level sozinho (1★, com aviso na conquista). Fora isso, só recomenda (`AUTO_UP_*` nas constantes).
+- **Subir de level a qualquer momento:** na aba Trilhas (ou no aviso "Recomendado" da Início) toque em **Subir de level**. A partir daí, só **aquela trilha** passa a receber contas do **level seguinte** (em rodada geral, até 8 por rodada; em "Treinar só esta", todas de uma vez), e as outras trilhas seguem normais. Ao completar **12 contas** (`CLIMB_ITEMS`), o app decide: sobe com **≥ 75% de acertos** (9/12) **e** mediana de tempo ÷ limite ≤ 1,1. **★** = passou; **★★** = ≥ 5 dentro da meta; **★★★** = ≥ 11 acertos e ≥ 8 dentro da meta. Bônus de XP 40/70/100. Lapsos de digitação não contam. A pessoa pode cancelar a subida a qualquer hora.
+- Passou → level seguinte (`m` recomeça em 0,15, barra zerada). Não passou → **nada se perde** (nem barra, nem estrelas, nem level): o pedido some e dá para pedir de novo. No último level, "subir" conclui a trilha (patente Mestre).
+- Na aba Trilhas, toque num level já conquistado com menos de 3★ na escada para **refazer a prova** (8 contas) e melhorar as estrelas (não muda o level atual).
 - Terminou o último level → trilha **concluída** e entra em **Mestre**: até 5 patentes (400 XP cada), e a meta de tempo encolhe 7% por patente — o treino de velocidade nunca acaba.
 
 ## Recompensas e retenção
@@ -74,7 +83,11 @@ Na primeira vez numa trilha, 6 contas em escada (acerto bom sobe 1 level, o rest
 
 ## Telas
 
-Início (nível, meta, sequência, semana, botão **Treinar** ou **Começar nivelamento**, avisos de prova liberada) · Trilhas (liga/desliga, level, barra, estrelas, escada de levels, dica, "treinar só esta", prova) · Treino (barra da rodada, chip da trilha/level, combo e XP, teclado) · Resumo da rodada · Estatísticas (precisão, % dentro da meta, contas por dia, por trilha) · Ajustes (meta, tamanho da rodada, desafio, tema, idioma PT/EN, voz/TTS, vibração, sons, modo foco, exportação CSV/JSON, apagar dados).
+Início (nível, meta, sequência, semana, botão **Treinar** ou **Começar nivelamento**, avisos "Recomendado: subir de level") · Trilhas (liga/desliga, level, barra, estrelas, escada de levels, dica, "treinar só esta", subir de level) · Treino (barra da rodada, chip da trilha/level, combo e XP, teclado) · Resumo da rodada · Estatísticas (precisão, % dentro da meta, contas por dia, por trilha) · Ajustes (meta, tamanho da rodada, desafio, tema, idioma PT/EN, voz/TTS, vibração, sons, modo foco, exportação CSV/JSON, apagar dados).
+
+## Relatório para IA
+
+Em **Ajustes > Dados > Relatório para IA** há dois botões: **Copiar** (área de transferência) e **MD ↓** (baixa `mental_math_relatorio_ia.md`). O texto em Markdown começa com instruções para a IA (como o app funciona, o que é evolução esperada, o que responder) e traz: resumo geral, estado atual por trilha, evolução por semana (geral e por trilha, com a razão mediana *tempo ÷ meta*), comparação início × fim em cada level, marcos (nivelamento, provas, levels, patentes), contas por dia, últimas rodadas e o **registro bruto das últimas 1.500 contas** em CSV. O app guarda um registro compacto de cada conta (últimas 5.000) e dos marcos (últimos 400) só para isso; tudo fica no aparelho até você copiar ou baixar.
 
 ## Dados
 

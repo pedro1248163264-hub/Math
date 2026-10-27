@@ -87,7 +87,8 @@ const Analytics = {
     return {key, tr, n, level:tr.level, placed:tr.placed, done:tr.done, rank:tr.rank,
       bar:Engine.barFrac(tr), xp:Math.round(tr.xp), need:Engine.xpNeed(tr), testReady:tr.testReady,
       stars:Engine.starsTotal(tr), starsMax:Engine.starsMax(key),
-      goalMs:Engine.goalMs(tr), median:Engine.recentMedian(tr), accuracy:Engine.recentAccuracy(tr),
+      goalMs:Engine.goalMs(tr), limitSmall:Engine.limitMs(tr, tr.level, 'small'), limitBig:Engine.limitMs(tr, tr.level, 'big'),
+      metaBig:Engine.goalMs(tr, tr.level, 'big'), medSmall:Engine.recentMedianSize(tr,'small'), medBig:Engine.recentMedianSize(tr,'big'), median:Engine.recentMedian(tr), accuracy:Engine.recentAccuracy(tr),
       active:Engine.activeKeys().includes(key)};
   }
 };

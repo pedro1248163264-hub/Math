@@ -19,7 +19,7 @@ const Engine = {
   block:null,           // bloco em andamento ({kind,key,level,count,...})
   newTrack(key){
     return {key, level:1, xp:0, m:M_START, rank:0, placed:false, testReady:false, done:false,
-      stars:{}, strength:0.6, window:[], items:0, lastPracticeAt:0, reinforce:0, recentPairs:[],
+      stars:{}, climb:null, strength:0.6, window:[], items:0, lastPracticeAt:0, reinforce:0, recentPairs:[],
       patternWeights:{}, digitWeights:{}, patternErrorStreak:{}, hotPairs:{}, bestMedian:{}};
   },
   track(key){
@@ -32,17 +32,37 @@ const Engine = {
     return keys.length ? keys : [...DEFAULT_ACTIVE_TRACKS];
   },
   rho(){ return CHALLENGE_LEVELS[Store.data.settings.challenge] || CHALLENGE_LEVELS.balanced; },
-  goalMs(tr, level){ return levelGoalMs(tr.key, level||tr.level, tr.done ? tr.rank : 0); },
-  zone(ms, goal){ const r=ms/goal; return r<=ZONE_FAST ? 'fast' : r<=ZONE_OK ? 'ok' : 'slow'; },
+  // Meta (bônus) das contas pequenas do level; limiteMs = o que bloqueia (pequena/grande).
+  goalMs(tr, level, size='small'){ return levelTimes(tr.key, level||tr.level, size, tr.done ? tr.rank : 0).meta; },
+  limitMs(tr, level, size='small'){ return levelTimes(tr.key, level||tr.level, size, tr.done ? tr.rank : 0).limit; },
+  // meta ≤ ms → 'fast' (XP extra); ≤ limite → 'ok'; acima → 'slow' (correta, fora do tempo)
+  zone(ms, goal, limit){ const lim = limit || goal*ZONE_OK; return ms<=goal*ZONE_FAST ? 'fast' : ms<=lim ? 'ok' : 'slow'; },
   xpNeed(tr){ return tr.done ? RANK_XP : TRACK_XP_BASE + TRACK_XP_STEP*(tr.level-1); },
   levelCount(key){ return TRACKS[key].levels.length; },
   // 0..1: quão cheia está a barra do level (ou da patente, na trilha concluída)
   barFrac(tr){ return U.clamp(tr.xp / this.xpNeed(tr), 0, 1); },
   startLevel(key){ return Math.max(1, Math.round(this.levelCount(key)*PLACEMENT_START_FRAC)); },
 
+  /* ----- subida de level pedida pela pessoa ----- */
+  canClimb(tr){ return !!tr.placed && !tr.done && !tr.climb; },
+  // Nível-alvo: o seguinte; no último level, "subir" = concluir a trilha provando o próprio último level.
+  climbTarget(tr){ return Math.min(tr.level+1, this.levelCount(tr.key)); },
+  startClimb(key){
+    const tr = this.track(key);
+    if(!this.canClimb(tr)) return false;
+    tr.climb = {level:this.climbTarget(tr), need:CLIMB_ITEMS, results:[], askedAt:Date.now()};
+    Store.save();
+    return true;
+  },
+  cancelClimb(key){ const tr = this.track(key); tr.climb = null; Store.save(); },
+  climbLeft(tr){ return tr.climb ? Math.max(0, tr.climb.need - tr.climb.results.length) : 0; },
+  climbPassNeed(need){ return Math.ceil(need*CLIMB_PASS_FRAC); },
+
   /* ----- estatística curta de uma trilha (para a UI) ----- */
   recent(tr, n=20){ return (tr.window||[]).filter(w=>!w.lapse && w.kind==='practice' && !w.old).slice(-n); },
   recentAccuracy(tr){ const w=this.recent(tr); return w.length ? U.mean(w.map(x=>x.correct?1:0)) : null; },
+  // mediana recente dos acertos de um tipo de conta ('small' | 'big'); só contas de treino com esse tamanho
+  recentMedianSize(tr, size){ const c = this.recent(tr, 60).filter(x=>x.correct && x.size===size).map(x=>x.ms); return c.length>=3 ? U.median(c) : null; },
   recentMedian(tr){ const c=this.recent(tr).filter(x=>x.correct).map(x=>x.ms); return c.length ? U.median(c) : null; },
   starsTotal(tr){ return Object.values(tr.stars||{}).reduce((a,b)=>a+b,0); },
   starsMax(key){ return this.levelCount(key)*3; },
@@ -206,14 +226,14 @@ const Engine = {
     const weights = pool.map(k=>{
       const tr = this.track(k);
       const recency = tr.lastPracticeAt ? U.clamp((now-tr.lastPracticeAt)/(3*ONE_DAY),0,1) : 1;
-      return Math.max(0.1, 0.6 + (1-tr.strength)*1.2 + recency + (tr.reinforce?0.8:0) - 0.7*(used[k]||0));
+      return Math.max(0.1, 0.6 + (1-tr.strength)*1.2 + recency + (tr.reinforce?0.8:0) + (tr.climb?1.2:0) - 0.7*(used[k]||0));
     });
     const total = weights.reduce((a,b)=>a+b,0);
     let r = Math.random()*total;
     for(let i=0;i<pool.length;i++){ if(r<weights[i]) return pool[i]; r-=weights[i]; }
     return pool[pool.length-1];
   },
-  // Rodada = lista de blocos. Ordem: nivelamentos → blocos de treino → provas de nível (clímax).
+  // Rodada = lista de blocos: nivelamentos → treino (com blocos de "subida" pedidos pela pessoa no meio).
   planRound(opts={}){
     const size = opts.size || this.roundSize();
     // Refazer a prova de um level já conquistado (para melhorar as estrelas): rodada de um bloco só.
@@ -229,20 +249,27 @@ const Engine = {
       total += PLACEMENT_ITEMS;
     });
     const placed = keys.filter(k=>this.track(k).placed);
-    const tests = placed.filter(k=>this.track(k).testReady).slice(0,MAX_TESTS_PER_ROUND);
-    total += tests.length*TEST_ITEMS;
+    // Subidas pedidas: cada trilha com pedido em andamento ganha um bloco único com as contas que faltam.
+    const climbs = placed.filter(k=>this.track(k).climb && this.climbLeft(this.track(k))>0).slice(0,CLIMB_MAX_PER_ROUND);
+    const climbLen = k => opts.onlyTrack ? this.climbLeft(this.track(k)) : Math.min(this.climbLeft(this.track(k)), CLIMB_BLOCK_MAX);
+    climbs.forEach(k=>total += climbLen(k));
     let prev = null; const used = {};
     while(total<size && placed.length){
       const key = this.pickTrack(placed, prev, used), tr = this.track(key);
       const remaining = size-total;
       let len = remaining<=BLOCK_MAX+2 ? Math.max(remaining, 5) : rr(BLOCK_MIN, BLOCK_MAX);
-      const reinforce = !!tr.reinforce && tr.level>1;
+      const reinforce = !!tr.reinforce && tr.level>1 && !tr.climb;
       const level = reinforce ? tr.level-1 : tr.level;
       const warmup = (!used[key] && !reinforce && level>1) ? WARMUP_ITEMS : 0;
       blocks.push({kind:'practice', track:key, level, count:len+warmup, warmup, reinforce});
       total += len; prev = key; used[key] = (used[key]||0)+1;
     }
-    tests.forEach(k=>blocks.push({kind:'test', track:k, level:this.track(k).level, count:TEST_ITEMS, warmup:0}));
+    // As subidas entram DEPOIS do primeiro bloco de treino (já aquecido), sem repetir a trilha do vizinho.
+    const at = Math.min(blocks.filter(b=>b.kind==='placement').length+1, blocks.length);
+    climbs.forEach((k,i)=>{
+      const tr = this.track(k);
+      blocks.splice(Math.min(at+i*2, blocks.length), 0, {kind:'climb', track:k, level:tr.climb.level, count:climbLen(k), warmup:0});
+    });
     return blocks;
   },
 
@@ -258,13 +285,22 @@ const Engine = {
     const b = this.block;
     if(!b || b.idx>=b.count) return null;
     const tr = this.track(b.key);
-    let level=b.level, m=tr.m, kind='practice', isWarmup=false, isReinforce=false;
+    let level=b.level, m=tr.m, kind='practice', isWarmup=false, isReinforce=false, size='mid';
     if(b.kind==='placement'){ level=b.lvl; m=PLACEMENT_M; kind='placement'; }
-    else if(b.kind==='test'){ m=Math.max(tr.m, TEST_MIN_M); kind='test'; }
     else if(b.reinforce){ m=0.6; isReinforce=true; }
-    else if(b.idx<b.warmup){ level=Math.max(1,b.level-1); m=WARMUP_M; isWarmup=true; }
+    else if(b.kind!=='test' && b.kind!=='climb' && b.idx<b.warmup){ level=Math.max(1,b.level-1); m=WARMUP_M; isWarmup=true; }
+    else {
+      // contas de verdade: metade grande (metade de cima do level), metade pequena (metade de baixo)
+      if(b.kind==='test'){ m=Math.max(tr.m, TEST_MIN_M); kind='test'; }
+      else if(b.kind==='climb'){ m=CLIMB_M; kind='climb'; }
+      b.bigN = b.bigN||0; b.smallN = b.smallN||0;
+      const diff = b.bigN-b.smallN;
+      const big = diff<=-2 ? true : diff>=2 ? false : Math.random()<BIG_SHARE;
+      size = big ? 'big' : 'small';
+      if(big){ b.bigN++; m = 0.4+0.6*m; } else { b.smallN++; m = 0.6*m; }
+    }
     b.idx++;
-    return this.generateItem(b.key, level, m, {kind, isWarmup, isReinforce});
+    return this.generateItem(b.key, level, m, {kind, isWarmup, isReinforce, size});
   },
   generateItem(key, level, m, ctx={}){
     const tr = this.track(key), def = levelDef(key, level);
@@ -274,7 +310,8 @@ const Engine = {
     while(tr.recentPairs.includes(pairKey) && tries<6);
     tr.recentPairs.push(pairKey); if(tr.recentPairs.length>24) tr.recentPairs.shift();
     const op = gen.op || TRACKS[key].op, opDef = OPS[op];
-    const goal = levelGoalMs(key, level, tr.done && level===tr.level ? tr.rank : 0);
+    const size = ctx.size || 'mid';
+    const times = levelTimes(key, level, size, tr.done && level===tr.level ? tr.rank : 0), goal = times.meta, limit = times.limit;
     const kind = ctx.kind || 'practice';
     return {key, level, kind, isWarmup:!!ctx.isWarmup, isReinforce:!!ctx.isReinforce, m, op,
       a:gen.a, b:gen.b, c:gen.c, d:gen.d, answer:gen.answer, features:gen.features||{}, exprText:gen.exprText,
@@ -282,14 +319,16 @@ const Engine = {
       midOp:gen.midOp, isEquation:!!gen.isEquation, isReversePath:!!gen.isReversePath,
       pairKind:gen.pairKind, pair:gen.pair, digitKey:gen.digitKey, digits:gen.digits,
       symbol:opDef.symbol, label:opDef.label, kcLabel:trackLabel(key),
-      goalMs:goal, targetMs:goal, timeoutMs:U.clamp(goal*TIMEOUT_MULT, TIMEOUT_MIN_MS, TIMEOUT_MAX_MS),
-      isMasteredFlash: !!Store.data.settings.masteryFlash && !!ctx.isWarmup};
+      size, goalMs:goal, targetMs:goal, limitMs:limit, timeoutMs:U.clamp(limit*TIMEOUT_MULT, TIMEOUT_MIN_MS, TIMEOUT_MAX_MS),
+      isMasteredFlash: this.flashApplies(key) && !!ctx.isWarmup};
   },
+  // Aquecimento relâmpago (conta que borra após MASTERY_FLASH_MS): só nas 4 operações básicas.
+  flashApplies(key){ const st = Store.data.settings; return !!st.masteryFlash && FLASH_TRACKS.includes(key) && (st.flashTracks||[]).includes(key); },
   xpFor(item, zone){
     const base = XP_BY_ZONE[zone];
     let mult;
     if(item.kind==='placement') mult = PLACEMENT_XP_MULT;
-    else if(item.kind==='test') mult = 1;
+    else if(item.kind==='test' || item.kind==='climb') mult = 1;
     else if(item.isWarmup) mult = WARMUP_XP_MULT;
     else if(item.isReinforce) mult = REINFORCE_XP_MULT;
     else mult = XP_M_BASE + XP_M_SPAN*item.m;
@@ -302,11 +341,11 @@ const Engine = {
     const tr = this.track(item.key), b = this.block, now = Date.now();
     const out = {zone:null, xp:0, lapse:false, hint:null, events:[], blockDone:false, blockResult:null};
     out.lapse = !correct && !timedOut && (ms<IMPULSE_FLOOR || this.isTypoLapse(typedRaw, item.answer));
-    out.zone = correct ? this.zone(ms, item.goalMs) : null;
+    out.zone = correct ? this.zone(ms, item.goalMs, item.limitMs) : null;
     out.targetHit = out.zone==='fast';
     out.etype = timedOut ? 'abandono' : !correct ? 'erro' : out.zone==='fast' ? 'meta' : out.zone==='ok' ? 'bom' : 'lento_correto';
     const good = correct && out.zone!=='slow';
-    tr.window.push({ms, correct:!!correct, zone:out.zone, lapse:out.lapse, level:item.level, kind:item.kind, at:now});
+    tr.window.push({ms, correct:!!correct, zone:out.zone, lapse:out.lapse, level:item.level, kind:item.kind, size:item.size, at:now});
     if(tr.window.length>WINDOW_SIZE) tr.window.shift();
     tr.lastPracticeAt = now; tr.items++;
     if(correct) out.xp = this.xpFor(item, out.zone);
@@ -319,9 +358,12 @@ const Engine = {
       }
     }
     if(b && b.key===item.key){
-      if(item.kind==='test' || item.kind==='placement'){
+      if(item.kind==='test' || item.kind==='placement' || item.kind==='climb'){
         if(out.lapse && b.extra<2){ b.extra++; b.count++; }       // lapso não conta: repõe a conta
-        else b.results.push({correct:!!correct, zone:out.zone, ms, level:item.level});
+        else {
+          b.results.push({correct:!!correct, zone:out.zone, ms, level:item.level, r:ms/item.limitMs});
+          if(item.kind==='climb' && tr.climb && !out.lapse) tr.climb.results.push({c:correct?1:0, ms:Math.round(ms), f:out.zone==='fast'?1:0, r:Math.round(ms/item.limitMs*1000)/1000});
+        }
         if(item.kind==='placement' && !out.lapse) this._placementStep(b, item, good);
       }
       b.done++;
@@ -352,6 +394,7 @@ const Engine = {
       tr.testReady = true;
       out.events.push({type:'testReady', key:tr.key, level:tr.level});
     }
+    if(!tr.done && tr.testReady && !tr.climb && !reinforce) this._maybeAutoLevelUp(tr, out);
     this.nudgeDigits(tr, item.digitKey, item.digits, good);
     out.hint = this.nudgePatternWeight(tr, item, correct, good);
     this.registerPairRt(tr, item, ms, correct, out.zone==='fast');
@@ -365,6 +408,22 @@ const Engine = {
       }
     }
   },
+  // O app sobe sozinho só com evidência forte e recente no level atual (ver AUTO_UP_*).
+  _maybeAutoLevelUp(tr, out){
+    if(tr.m<AUTO_UP_M) return;
+    const rec = tr.window.filter(w=>w.kind==='practice' && w.level===tr.level && !w.lapse && !w.old).slice(-AUTO_UP_ITEMS);
+    if(rec.length<AUTO_UP_ITEMS) return;
+    const acc = rec.filter(w=>w.correct).length/rec.length, fast = rec.filter(w=>w.zone==='fast').length/rec.length;
+    if(acc<AUTO_UP_ACC || fast<AUTO_UP_FAST) return;
+    const from = tr.level, n = this.levelCount(tr.key), r = {};
+    tr.stars[from] = Math.max(tr.stars[from]||0, 1);
+    tr.testReady = false; tr.xp = 0;
+    if(from<n){ tr.level++; tr.m = M_AFTER_LEVELUP; r.newLevel = tr.level; }
+    else { tr.done = true; tr.rank = 0; r.finished = true; }
+    tr.strength = Math.max(tr.strength, 0.7);
+    tr.window.forEach(w=>{ w.old = true; });
+    out.events.push({type:'levelUp', key:tr.key, level:from, newLevel:r.newLevel||null, stars:1, finished:!!r.finished, auto:true});
+  },
   _placementStep(b, item, good){
     b.visited.push(item.level);
     if(good) b.bestSuccess = Math.max(b.bestSuccess, item.level);
@@ -376,8 +435,10 @@ const Engine = {
     const rs = b.results.filter(r=>r);
     const correctMs = rs.filter(r=>r.correct).map(r=>r.ms);
     const res = {kind:b.kind, key:b.key, level:b.level, total:rs.length, correct:rs.filter(r=>r.correct).length,
-      hits:rs.filter(r=>r.zone==='fast').length, medianMs:correctMs.length ? U.median(correctMs) : null};
+      hits:rs.filter(r=>r.zone==='fast').length, medianMs:correctMs.length ? U.median(correctMs) : null,
+      medianRatio:rs.some(r=>r.correct) ? U.median(rs.filter(r=>r.correct).map(r=>r.r)) : null};
     if(b.kind==='test') res.test = this._finishTest(b, tr, res, out);
+    else if(b.kind==='climb') res.test = tr.climb ? this._finishClimb(b, tr, res, out) : null;
     else if(b.kind==='placement') res.placed = this._finishPlacement(b, tr, rs, out);
     else {
       if(b.reinforce) tr.reinforce = 0;
@@ -395,7 +456,7 @@ const Engine = {
   _finishTest(b, tr, res, out){
     const goal = this.goalMs(tr, b.level);
     const c = res.correct, h = res.hits, med = res.medianMs;
-    const pass = c>=TEST_PASS_CORRECT && med!=null && med<=goal*TEST_PASS_MEDIAN_RATIO;
+    const pass = c>=TEST_PASS_CORRECT && res.medianRatio!=null && res.medianRatio<=TEST_PASS_MEDIAN_RATIO;
     const stars = !pass ? 0 : (c>=TEST_ITEMS && h>=TEST_STAR3_HITS) ? 3 : h>=TEST_STAR2_HITS ? 2 : 1;
     const isCurrent = b.level===tr.level && !tr.done;
     const prevStars = tr.stars[b.level]||0;
@@ -418,6 +479,33 @@ const Engine = {
       tr.m = Math.max(REINFORCE_M, tr.m - 0.1);
       out.events.push({type:'testFailed', key:tr.key, level:b.level, correct:c});
     }
+    return r;
+  },
+  // Decide a subida depois das CLIMB_ITEMS contas (que podem ter vindo de várias rodadas).
+  // Devolve null enquanto faltarem contas. Mesmo formato do resultado da prova, para a UI reaproveitar.
+  _finishClimb(b, tr, res, out){
+    const cl = tr.climb, rs = cl.results, N = cl.need;
+    if(rs.length<N) return null;
+    const goal = this.goalMs(tr, cl.level);
+    const c = rs.filter(x=>x.c).length, h = rs.filter(x=>x.c && x.f).length;
+    const ms = rs.filter(x=>x.c).map(x=>x.ms), med = ms.length ? U.median(ms) : null;
+    const ratios = rs.filter(x=>x.c && x.r!=null).map(x=>x.r), medR = ratios.length ? U.median(ratios) : null;
+    const pass = c>=this.climbPassNeed(N) && medR!=null && medR<=TEST_PASS_MEDIAN_RATIO;
+    const stars = !pass ? 0 : (c>=Math.ceil(N*0.9) && h>=Math.ceil(N*0.6)) ? 3 : h>=Math.ceil(N*0.4) ? 2 : 1;
+    const from = tr.level, n = this.levelCount(tr.key);
+    const r = {pass, stars, correct:c, hits:h, medianMs:med, goalMs:goal, total:N, retake:false, improved:false, leveledUp:false, finished:false};
+    tr.climb = null;
+    if(pass){
+      tr.stars[from] = Math.max(tr.stars[from]||0, stars); r.improved = true;
+      tr.testReady = false; tr.xp = 0;
+      if(from<n){ tr.level++; tr.m = M_AFTER_LEVELUP; r.leveledUp = true; r.newLevel = tr.level; }
+      else { tr.done = true; tr.rank = 0; r.finished = true; }
+      tr.strength = Math.max(tr.strength, 0.7);
+      out.events.push({type:'levelUp', key:tr.key, level:from, newLevel:r.newLevel||null, stars, finished:r.finished});
+    } else {
+      out.events.push({type:'climbFailed', key:tr.key, level:cl.level, correct:c, total:N});
+    }
+    res.level = from; res.total = N; res.correct = c; res.hits = h; res.medianMs = med;
     return r;
   },
   _finishPlacement(b, tr, rs, out){

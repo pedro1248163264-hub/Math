@@ -26,6 +26,7 @@ const Store = {
         gapMs:400, correctAnswerShowMs:900,
         confirmBeforeAccept:true, stopClockOnFirstKey:true,
         focusMode:false, masteryFlash:true,
+        flashTracks:[...FLASH_TRACKS],  // trilhas onde o aquecimento relâmpago pode esconder a conta
         dailyGoal:DEFAULT_DAILY_GOAL,   // contas por dia
         roundSize:'normal',             // short | normal | long
         challenge:'balanced',           // gentle | balanced | intense  (taxa de acerto desejada)
@@ -39,6 +40,8 @@ const Store = {
       seenTips:{},                      // 'trilha:level' → true (dica do level já mostrada)
       onboarded:false,
       history:[],
+      log:[],                           // uma linha por conta: [t,trilha,level,m,ms,meta,acerto,zona,tipo,lapso]
+      events:[],                        // marcos: nivelamento, prova, level, patente, reforço
       bestStreak:0                      // melhor sequência de acertos (dentro de uma rodada)
     };
   },
@@ -60,6 +63,7 @@ const Store = {
     if(!s.activeTracks.length) s.activeTracks = [...DEFAULT_ACTIVE_TRACKS];
     ['tts','hideDuringTts','vibration','sounds','confirmBeforeAccept','stopClockOnFirstKey','focusMode','masteryFlash']
       .forEach(k=>{ s[k] = !!s[k]; });
+    s.flashTracks = Array.isArray(s.flashTracks) ? s.flashTracks.filter(k=>FLASH_TRACKS.includes(k)) : [...FLASH_TRACKS];
     s.gapMs = U.clamp(Math.round(+s.gapMs)||base.gapMs, 100, 1200);
     s.correctAnswerShowMs = U.clamp(Math.round(+s.correctAnswerShowMs)||base.correctAnswerShowMs, 500, 2000);
     s.voiceRate = U.clamp(+s.voiceRate||1, 0.5, 2);
@@ -78,6 +82,11 @@ const Store = {
       tr.reinforce = t.reinforce ? 1 : 0;
       tr.stars = {};
       if(t.stars && typeof t.stars==='object') Object.keys(t.stars).forEach(l=>{ const v=+t.stars[l]; if(+l>=1 && +l<=n && v>=1) tr.stars[l] = Math.min(3, Math.round(v)); });
+      if(t.climb && typeof t.climb==='object'){
+        const cl = t.climb, need = U.clamp(Math.round(+cl.need)||CLIMB_ITEMS, 4, 40);
+        const res = Array.isArray(cl.results) ? cl.results.filter(x=>x && Number.isFinite(+x.ms)).slice(0,need).map(x=>({c:x.c?1:0, ms:Math.round(+x.ms), f:x.f?1:0, r:Number.isFinite(+x.r)?+x.r:null})) : [];
+        if(!tr.done && Math.round(+cl.level)>=1 && Math.round(+cl.level)<=n && res.length<need) tr.climb = {level:Math.round(+cl.level), need, results:res, askedAt:Number.isFinite(+cl.askedAt)?+cl.askedAt:Date.now()};
+      }
       tr.strength = U.clamp(Number.isFinite(+t.strength) ? +t.strength : 0.6, 0, 1);
       tr.window = Array.isArray(t.window) ? t.window.filter(w=>w && Number.isFinite(w.ms)).slice(-WINDOW_SIZE) : [];
       tr.items = Math.max(0, Math.round(+t.items)||0);
@@ -105,6 +114,8 @@ const Store = {
     out.seenTips = (src.seenTips && typeof src.seenTips==='object') ? src.seenTips : {};
     out.onboarded = !!src.onboarded;
     out.history = Array.isArray(src.history) ? src.history.filter(h=>h && typeof h==='object') : [];
+    out.log = Array.isArray(src.log) ? src.log.filter(e=>Array.isArray(e) && e.length>=10).slice(-LOG_MAX) : [];
+    out.events = Array.isArray(src.events) ? src.events.filter(e=>e && typeof e==='object' && e.type).slice(-EVENTS_MAX) : [];
     out.bestStreak = Math.max(0, Math.round(+src.bestStreak)||0);
     out.settingsVersion = SETTINGS_VERSION;
     return out;
