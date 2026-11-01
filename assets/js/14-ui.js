@@ -436,6 +436,27 @@ const UI = {
     }
     return this.mathSpan(term.value<0 ? `(−${Math.abs(term.value)})` : String(term.value));
   },
+  // Expressão com grupos: o formato do símbolo ( ) [ ] { } vem do nível de aninhamento (groupKind).
+  // Mesma cor/peso para os três — são o mesmo símbolo, só muda o formato.
+  mathExpr(n){
+    const wrap = document.createElement('span');
+    wrap.className = 'math-expr';
+    if(n.t==='num') wrap.append(this.mathSpan(String(n.v)));
+    else if(n.t==='group'){
+      const [o,c] = BRACKET_PAIRS[groupKind(n)];
+      wrap.classList.add('math-group');
+      wrap.append(this.mathSpan(o,'math-bracket'), this.mathExpr(n.e), this.mathSpan(c,'math-bracket'));
+    }
+    else if(n.t==='neg') wrap.append(this.mathSpan('−','math-operator'), this.mathExpr(n.e));
+    else if(n.t==='pow'){
+      const sup = document.createElement('sup');
+      sup.textContent = String(n.exp);
+      wrap.classList.add('math-power');
+      wrap.append(this.mathExpr(n.base), sup);
+    }
+    else wrap.append(this.mathExpr(n.l), this.mathOperator(n.op), this.mathExpr(n.r));
+    return wrap;
+  },
   linearEquationPart(coef, constant){
     const fragment = document.createDocumentFragment();
     if(coef!==0){
@@ -448,6 +469,9 @@ const UI = {
   },
   renderMathQuestion(item, eqEl){
     eqEl.replaceChildren();
+    // Contas com grupos podem ser longas: a fonte encolhe pelo nº de caracteres (ver .fit-chars no CSS).
+    eqEl.classList.toggle('fit-chars', !!item.tree);
+    if(item.tree) eqEl.style.setProperty('--chars', String(item.exprText.length));
     if(item.isEquation){
       const prompt = this.mathSpan('x = ?', 'math-equation-prompt');
       const line = document.createElement('div');
@@ -474,7 +498,9 @@ const UI = {
     }
     const row = document.createElement('div');
     row.className = 'math-row';
-    if(item.terms && item.ops){
+    if(item.tree){
+      row.append(this.mathExpr(item.tree));
+    } else if(item.terms && item.ops){
       const isFractionDivision = item.ops.length===1 && item.ops[0]==='divisao' && item.terms.every(term=>term.kind==='fraction');
       if(isFractionDivision){
         const complex = document.createElement('span');

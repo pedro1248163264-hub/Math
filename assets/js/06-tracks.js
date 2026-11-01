@@ -297,6 +297,122 @@ function exprOrder(m){
   return {op:'expressao_encadeada', terms, ops, answer, exprText:chainText(terms,ops), features:{}};
 }
 
+// ---- expressões com grupos: sinal na frente do parêntese, × ÷ em ordem, ( ) [ ] { } e potência de grupo ----
+// Contas PEQUENAS de propósito: o foco é a ESTRUTURA (sinal, ordem, aninhamento), não o cálculo
+// pesado. Operandos baixos e o resultado é limitado por `cap` (rejeição por tentativas).
+// Resultado sempre inteiro; divisões sempre exatas (construídas a partir do quociente).
+function gcd2(a,b){ return b===0 ? a : gcd2(b, a%b); }
+function treeItem(tree){
+  return {op:'expressao_composta', tree, answer:exprEval(tree), exprText:exprToText(tree), features:{}};
+}
+// Aceita só contas em que o RESULTADO e todo OPERANDO ficam ≤ cap (nada de números gigantes mesmo
+// quando a resposta é pequena, como d − [(a + b) × c] com d enorme). Sem sorte em 80 tentativas,
+// devolve a menos "explosiva" que viu.
+function treeGen(make, cap){
+  let best = null, bestScore = Infinity;
+  for(let i=0;i<80;i++){
+    const it = treeItem(make());
+    if(!Number.isInteger(it.answer)) continue;
+    const biggest = Math.max(Math.abs(it.answer), ...(it.exprText.match(/[0-9]+/g)||['0']).map(Number));
+    if(biggest<=cap) return it;
+    if(biggest<bestScore){ best = it; bestScore = biggest; }
+  }
+  return best;
+}
+const pmOp = ()=>Math.random()<0.5 ? 'soma' : 'subtracao';
+// Grupo ( x ± y ) com valor v ≥ 2 e operandos ≤ ~2·hi: devolve {node, v}.
+function smallGroup(hi){
+  const N=X.num, B=X.bin;
+  if(Math.random()<0.5){ const x=rr(2,hi), y=rr(2,hi); return {node:X.group(B('soma',N(x),N(y))), v:x+y}; }
+  const y=rr(2,hi), d=rr(2,hi); return {node:X.group(B('subtracao',N(y+d),N(y))), v:d};
+}
+// Nível 7 — sinal na frente do parêntese: a − (b + c), a − (b − c), −(3 − 8), −(b + c) + a ...
+function exprSignGroup(m){
+  const G=X.group, N=X.num, B=X.bin;
+  const hi = mix(10,22,m), op = mix(8,14,m);
+  return treeGen(()=>{
+    const r = Math.random();
+    if(r<0.25){ const b=rr(2,op), c=rr(2,op); return B('subtracao', N(b+c+rr(2,hi)), G(B('soma',N(b),N(c)))); }          // a − (b + c)
+    if(r<0.50){ const x=rr(3,op+4), y=rr(1,x-1); return B('subtracao', N(x+rr(0,hi)), G(B('subtracao',N(x),N(y)))); }   // a − (b − c)
+    if(r<0.70){ const x=rr(1,10), y=x+rr(2,10), t=G(B('subtracao',N(x),N(y)));                                          // −(3 − 8) [+ d]
+      return Math.random()<0.5 ? X.neg(t) : B('soma', X.neg(t), N(rr(2,hi))); }
+    if(r<0.85){ const b=rr(2,op), c=rr(2,op); return B('soma', B('subtracao', N(b+c+rr(1,hi)), G(B('soma',N(b),N(c)))), N(rr(2,hi))); } // a − (b + c) + d
+    const b=rr(2,op), c=rr(2,op); return B('soma', X.neg(G(B('soma',N(b),N(c)))), N(b+c+rr(1,hi)));                     // −(b + c) + a
+  }, 100);
+}
+// Nível 8 — × e ÷ têm a mesma prioridade (esquerda → direita) e vêm antes de + e −.
+function exprDivOrder(m){
+  const G=X.group, N=X.num, B=X.bin;
+  const dMax = mix(6,9,m), qMax = mix(6,12,m);
+  return treeGen(()=>{
+    const d = rr(2,dMax), q = rr(2,qMax), r = Math.random(), quot = ()=>B('divisao', N(d*q), N(d));
+    if(r<0.22) return B('multiplicacao', quot(), N(rr(2,9)));                                    // a ÷ b × c
+    if(r<0.40){                                                                                  // a × b ÷ c
+      const a = rr(2,12), step = d/gcd2(a,d), k = rr(Math.max(1,Math.ceil(2/step)), Math.floor(12/step));
+      return B('divisao', B('multiplicacao', N(a), N(step*k)), N(d));
+    }
+    if(r<0.55) return B('soma', N(rr(5,mix(20,50,m))), quot());                                  // a + b ÷ c
+    if(r<0.70) return B('subtracao', N(q+rr(1,mix(15,40,m))), quot());                           // a − b ÷ c
+    if(r<0.85){ const a=rr(1,d*q-1); return B('divisao', G(B('soma',N(a),N(d*q-a))), N(d)); }    // (a + b) ÷ c
+    return B('soma', quot(), B('multiplicacao', N(rr(2,9)), N(rr(2,9))));                        // a ÷ b + c × d
+  }, 100);
+}
+// Nível 9 — colchetes + parênteses: [ ( ) ].
+function exprBrackets(m){
+  const G=X.group, N=X.num, B=X.bin;
+  const iHi = mix(6,12,m), cHi = mix(3,6,m), dHi = mix(8,25,m);
+  return treeGen(()=>{
+    const r = Math.random(), g = smallGroup(iHi), op = pmOp();
+    if(r<0.30){ const c=rr(2,cHi), prod=g.v*c, d = op==='subtracao' ? rr(2,Math.min(dHi,prod-1)) : rr(2,dHi);   // [(a ± b) × c] ± d
+      return B(op, G(B('multiplicacao', g.node, N(c))), N(d)); }
+    if(r<0.50){ const c=rr(2,cHi), prod=g.v*c, d = op==='subtracao' ? prod+rr(1,15) : rr(2,dHi);               // d ± [(a ± b) × c]
+      return B(op, N(d), G(B('multiplicacao', g.node, N(c)))); }
+    if(r<0.80){ const a = op==='subtracao' ? g.v+rr(1,dHi) : rr(2,dHi);                                        // [a ± (b ± c)] × d
+      return B('multiplicacao', G(B(op, N(a), g.node)), N(rr(2,cHi))); }
+    const c=rr(2,cHi), g2=smallGroup(Math.max(3,iHi-2)), left=g.v*c;                                           // [(a ± b) × c] ± (d ± e)
+    return B(left>g2.v ? op : 'soma', G(B('multiplicacao', g.node, N(c))), g2.node);
+  }, 100);
+}
+// Nível 10 — chaves + colchetes + parênteses: { [ ( ) ] }.
+function exprBraces(m){
+  const G=X.group, N=X.num, B=X.bin;
+  const iHi = mix(5,9,m), cHi = mix(3,5,m), dHi = mix(8,20,m);
+  return treeGen(()=>{
+    const r = Math.random(), g = smallGroup(iHi), op = pmOp(), op2 = pmOp();
+    if(r<0.35){ const c=rr(2,cHi), prod=g.v*c, d = op==='subtracao' ? rr(2,Math.min(dHi,prod-1)) : rr(2,dHi);   // {[(a ± b) × c] ± d} × e
+      return B('multiplicacao', G(B(op, G(B('multiplicacao', g.node, N(c))), N(d))), N(rr(2,3))); }
+    if(r<0.65){ const d=rr(2,cHi), prod=g.v*d, a = op==='subtracao' ? prod+rr(2,15) : rr(3,dHi), mid = op==='subtracao' ? a-prod : a+prod;   // {a ± [(b ± c) × d]} ± e
+      return B(mid>3 ? op2 : 'soma', G(B(op, N(a), G(B('multiplicacao', g.node, N(d))))), N(mid>3 ? rr(2,Math.min(dHi,mid-1)) : rr(2,dHi))); }
+    const b = op==='subtracao' ? g.v+rr(1,12) : rr(2,15), mid = op==='subtracao' ? b-g.v : b+g.v;              // {a ± [b ± (c ± d)]} × e  ou  ± e
+    const a = op2==='subtracao' ? mid+rr(2,15) : rr(3,20), top = op2==='subtracao' ? a-mid : a+mid;
+    const brace = G(B(op2, N(a), G(B(op, N(b), g.node))));
+    return Math.random()<0.5 ? B('multiplicacao', brace, N(rr(2,3))) : B(top>3 && Math.random()<0.5 ? 'subtracao' : 'soma', brace, N(top>3 ? rr(2,Math.min(10,top-1)) : rr(2,10)));
+  }, 150);
+}
+// Nível 11 — potência de um grupo e o sinal da base: (2 + 3)², −3² ≠ (−3)².
+function exprGroupPower(m){
+  const G=X.group, N=X.num, B=X.bin;
+  const vMax = mix(6,10,m);
+  const sq = max=>{ const v=rr(2,max);
+    if(Math.random()<0.5){ const x=rr(1,v-1); return {node:G(B('soma',N(x),N(v-x))), v}; }
+    const y=rr(1,9); return {node:G(B('subtracao',N(v+y),N(y))), v}; };
+  return treeGen(()=>{
+    const r = Math.random();
+    if(r<0.22){ const g=sq(vMax), p=X.pow(g.node,2);                                             // (a ± b)² [± d]
+      return Math.random()<0.5 ? p : B(pmOp(), p, N(rr(2,Math.min(20,g.v*g.v-1)))); }
+    if(r<0.40){ const g=sq(Math.min(vMax,8)), op=pmOp();                                         // d ± (a ± b)²
+      return B(op, N(op==='subtracao' ? g.v*g.v+rr(1,15) : rr(2,20)), X.pow(g.node,2)); }
+    if(r<0.56){ const a=rr(2,mix(5,9,m)); return B('soma', X.neg(X.pow(N(a),2)), N(a*a+rr(2,25))); }   // −a² + d
+    if(r<0.72){ const a=rr(2,mix(5,9,m)), p=X.pow(G(X.neg(N(a))),2);                                  // (−a)² − d  /  (−a)² + d
+      return Math.random()<0.7 ? B('subtracao', p, N(rr(2,a*a-1))) : B('soma', p, N(rr(2,20))); }
+    if(r<0.82){ const g=sq(3), p=X.pow(g.node,3);                                                // (a ± b)³, grupo vale 2 ou 3
+      return Math.random()<0.5 ? p : B('soma', p, N(rr(2,20))); }
+    const v = U.choice([4,6,8,10]), cs=[2,3,4,5,6,8,9].filter(c=>(v*v)%c===0), c=U.choice(cs);     // (a ± b)² ÷ c
+    const g = (()=>{ if(Math.random()<0.5){ const x=rr(1,v-1); return G(B('soma',N(x),N(v-x))); } const y=rr(1,9); return G(B('subtracao',N(v+y),N(y))); })();
+    return B('divisao', X.pow(g,2), N(c));
+  }, 120);
+}
+
 // ---- equações ----
 function eqText(a,b,c,d){
   const left = fmtCoefTerm(a) + (b!==0 ? ` ${b>0?'+':'−'} ${Math.abs(b)}` : '');
@@ -507,7 +623,22 @@ const TRACKS = {
      gen(m,tr){ return exprPowerChain(m); }},
     {n:['Ordem das operações','Order of operations'], goal:7000, shape:null,
      tip:['Primeiro potências e raízes, depois a multiplicação, por último soma e subtração: 9 + 3 × 4 = 9 + 12.','First powers and roots, then multiplication, last add/subtract: 9 + 3 × 4 = 9 + 12.'],
-     gen(m,tr){ return exprOrder(m); }}
+     gen(m,tr){ return exprOrder(m); }},
+    {n:['Sinal na frente do parêntese','Sign in front of parentheses'], goal:5000, shape:null,
+     tip:['Um − na frente do parêntese troca o sinal de TUDO lá dentro: 20 − (5 − 2) = 20 − 5 + 2 = 17. E −(3 − 8) = −3 + 8 = 5.','A − in front of parentheses flips the sign of EVERYTHING inside: 20 − (5 − 2) = 20 − 5 + 2 = 17. And −(3 − 8) = −3 + 8 = 5.'],
+     gen(m,tr){ return exprSignGroup(m); }},
+    {n:['Multiplicação e divisão em ordem','Multiplication and division in order'], goal:6000, shape:null,
+     tip:['× e ÷ têm a mesma prioridade: da esquerda para a direita (24 ÷ 6 × 2 = 4 × 2 = 8, e não 2). Só depois soma e subtração.','× and ÷ have the same priority: left to right (24 ÷ 6 × 2 = 4 × 2 = 8, not 2). Add/subtract come after.'],
+     gen(m,tr){ return exprDivOrder(m); }},
+    {n:['Colchetes e parênteses','Brackets and parentheses'], goal:7500, shape:null,
+     tip:['Colchetes e chaves são só parênteses de outro formato: servem para separar os grupos. Resolva de dentro para fora: ( ) → [ ] → { }.','Square brackets and braces are just parentheses in another shape, used to tell groups apart. Work from the inside out: ( ) → [ ] → { }.'],
+     gen(m,tr){ return exprBrackets(m); }},
+    {n:['Chaves, colchetes e parênteses','Braces, brackets and parentheses'], goal:9000, shape:null,
+     tip:['Sempre de dentro para fora, um grupo por vez, reescrevendo a conta menor: {30 − [4 + (9 − 6)]} × 2 → {30 − [4 + 3]} × 2 → {30 − 7} × 2 → 23 × 2.','Always inside out, one group at a time, rewriting the shorter expression: {30 − [4 + (9 − 6)]} × 2 → {30 − [4 + 3]} × 2 → {30 − 7} × 2 → 23 × 2.'],
+     gen(m,tr){ return exprBraces(m); }},
+    {n:['Potência de grupo e sinais','Powers of groups and signs'], goal:7000, shape:null,
+     tip:['Resolva o parêntese e depois a potência: (2 + 3)² = 5² = 25. Atenção à base: −3² = −9 (só o 3 é elevado), mas (−3)² = 9.','Solve the parentheses, then the power: (2 + 3)² = 5² = 25. Watch the base: −3² = −9 (only the 3 is squared), but (−3)² = 9.'],
+     gen(m,tr){ return exprGroupPower(m); }}
   ]},
 
   equacoes:{ sym:'x', color:'#84CC16', op:'equacao', label:['Equações','Equations'], levels:[

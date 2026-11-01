@@ -27,12 +27,30 @@ A v1 sorteava a próxima conta entre ~40 famílias, uma a uma, e ajustava a difi
 | Porcentagem | 6 (10% e 50% → acréscimo/desconto → "é quantos %?" → valor original, variação e descontos sucessivos) | não |
 | Contas com vírgula | 6 | não |
 | Frações | 5 (soma/subtração, multiplicação/divisão, comparação) | não |
-| Expressões | 6 (parênteses, cadeias, dois parênteses, **potências, cubos e raízes simples** — quadrados até 13², cubos até 5³, com bases negativas para treinar o sinal — e **ordem das operações**) | não |
+| Expressões | 11 (parênteses, cadeias, dois parênteses, **potências, cubos e raízes simples**, **ordem das operações**, **sinal na frente do parêntese**, **× e ÷ em ordem**, **colchetes**, **chaves** e **potência de grupo**) | não |
 | Equações | 5 | não |
 
 Potenciação e radiciação **não são trilhas**: aparecem só dentro das Expressões, de forma leve (quadrados de bases até 13, cubos de bases até 5 — inclusive negativas, p.ex. (−3)³ — e raízes quadradas exatas até √169), para treinar a ordem das operações.
 
 Cada level tem nome, **meta de tempo** (ex.: Soma Nv 1 = 1,0 s … Nv 8 = 5,8 s) e uma **dica de tática** (mostrada na primeira vez que o level aparece, na prova e na aba Trilhas). **Números negativos:** nos últimos levels de Subtração (3 últimos), Multiplicação (3 últimos) e Divisão (2 últimos), de ~22% a ~38% das contas (sobe com `m`) vêm com sinal — `menor − maior`, `a − (−b)`, `(−a) × b`, `(−a) ÷ (−b)` — mantendo o número de dígitos do level. A resposta pode ser negativa (tecla ±, ✓ para confirmar) e a dica do level explica a regra de sinais. Essas contas não entram nos pesos de vai-um/empréstimo.
+
+### Expressões: grupos, colchetes e chaves
+
+Os 5 últimos levels da trilha (7–11) usam uma **árvore de expressão** (`X` em `05-expression-terms.js`) em vez de lista de termos, para poder aninhar grupos. Contas **pequenas de propósito**: o foco é a estrutura (sinal, ordem, aninhamento), não o cálculo pesado — o gerador rejeita qualquer conta cujo resultado **ou operando** passe do limite do level (100 nos levels 7–9, 150 no 10, 120 no 11).
+
+| Lv | Nome | O que treina | Exemplo |
+|---|---|---|---|
+| 7 | Sinal na frente do parêntese | `−` na frente do grupo troca o sinal de tudo dentro | `20 − (5 − 2)`, `−(3 − 8) + 4` |
+| 8 | Multiplicação e divisão em ordem | `×` e `÷` têm a mesma prioridade (esq → dir), antes de `+`/`−` | `24 ÷ 6 × 2`, `(14 + 10) ÷ 6` |
+| 9 | Colchetes e parênteses | `[ ]` é só um parêntese de outro formato; de dentro para fora | `[(8 + 4) × 2] − 5` |
+| 10 | Chaves, colchetes e parênteses | idem, três níveis: `( )` → `[ ]` → `{ }` | `{30 − [4 + (9 − 6)]} × 2` |
+| 11 | Potência de grupo e sinais | potência aplicada ao grupo; `−3²` ≠ `(−3)²` | `(2 + 3)²`, `−3² + 20`, `(−4)² − 5` |
+
+- **O formato do símbolo vem do aninhamento**, não é sorteado: o grupo mais interno é `( )`, o que contém um `( )` é `[ ]` e o que contém um `[ ]` é `{ }` (máx. 3 níveis). Os três são o mesmo símbolo matemático (agrupar); a tela os desenha igual, só muda o formato.
+- Divisões são sempre **exatas** em todos os passos (o gerador parte do quociente) e a resposta é inteira; pode ser negativa (tecla ±).
+- **Voz:** cada símbolo é dito pelo nome ("abre colchetes", "fecha chaves") e o `−` na frente de grupo/base é lido como "menos".
+- **Tela:** a fonte encolhe com o tamanho da conta (`.fit-chars`) para não passar da largura do celular.
+- **Migração:** quem já tinha concluído a trilha (6/6) antes dos levels novos volta ao level 7 (as estrelas ficam); trilhas realmente concluídas não mudam.
 
 Os geradores ficam em `06-tracks.js` e garantem resposta exata, resposta inteira (ou decimal de ≤ 2 casas), sem resposta negativa (exceto equação, comparação e Expressões, onde a resposta pode ser negativa — digite com a tecla ±) e forma de dígitos fixa por level.
 
@@ -103,7 +121,7 @@ Em **Ajustes > Dados > Relatório para IA** há dois botões: **Copiar** (área 
 | `02-engine-constants.js` | **Todas** as constantes de ajuste (zonas, XP, prova, adaptação, rodadas, nível geral). |
 | `03-i18n.js` | Textos PT/EN. |
 | `04-operations.js` | Operações e comparações. |
-| `05-expression-terms.js` | Termos (potência, raiz quadrada/cúbica) e contadores de vai-um/empréstimo. |
+| `05-expression-terms.js` | Termos (potência, raiz quadrada/cúbica), árvore de expressão com grupos `( ) [ ] { }` (avaliar, imprimir, nível de aninhamento) e contadores de vai-um/empréstimo. |
 | `06-tracks.js` | Trilhas, levels (meta, forma, dica) e geradores de conta. |
 | `07-storage.js` | `Store`: persistência, saneamento, migração v2 → v3. |
 | `08-speed-engine.js` | `Engine`: planejamento da rodada, geração, `m`, XP, nivelamento, prova, reforço. |

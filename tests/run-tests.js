@@ -70,8 +70,58 @@ function runBlock(spec, user){
 }
 
 /* ---------- 1. GERADORES ---------- */
+// Verificador INDEPENDENTE para contas com grupos: lê só o TEXTO exibido (não usa a árvore) e calcula
+// pela precedência real — ( ) [ ] { } agrupam; ² ³ são potência; − unário; × ÷ antes de + −, esq→dir.
+// Devolve NaN se qualquer divisão não for exata (o gerador promete ÷ exato em todos os passos).
+function parseExprText(text){
+  const src = text.split(' ').join(''); let i = 0;
+  const SUP = {'²':2,'³':3};
+  const OPEN = {'(':')','[':']','{':'}'};
+  function atom(){
+    let v;
+    if(src[i]==='−'){ i++; v = -power(); return v; }                       // −3² = −(3²)
+    return power();
+  }
+  function power(){
+    let v;
+    if(OPEN[src[i]]){ const close = OPEN[src[i]]; i++; v = sum(); if(src[i]!==close) return NaN; i++; }
+    else { let j = i; while(src[j]>='0' && src[j]<='9') j++; if(j===i) return NaN; v = +src.slice(i,j); i = j; }
+    while(SUP[src[i]]){ v = Math.pow(v, SUP[src[i]]); i++; }
+    return v;
+  }
+  function prod(){
+    let v = atom();
+    while(src[i]==='×' || src[i]==='÷'){
+      const op = src[i++], r = atom();
+      if(op==='×') v *= r; else { if(!Number.isInteger(v/r)) return NaN; v /= r; }
+    }
+    return v;
+  }
+  function sum(){
+    let v = prod();
+    while(src[i]==='+' || src[i]==='−'){ const op = src[i++], r = prod(); v = op==='+' ? v+r : v-r; }
+    return v;
+  }
+  const out = sum();
+  return i===src.length ? out : NaN;
+}
+// Cada par de símbolos tem de bater com o NÍVEL de aninhamento: ( ) = 1, [ ] = 2, { } = 3 (nunca mais que 3).
+function bracketsMatchDepth(text){
+  const pairs = {'(':')','[':']','{':'}'}, kind = {'(':1,'[':2,'{':3};
+  const stack = [];
+  for(const ch of text){
+    if(pairs[ch]) stack.push({ch, depth:1});
+    else if(ch===')' || ch===']' || ch==='}'){
+      const top = stack.pop();
+      if(!top || pairs[top.ch]!==ch || top.depth>3 || kind[top.ch]!==top.depth) return false;
+      if(stack.length) stack[stack.length-1].depth = Math.max(stack[stack.length-1].depth, top.depth+1);
+    }
+  }
+  return stack.length===0;
+}
 function evalItem(it){
   const f = it.features||{};
+  if(it.tree) return parseExprText(it.exprText);
   if(f.neg){ let v=it.terms[0].value; for(let i=0;i<it.ops.length;i++) v=applyOp2(it.ops[i],v,it.terms[i+1].value); return v; }
   switch(it.op){
     case 'soma': return it.a+it.b;
@@ -166,6 +216,77 @@ ok(!TRACKS.potencia && !TRACKS.raiz, 'não há trilhas próprias de potência/ra
   ok(cubes>0 && negs>0, 'há cubos e bases negativas nas expressões');
   ok(!Object.keys(TRACKS).some(k=>k!=='expressoes' && Array.from({length:TRACKS[k].levels.length},(_,i)=>i).some(i=>{ for(let j=0;j<60;j++){ const it=Engine.generateItem(k,i+1,Math.random(),{}); if((it.terms||[]).some(t=>t.kind==='power'||t.kind==='radical')) return true; } return false; })), 'potência/raiz não aparecem fora das expressões');
 }
+/* ---------- 1b. EXPRESSÕES COM GRUPOS (sinal, ÷, ( ) [ ] { }, potência de grupo) ---------- */
+{
+  const E = 'expressoes', N = TRACKS[E].levels.length;
+  ok(N===11, 'trilha Expressões tem 11 levels ('+N+')');
+  const caps = {7:100, 8:100, 9:100, 10:150, 11:120};
+  const seen = {}; let bad = 0; const badSamples = [];
+  for(let L=7; L<=11; L++){
+    seen[L] = new Set();
+    for(const m of [0, 0.5, 1]) for(let i=0;i<300;i++){
+      const it = Engine.generateItem(E, L, m, {});
+      const tag = 'L'+L+'/m'+m+' '+it.exprText;
+      const flag = msg=>{ bad++; if(badSamples.length<8) badSamples.push(tag+': '+msg); };
+      seen[L].add(it.exprText);
+      if(it.op!=='expressao_composta' || !it.tree) { flag('não é item com árvore'); continue; }
+      const parsed = parseExprText(it.exprText);
+      if(!Number.isInteger(parsed)) flag('texto não calcula inteiro/÷ inexato ('+parsed+')');
+      if(parsed!==it.answer) flag('resposta '+it.answer+' ≠ texto '+parsed);
+      if(exprEval(it.tree)!==it.answer) flag('árvore diverge da resposta');
+      if(exprToText(it.tree)!==it.exprText) flag('texto ≠ árvore');
+      if(!bracketsMatchDepth(it.exprText)) flag('símbolo ( ) [ ] { } não bate com o aninhamento');
+      if(Math.abs(it.answer)>caps[L]) flag('resultado explodiu ('+it.answer+' > '+caps[L]+')');
+      const lits = (it.exprText.match(/[0-9]+/g)||[]).map(Number);
+      if(Math.max(...lits)>caps[L]) flag('operando grande demais');
+      if(L===7 && !(it.exprText.includes('−(') || it.exprText.includes('− ('))) flag('L7 sem sinal − na frente do parêntese');
+      if(L===8 && !it.exprText.includes('÷')) flag('L8 sem divisão');
+      if(L===9 && !(it.exprText.includes('[') && !it.exprText.includes('{'))) flag('L9 deve ter [ ] e nunca { }');
+      if(L===10 && !(it.exprText.includes('{') && it.exprText.includes('[') && it.exprText.includes('('))) flag('L10 deve ter { [ ( ) ] }');
+      if(L===11 && !/[²³]/.test(it.exprText)) flag('L11 sem potência');
+    }
+  }
+  ok(bad===0, 'expressões com grupos: '+bad+' problemas → '+badSamples.join(' | '));
+  ok([7,8,9,10,11].every(L=>seen[L].size>=40), 'níveis novos têm variedade (≥40 contas distintas em 900 sorteios): '+[7,8,9,10,11].map(L=>L+':'+seen[L].size).join(' '));
+  // colchetes/chaves só existem a partir dos levels novos; potência de grupo e a armadilha do sinal aparecem
+  let early = 0, trapNegPow = 0, trapGroupNeg = 0, groupPow = 0, leftToRight = 0;
+  for(const key of TRACK_ORDER) for(let L=1; L<=TRACKS[key].levels.length; L++) for(let i=0;i<60;i++){
+    const it = Engine.generateItem(key, L, Math.random(), {});
+    if(['[',']','{','}'].some(c=>(it.exprText||'').includes(c)) && !(key===E && L>=9)) early++;
+  }
+  for(let i=0;i<600;i++){
+    const t = Engine.generateItem(E, 11, Math.random(), {}).exprText;
+    if(/−[0-9]²/.test(t)) trapNegPow++;
+    if(/[(]−[0-9]+[)]²/.test(t)) trapGroupNeg++;
+    if(t.includes(')²') || t.includes(')³')) groupPow++;
+    const t8 = Engine.generateItem(E, 8, Math.random(), {}).exprText;
+    if(/^[0-9]+ ÷ [0-9]+ × [0-9]+$/.test(t8)) leftToRight++;
+  }
+  ok(early===0, 'colchetes/chaves não vazam para outras trilhas/levels ('+early+')');
+  ok(trapNegPow>0 && trapGroupNeg>0, 'L11 treina −3² e (−3)² ('+trapNegPow+' / '+trapGroupNeg+')');
+  ok(groupPow>0, 'L11 tem potência aplicada a um grupo ('+groupPow+')');
+  ok(leftToRight>0, 'L8 tem a armadilha a ÷ b × c (esq→dir) ('+leftToRight+')');
+  // a ordem esq→dir realmente importa nessas contas (a resposta correta ≠ o erro clássico a ÷ (b × c))
+  const p = parseExprText('24 ÷ 6 × 2'), q = parseExprText('−3² + 20'), r = parseExprText('(−3)² + 20'), t = parseExprText('20 − (5 − 2)'), u = parseExprText('{30 − [4 + (9 − 6)]} × 2');
+  ok(p===8 && q===11 && r===29 && t===17 && u===46, 'verificador independente: 24÷6×2=8, −3²+20=11, (−3)²+20=29, 20−(5−2)=17, {30−[4+(9−6)]}×2=46 ('+[p,q,r,t,u]+')');
+  ok(Number.isNaN(parseExprText('7 ÷ 2')), 'verificador acusa divisão inexata');
+}
+{ // renderização: o que aparece na tela (concatenando os nós) é exatamente a conta, e o formato do símbolo segue o aninhamento
+  const real = document.createElement;
+  const mk = ()=>{ const el = {children:[], className:'', textContent:'', classList:{add(){},remove(){},toggle(){},contains(){return false;}},
+    append(...k){ k.forEach(x=>el.children.push(x)); }, appendChild(x){ el.children.push(x); }, style:{setProperty(){}}, setAttribute(){}, replaceChildren(){ el.children.length=0; } }; return el; };
+  document.createElement = ()=>mk();
+  const flat = n=> n.children.length ? n.children.map(flat).join('') : n.textContent;
+  let bad = 0; const samples = [];
+  try{
+    for(let L=7; L<=11; L++) for(let i=0;i<150;i++){
+      const it = Engine.generateItem('expressoes', L, Math.random(), {});
+      const shown = flat(UI.mathExpr(it.tree)), expected = it.exprText.split(' ').join('').split('²').join('2').split('³').join('3'); // expoente vira <sup>2</sup> na tela
+      if(shown!==expected){ bad++; if(samples.length<4) samples.push(shown+' ≠ '+expected); }
+    }
+  } finally { document.createElement = real; }
+  ok(bad===0, 'tela desenha exatamente a conta (símbolos e sinais): '+bad+' diferenças → '+samples.join(' | '));
+}
 /* ---------- 2. FALA ---------- */
 {
   let threw = 0;
@@ -180,6 +301,36 @@ ok(!TRACKS.potencia && !TRACKS.raiz, 'não há trilhas próprias de potência/ra
     }
   }
   ok(threw===0, 'spokenPhrase falhou em '+threw+' casos');
+}
+{ // fala de grupos: cada símbolo é dito pelo NOME (abre colchetes / abre chaves) e nada vem "undefined"
+  let bad = 0; const samples = [];
+  const check = (L, lang, must)=>{
+    for(let i=0;i<80;i++){
+      const it = Engine.generateItem('expressoes', L, Math.random(), {});
+      const sp = spokenPhrase(it, lang);
+      if(/undefined|NaN|object/.test(sp) || !must.every(w=>sp.includes(w))){ bad++; if(samples.length<5) samples.push(L+'/'+lang+': '+it.exprText+' → '+sp); }
+    }
+  };
+  check(9, 'pt-BR', ['abre colchetes','fecha colchetes','abre parênteses','fecha parênteses']);
+  check(10, 'pt-BR', ['abre chaves','fecha chaves','abre colchetes','abre parênteses']);
+  check(9, 'en-US', ['open bracket','close bracket','open parenthesis']);
+  check(10, 'en-US', ['open brace','close brace','open bracket']);
+  check(7, 'pt-BR', ['menos','abre parênteses']);
+  check(8, 'pt-BR', ['dividido por']);
+  check(11, 'pt-BR', ['elevado a']);
+  ok(bad===0, 'fala das expressões com grupos: '+bad+' problemas → '+samples.join(' | '));
+  const sp = spokenPhrase({op:'expressao_composta', tree:X.bin('soma', X.neg(X.pow(X.num(3),2)), X.num(20))}, 'pt-BR');
+  ok(sp==='menos 3 elevado a 2 mais 20', 'fala de −3² + 20: "'+sp+'"');
+}
+{ // migração: trilha ganhou levels depois de concluída → reabre no primeiro level sem estrela; outras ficam como estão
+  const full = {}; for(let l=1;l<=6;l++) full[l] = 3;
+  const d = Store.normalize({tracks:{expressoes:{placed:true, level:6, done:true, rank:2, stars:full}}});
+  const tr = d.tracks.expressoes;
+  ok(tr.done===false && tr.level===7 && tr.rank===0, 'trilha concluída antes dos levels novos reabre no level 7 (done='+tr.done+', level='+tr.level+')');
+  ok(tr.stars[6]===3, 'estrelas já conquistadas são mantidas');
+  const starsAll = {}; for(let l=1;l<=TRACKS.soma.levels.length;l++) starsAll[l] = 2;
+  const d2 = Store.normalize({tracks:{soma:{placed:true, level:TRACKS.soma.levels.length, done:true, rank:1, stars:starsAll}}});
+  ok(d2.tracks.soma.done===true && d2.tracks.soma.rank===1, 'trilha realmente concluída continua concluída');
 }
 
 /* ---------- 3. MOTOR ---------- */

@@ -10,8 +10,10 @@
 /* Monta a frase falada no idioma da VOZ selecionado (independente do idioma do app) */
 const EXPR_WORDS = {
   'pt-BR':{soma:'mais', subtracao:'menos', multiplicacao:'vezes', divisao:'dividido por', open:'abre parênteses', close:'fecha parênteses',
+    openB:'abre colchetes', closeB:'fecha colchetes', openC:'abre chaves', closeC:'fecha chaves',
     root:'raiz quadrada de', croot:'raiz cúbica de', pow:'elevado a', of:'de', over:'sobre', equals:'igual a', compare:'comparado com'},
   'en-US':{soma:'plus', subtracao:'minus', multiplicacao:'times', divisao:'divided by', open:'open parenthesis', close:'close parenthesis',
+    openB:'open bracket', closeB:'close bracket', openC:'open brace', closeC:'close brace',
     root:'square root of', croot:'cube root of', pow:'to the power of', of:'of', over:'over', equals:'equals', compare:'compared with'}
 };
 function speakTerm(term, w){
@@ -24,6 +26,18 @@ function speakChain(terms, ops, w){
   let s = speakTerm(terms[0], w);
   for(let i=0;i<ops.length;i++) s += ` ${w[ops[i]]} ${speakTerm(terms[i+1], w)}`;
   return s;
+}
+// Expressão com grupos: ( ) [ ] { } são falados pelo nome do símbolo ("abre colchetes"), já que a
+// voz não distingue os formatos sozinha. O sinal − na frente de um grupo/base é lido como "menos".
+function speakExpr(n, w){
+  if(n.t==='num') return String(n.v);
+  if(n.t==='group'){
+    const k = groupKind(n), open = ['open','openB','openC'][k], close = ['close','closeB','closeC'][k];
+    return `${w[open]} ${speakExpr(n.e, w)} ${w[close]}`;
+  }
+  if(n.t==='neg') return `${w.subtracao} ${speakExpr(n.e, w)}`;
+  if(n.t==='pow') return `${speakExpr(n.base, w)} ${w.pow} ${n.exp}`;
+  return `${speakExpr(n.l, w)} ${w[n.op]} ${speakExpr(n.r, w)}`;
 }
 function speakEquation(item, w){
   const left = fmtCoefTerm(item.a).replace('−', w.subtracao+' ').replace('x', ' x') + (item.b!==0 ? ` ${item.b>0?w.soma:w.subtracao} ${Math.abs(item.b)}` : '');
@@ -61,6 +75,7 @@ function spokenPhrase(item, voiceLang){
     return `${item.a} ${w.over} ${item.b} ${w.compare} ${item.c} ${w.over} ${item.d}`;
   }
   if(item.op==='equacao') return speakEquation(item, w);
+  if(item.tree) return speakExpr(item.tree, w);
   if(item.terms && item.ops) return speakChain(item.terms, item.ops, w);
   if(item.op==='expressao'){
     if(item.midOp){

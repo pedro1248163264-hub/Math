@@ -95,6 +95,13 @@ const Store = {
       ['patternWeights','digitWeights','patternErrorStreak','hotPairs','bestMedian'].forEach(f=>{
         tr[f] = (t[f] && typeof t[f]==='object') ? t[f] : {};
       });
+      // Trilha ganhou levels novos depois de concluída: quem "terminou" sem ter passado o último level
+      // volta ao primeiro level ainda sem estrela (as estrelas já conquistadas ficam).
+      if(tr.done && !(tr.stars[n]>=1)){
+        tr.done = false; tr.rank = 0; tr.testReady = false; tr.xp = 0; tr.m = M_START;
+        let first = 1; while(first<n && tr.stars[first]>=1) first++;
+        tr.level = first;
+      }
       if(tr.done && tr.level!==n) tr.level = n;
       out.tracks[key] = tr;
     });

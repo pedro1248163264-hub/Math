@@ -22,6 +22,7 @@ const OPS = {
   porcentagem_sucessiva: {key:'porcentagem_sucessiva', label:'Descontos sucessivos', label_en:'Successive discounts', symbol:'−−%'},
   expressao: {key:'expressao', label:'Expressão', label_en:'Expression', symbol:'()'},
   expressao_encadeada: {key:'expressao_encadeada', label:'Encadeada', label_en:'Chained', symbol:'⋯'},
+  expressao_composta: {key:'expressao_composta', label:'Com grupos', label_en:'With groups', symbol:'[ ]'},
   fracao: {key:'fracao', label:'Fração', label_en:'Fraction', symbol:'/'},
   fracao_comparacao: {key:'fracao_comparacao', label:'Fração — comparação', label_en:'Fraction — comparison', symbol:'⇔'},
   potencia: {key:'potencia', label:'Potência', label_en:'Power', symbol:'^'},

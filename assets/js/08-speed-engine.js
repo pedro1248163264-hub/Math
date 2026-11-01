@@ -315,7 +315,7 @@ const Engine = {
     const kind = ctx.kind || 'practice';
     return {key, level, kind, isWarmup:!!ctx.isWarmup, isReinforce:!!ctx.isReinforce, m, op,
       a:gen.a, b:gen.b, c:gen.c, d:gen.d, answer:gen.answer, features:gen.features||{}, exprText:gen.exprText,
-      terms:gen.terms, ops:gen.ops, innerOp:gen.innerOp, outerOp:gen.outerOp, leftOp:gen.leftOp, rightOp:gen.rightOp,
+      tree:gen.tree, terms:gen.terms, ops:gen.ops, innerOp:gen.innerOp, outerOp:gen.outerOp, leftOp:gen.leftOp, rightOp:gen.rightOp,
       midOp:gen.midOp, isEquation:!!gen.isEquation, isReversePath:!!gen.isReversePath,
       pairKind:gen.pairKind, pair:gen.pair, digitKey:gen.digitKey, digits:gen.digits,
       symbol:opDef.symbol, label:opDef.label, kcLabel:trackLabel(key),
