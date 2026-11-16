@@ -131,6 +131,7 @@ const PLAYER_LEVEL_EXP = 1.6, PLAYER_LEVEL_SCALE = 100; // XP acumulado p/ níve
 const DAILY_GOALS = [20, 40, 80, 150];
 const DEFAULT_DAILY_GOAL = 40;
 const DAILY_KEEP_DAYS = 400;
+const EXPORT_EVERY_MIN = 20, EXPORT_EVERY_MAX = 5000, EXPORT_EVERY_DEFAULT = 300;   // aviso de exportar p/ IA (a cada X contas)
 const LOG_MAX = 5000, EVENTS_MAX = 400;   // registro por conta / eventos (para o relatório de IA)
 const HISTORY_MAX = 500;          // rodadas guardadas no histórico
 

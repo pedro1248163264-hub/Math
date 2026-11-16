@@ -107,6 +107,11 @@ const I18N = {
     days_short:['D','S','T','Q','Q','S','S'],
     flash_tracks:'Contas que podem sumir', flash_tracks_sub:'Escolha em quais operações o aquecimento relâmpago esconde a conta.',
     ai_report:'Relatório para IA', ai_report_sub:'Resumo + dados brutos em texto, para colar numa IA e avaliar sua evolução', copy:'Copiar', copied:'Relatório copiado! Cole na sua IA.', copy_failed:'Não foi possível copiar — use MD ↓.',
+    export_notice_title:'Hora de revisar sua evolução', export_notice_sub:'{n} contas desde a última exportação. Envie o relatório para uma IA avaliar se o treino está funcionando.',
+    export_notice_first:'{n} contas ainda não foram enviadas para análise. Envie o relatório para uma IA avaliar se o treino está funcionando.',
+    export_notice_copy:'Copiar para IA', export_notice_skip:'Depois',
+    export_reminder:'Aviso para exportar à IA', export_reminder_sub:'Mostra um lembrete na tela inicial depois de X contas',
+    export_every:'Avisar a cada (contas)', export_progress:'{n} de {x} contas desde a última exportação para IA (copiar ou MD ↓ zera)',
     flash_notice:'⚡ Aquecimento relâmpago ativo: as {n} primeiras contas somem após {s} s. Guarde os números de cabeça!',
     sum_bonus:'+{n} XP de bônus por concluir a rodada', daily_chart:'Contas por dia', evolution_target:'Evolução — dentro da meta', best_day_streak:'Melhor sequência de dias',
     date_locale:'pt-BR'
@@ -202,6 +207,11 @@ const I18N = {
     days_short:['S','M','T','W','T','F','S'],
     flash_tracks:'Problems that can disappear', flash_tracks_sub:'Choose which operations the flash warm-up hides.',
     ai_report:'AI report', ai_report_sub:'Summary + raw data as text, to paste into an AI and assess your progress', copy:'Copy', copied:'Report copied! Paste it into your AI.', copy_failed:'Could not copy — use MD ↓.',
+    export_notice_title:'Time to review your progress', export_notice_sub:'{n} problems since the last export. Send the report to an AI to check whether training is working.',
+    export_notice_first:'{n} problems have not been sent for analysis yet. Send the report to an AI to check whether training is working.',
+    export_notice_copy:'Copy for AI', export_notice_skip:'Later',
+    export_reminder:'Export-to-AI reminder', export_reminder_sub:'Shows a reminder on the home screen after X problems',
+    export_every:'Remind every (problems)', export_progress:'{n} of {x} problems since the last AI export (Copy or MD ↓ resets it)',
     flash_notice:'⚡ Flash warm-up is on: the first {n} problems disappear after {s} s. Hold the numbers in your head!',
     sum_bonus:'+{n} XP bonus for finishing the round', daily_chart:'Problems per day', evolution_target:'Evolution — on target', best_day_streak:'Best day streak',
     date_locale:'en-US'

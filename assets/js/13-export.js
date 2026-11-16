@@ -1,6 +1,6 @@
 /* =====================================================================
    assets/js/13-export.js — exportação dos dados salvos (trilhas e rodadas) em
-   CSV e JSON.
+   CSV e JSON, relatório para IA e contador do aviso "hora de exportar".
    Depende de: 06-tracks.js, 07-storage.js, 08-speed-engine.js.
    Usado por: 14-ui.js.
    ===================================================================== */
@@ -74,6 +74,7 @@ const Export = {
     L.push('- Gerado em: '+new Date().toISOString()+' · App v2 · idioma do app: '+d.settings.appLang);
     L.push('- Período coberto pelo registro de contas: '+(first?dayOf(first)+' a '+dayOf(last):'sem dados')+' ('+rows.length+' contas registradas; o registro guarda as últimas '+LOG_MAX+')');
     L.push('- Dias com treino: '+days.length+' · contas totais (histórico do app): '+d.player.items+' · rodadas: '+d.player.rounds+' · XP: '+d.player.xp+' · nível geral: '+Progress.levelInfo(d.player.xp).level);
+    L.push('- Contas feitas desde a última exportação para IA: '+this.pendingItems()+(d.exportMark.at?' (última em '+new Date(d.exportMark.at).toISOString().slice(0,10)+')':' (primeira exportação)'));
     L.push('- Meta diária: '+d.settings.dailyGoal+' contas · sequência atual: '+Progress.currentStreak()+' dias · melhor: '+d.streak.best+' dias');
     L.push('- Ajustes relevantes: desafio='+d.settings.challenge+' (ρ*='+Engine.rho()+') · tamanho da rodada='+d.settings.roundSize+' · trilhas ativas='+Engine.activeKeys().join(', ')+' · aquecimento relâmpago='+(d.settings.masteryFlash?'ligado ('+d.settings.flashTracks.join(', ')+')':'desligado')+' · TTS='+(d.settings.tts?'ligado':'desligado'));
     const all = stats(core);
@@ -156,15 +157,21 @@ const Export = {
     L.push('```','');
     return L.join('\n');
   },
-  aiReportDownload(){ this.download('mental_math_relatorio_ia.md', this.aiReport(), 'text/markdown'); },
+  /* ---------- aviso "hora de exportar para a IA" ----------
+     O contador é player.items − exportMark.items. Só copiar ou baixar o relatório para IA o zera
+     (CSV/JSON não, porque não vão para a análise). */
+  pendingItems(){ const d = Store.data; return Math.max(0, d.player.items - d.exportMark.items); },
+  reminderDue(){ const s = Store.data.settings; return !!s.exportReminder && this.pendingItems() >= s.exportEvery; },
+  markExported(){ const d = Store.data; d.exportMark = {items:d.player.items, at:Date.now()}; Store.save(); },
+  aiReportDownload(){ this.download('mental_math_relatorio_ia.md', this.aiReport(), 'text/markdown'); this.markExported(); },
   // Copia para a área de transferência (com plano B para navegadores sem a API).
   async aiReportCopy(){
     const text = this.aiReport();
-    try{ await navigator.clipboard.writeText(text); return true; }
+    try{ await navigator.clipboard.writeText(text); this.markExported(); return true; }
     catch(e){
       try{
         const ta = document.createElement('textarea'); ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
-        document.body.appendChild(ta); ta.select(); const ok = document.execCommand('copy'); document.body.removeChild(ta); return ok;
+        document.body.appendChild(ta); ta.select(); const ok = document.execCommand('copy'); document.body.removeChild(ta); if(ok) this.markExported(); return ok;
       }catch(e2){ return false; }
     }
   },

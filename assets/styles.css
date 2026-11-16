@@ -492,3 +492,12 @@ svg.chart{width:100%; height:120px; overflow:visible;}
 .fchip{display:flex; align-items:center; gap:6px; padding:7px 12px; border-radius:999px; border:1.5px solid var(--border); background:transparent; color:var(--muted); font-family:var(--font-ui); font-size:0.8rem; font-weight:600;}
 .fchip span{font-family:var(--font-num); font-weight:800;}
 .fchip.active{border-color:var(--c); color:var(--text); background:color-mix(in srgb, var(--c) 18%, transparent);}
+
+/* --- aviso: hora de exportar para a IA (Início e Resumo) --- */
+.export-notice-slot:empty{display:none;}
+.export-notice{display:flex; gap:12px; align-items:flex-start; margin-bottom:12px; padding:12px 14px; background:var(--surface); border:1.5px solid var(--accent); border-radius:14px; color:var(--text); animation:pulse-border 2s ease-in-out infinite;}
+.export-notice .en-ic{width:38px; height:38px; border-radius:11px; background:rgba(79,70,229,0.14); display:flex; align-items:center; justify-content:center; font-size:1.2rem; flex-shrink:0;}
+.export-notice .en-tx{flex:1; min-width:0; display:flex; flex-direction:column; font-size:0.9rem;}
+.export-notice .en-tx small{color:var(--dim); font-size:0.78rem; margin-top:2px; line-height:1.35;}
+.export-notice .en-btns{display:flex; flex-wrap:wrap; gap:6px; margin-top:10px; align-items:center;}
+.export-notice .en-copy{width:auto; padding:8px 14px; font-size:0.82rem; box-shadow:none;}

@@ -101,11 +101,21 @@ Aquecimento, reforço e nivelamento usam uma medida média (1,7 × G, a antiga).
 
 ## Telas
 
-Início (nível, meta, sequência, semana, botão **Treinar** ou **Começar nivelamento**, avisos "Recomendado: subir de level") · Trilhas (liga/desliga, level, barra, estrelas, escada de levels, dica, "treinar só esta", subir de level) · Treino (barra da rodada, chip da trilha/level, combo e XP, teclado) · Resumo da rodada · Estatísticas (precisão, % dentro da meta, contas por dia, por trilha) · Ajustes (meta, tamanho da rodada, desafio, tema, idioma PT/EN, voz/TTS, vibração, sons, modo foco, exportação CSV/JSON, apagar dados).
+Início (nível, meta, sequência, semana, botão **Treinar** ou **Começar nivelamento**, avisos "Recomendado: subir de level") · Trilhas (liga/desliga, level, barra, estrelas, escada de levels, dica, "treinar só esta", subir de level) · Treino (barra da rodada, chip da trilha/level, combo e XP, teclado) · Resumo da rodada · Estatísticas (precisão, % dentro da meta, contas por dia, por trilha) · Ajustes (meta, tamanho da rodada, desafio, tema, idioma PT/EN, voz/TTS, vibração, sons, modo foco, exportação CSV/JSON, aviso de exportar para a IA, apagar dados).
 
 ## Relatório para IA
 
 Em **Ajustes > Dados > Relatório para IA** há dois botões: **Copiar** (área de transferência) e **MD ↓** (baixa `mental_math_relatorio_ia.md`). O texto em Markdown começa com instruções para a IA (como o app funciona, o que é evolução esperada, o que responder) e traz: resumo geral, estado atual por trilha, evolução por semana (geral e por trilha, com a razão mediana *tempo ÷ meta*), comparação início × fim em cada level, marcos (nivelamento, provas, levels, patentes), contas por dia, últimas rodadas e o **registro bruto das últimas 1.500 contas** em CSV. O app guarda um registro compacto de cada conta (últimas 5.000) e dos marcos (últimos 400) só para isso; tudo fica no aparelho até você copiar ou baixar.
+
+### Aviso "hora de exportar para a IA"
+
+Para lembrar de revisar a evolução de tempos em tempos, o app avisa quando passam **X contas** desde a última exportação para IA.
+
+- **Onde aparece:** cartão "Hora de revisar sua evolução" na tela **Início** (logo acima do botão Treinar) e no **Resumo da rodada**, com os botões **Copiar para IA**, **MD ↓** e **Depois** (esconde o aviso só até reabrir o app).
+- **Configuração:** em **Ajustes > Dados** — interruptor "Aviso para exportar à IA" (ligado por padrão) e o campo "Avisar a cada (contas)" (padrão 300; aceita de 20 a 5.000). Logo abaixo, uma linha mostra o andamento ("N de X contas desde a última exportação").
+- **Contador:** `player.items − exportMark.items`. **Copiar** ou **MD ↓** do Relatório para IA (nos Ajustes ou no próprio aviso) zera o contador (`Export.markExported()`); copiar só zera se a cópia funcionou. **CSV/JSON não zeram**, porque não servem para a análise por IA. O relatório também informa quantas contas foram feitas desde a exportação anterior. Quem nunca exportou começa com contador em 0 (então o primeiro aviso vem na primeira vez que o total de contas passar de X).
+- **Dados:** `settings.exportReminder`, `settings.exportEvery` e `exportMark {items, at}` (saneados em `07-storage.js`).
+
 
 ## Dados
 
@@ -129,7 +139,7 @@ Em **Ajustes > Dados > Relatório para IA** há dois botões: **Copiar** (área 
 | `10-progress.js` | `Progress`: XP/level geral, meta diária, sequência, semana, estrelas da rodada. |
 | `11-session.js` | `Session`: percorre blocos, mede tempo, aplica XP/combo/meta, fecha a rodada. |
 | `12-analytics.js` | Resumo da rodada e agregados do histórico. |
-| `13-export.js` | CSV/JSON. |
+| `13-export.js` | CSV/JSON, relatório para IA e contador do aviso de exportação. |
 | `14-ui.js` | Interface. |
 | `15-init.js` | Inicialização e service worker (fora dos testes). |
 

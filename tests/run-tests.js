@@ -786,6 +786,21 @@ ok(!TRACKS.potencia && !TRACKS.raiz, 'não há trilhas próprias de potência/ra
   ok(rep.includes('Instruções para a IA') && rep.includes('Registro bruto') && rep.includes('quando,trilha,level') && rep.includes('Evolução por semana') && rep.includes('Estado atual por trilha'), 'relatório para IA tem todas as seções');
   ok(!rep.includes('NaN') && !rep.includes('undefined') && !rep.includes('Infinity'), 'relatório sem NaN/undefined');
   Store.data.log.length = 0; Store.data.events.length = 0; ok(Export.aiReport().includes('sem dados'), 'relatório funciona sem dados');
+  // aviso "hora de exportar para a IA"
+  freshStore(); const S0 = Store.data;
+  ok(S0.settings.exportReminder===true && S0.settings.exportEvery===EXPORT_EVERY_DEFAULT && S0.exportMark.items===0, 'aviso de exportação: padrões');
+  S0.player.items = EXPORT_EVERY_DEFAULT-1; ok(!Export.reminderDue() && Export.pendingItems()===EXPORT_EVERY_DEFAULT-1, 'aviso não dispara antes de X contas');
+  S0.player.items = EXPORT_EVERY_DEFAULT; ok(Export.reminderDue(), 'aviso dispara ao atingir X contas');
+  S0.settings.exportReminder = false; ok(!Export.reminderDue(), 'aviso desligado não dispara'); S0.settings.exportReminder = true;
+  ok(Export.aiReport().includes('desde a última exportação para IA: '+EXPORT_EVERY_DEFAULT), 'relatório informa as contas desde a última exportação');
+  Export.csvText(); ok(Export.pendingItems()===EXPORT_EVERY_DEFAULT, 'CSV/JSON não zeram o contador');
+  Object.defineProperty(globalThis, 'navigator', {value:{clipboard:{writeText: async ()=>{}}}, configurable:true});
+  Export.aiReportCopy().then(()=>{}); await sleep(5);
+  ok(Export.pendingItems()===0 && !Export.reminderDue() && Store.data.exportMark.at>0, 'copiar para IA zera o contador');
+  Store.data.player.items += 7; ok(Export.pendingItems()===7, 'contador volta a contar depois do reset');
+  const nz = Store.normalize({settings:{exportEvery:'abc'}, player:{items:50}, exportMark:{items:999}});
+  ok(nz.settings.exportEvery===EXPORT_EVERY_DEFAULT && nz.exportMark.items===50, 'exportEvery e exportMark saneados');
+  ok(Store.normalize({settings:{exportEvery:1}}).settings.exportEvery===EXPORT_EVERY_MIN && Store.normalize({settings:{exportEvery:99999}}).settings.exportEvery===EXPORT_EVERY_MAX, 'exportEvery limitado');
   // exportação CSV não quebra
   ok(typeof Export.csvText()==='string' && Export.csvText().includes('trilha'), 'CSV gerado');
 }

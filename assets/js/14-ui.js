@@ -115,9 +115,38 @@ const UI = {
       b.onclick = ()=>{ Engine.startClimb(k); Session.start({onlyTrack:k}); };
       box.appendChild(b);
     });
+    this.renderExportNotice();
     $('homeTotal').textContent = s.player.items;
     $('homeRounds').textContent = s.player.rounds;
     $('homeCombo').textContent = s.bestStreak||0;
+  },
+
+  /* Aviso "hora de exportar para a IA": aparece na Início (acima do Treinar) e no Resumo da rodada
+     quando já passaram X contas desde a última exportação. "Depois" esconde até a próxima abertura do app. */
+  renderExportNotice(){
+    ['exportNoticeHome','exportNoticeSummary'].forEach(id=>{
+      const box = $(id); if(!box) return;
+      box.innerHTML = '';
+      if(this.exportNoticeSnoozed || !Export.reminderDue()) return;
+      const n = Export.pendingItems(), first = !Store.data.exportMark.at;
+      const card = document.createElement('div'); card.className = 'export-notice'; card.setAttribute('role','status');
+      card.innerHTML = `<div class="en-ic">📊</div><div class="en-tx"><b>${esc(t('export_notice_title'))}</b><small>${esc(tf(first?'export_notice_first':'export_notice_sub',{n}))}</small>
+        <div class="en-btns"></div></div>`;
+      const btns = card.querySelector('.en-btns');
+      const bCopy = document.createElement('button'); bCopy.className = 'btn btn-primary en-copy'; bCopy.textContent = t('export_notice_copy');
+      bCopy.onclick = async ()=>{ const ok = await Export.aiReportCopy(); this.toast(ok ? t('copied') : t('copy_failed')); this.renderExportNotice(); this.renderExportProgress(); };
+      const bMd = document.createElement('button'); bMd.className = 'pill-btn'; bMd.textContent = 'MD ↓';
+      bMd.onclick = ()=>{ Export.aiReportDownload(); this.renderExportNotice(); this.renderExportProgress(); };
+      const bSkip = document.createElement('button'); bSkip.className = 'pill-btn'; bSkip.textContent = t('export_notice_skip');
+      bSkip.onclick = ()=>{ this.exportNoticeSnoozed = true; this.renderExportNotice(); };
+      btns.appendChild(bCopy); btns.appendChild(bMd); btns.appendChild(bSkip);
+      box.appendChild(card);
+    });
+  },
+  // Linha "N de X contas" em Ajustes (se estiver montada).
+  renderExportProgress(){
+    const el = $('exportProgress'); if(!el) return;
+    el.textContent = tf('export_progress', {n:Export.pendingItems(), x:Store.data.settings.exportEvery});
   },
 
   /* ===================== TRILHAS ===================== */
@@ -608,6 +637,7 @@ const UI = {
   },
   renderSummary(sum){
     const rec = sum.record;
+    this.renderExportNotice();
     $('sumKicker').textContent = sum.completed ? t('round_done') : t('round_partial');
     $('sumStars').innerHTML = sum.completed ? [1,2,3].map(i=>`<span class="${i<=sum.stars?'on':''}" style="animation-delay:${0.2+i*0.25}s">★</span>`).join('') : '';
     $('sumStars').classList.toggle('hidden', !sum.completed);
@@ -846,6 +876,20 @@ const UI = {
     addRange(t('correct_show'), t('correct_show_sub'), 'correctAnswerShowMs', 500, 2000, 50, v=>v+' ms');
 
     section(t('section_data'));
+    addSwitch(t('export_reminder'), t('export_reminder_sub'), 'exportReminder', ()=>{ this.buildAppSettings(); this.renderExportNotice(); });
+    if(s.exportReminder){
+      const re = document.createElement('div'); re.className = 'row'; re.style.flexDirection = 'column'; re.style.alignItems = 'stretch';
+      const top = document.createElement('div'); top.style.display = 'flex'; top.style.justifyContent = 'space-between'; top.style.alignItems = 'center'; top.style.gap = '10px';
+      top.innerHTML = `<div class="label">${t('export_every')}</div>`;
+      const num = document.createElement('input'); num.type = 'number'; num.inputMode = 'numeric'; num.min = EXPORT_EVERY_MIN; num.max = EXPORT_EVERY_MAX; num.step = 10; num.value = s.exportEvery; num.style.width = '92px';
+      const apply = ()=>{ const v = Math.round(+num.value); if(Number.isFinite(v) && v>=EXPORT_EVERY_MIN){ s.exportEvery = Math.min(EXPORT_EVERY_MAX, v); Store.save(); this.renderExportProgress(); this.renderExportNotice(); } };
+      num.oninput = apply;
+      num.onchange = ()=>{ apply(); num.value = s.exportEvery; };
+      top.appendChild(num);
+      const prog = document.createElement('div'); prog.className = 'sub'; prog.id = 'exportProgress'; prog.style.marginTop = '6px';
+      re.appendChild(top); re.appendChild(prog); box.appendChild(re);
+      this.renderExportProgress();
+    }
     const rowExp = document.createElement('div'); rowExp.className = 'row';
     rowExp.innerHTML = `<div><div class="label">${t('export_data')}</div><div class="sub">${t('export_data_sub')}</div></div>`;
     const btnGroup = document.createElement('div'); btnGroup.style.display = 'flex'; btnGroup.style.gap = '6px';
@@ -856,14 +900,14 @@ const UI = {
     rowAi.innerHTML = `<div><div class="label">${t('ai_report')}</div><div class="sub">${t('ai_report_sub')}</div></div>`;
     const aiGroup = document.createElement('div'); aiGroup.style.display = 'flex'; aiGroup.style.gap = '6px';
     const bCopy = document.createElement('button'); bCopy.className = 'pill-btn'; bCopy.textContent = t('copy');
-    bCopy.onclick = async ()=>{ const ok = await Export.aiReportCopy(); this.toast(ok ? t('copied') : t('copy_failed')); };
-    const bMd = document.createElement('button'); bMd.className = 'pill-btn'; bMd.textContent = 'MD ↓'; bMd.onclick = ()=>Export.aiReportDownload();
+    bCopy.onclick = async ()=>{ const ok = await Export.aiReportCopy(); this.toast(ok ? t('copied') : t('copy_failed')); this.renderExportProgress(); this.renderExportNotice(); };
+    const bMd = document.createElement('button'); bMd.className = 'pill-btn'; bMd.textContent = 'MD ↓'; bMd.onclick = ()=>{ Export.aiReportDownload(); this.renderExportProgress(); this.renderExportNotice(); };
     aiGroup.appendChild(bCopy); aiGroup.appendChild(bMd); rowAi.appendChild(aiGroup); box.appendChild(rowAi);
     const rowReset = document.createElement('div'); rowReset.style.padding = '14px 0';
     const bReset = document.createElement('button'); bReset.className = 'btn btn-danger'; bReset.textContent = t('erase_all');
     bReset.onclick = ()=>{
       if(confirm(t('confirm_reset'))){
-        Store.reset(); this.openTrack = null; applyI18N(); this.applyTheme(); this.buildAppSettings();
+        Store.reset(); this.openTrack = null; this.exportNoticeSnoozed = false; applyI18N(); this.applyTheme(); this.buildAppSettings();
         this.toast(t('data_erased')); this.renderHome(); this.renderTracks(); this.renderStats();
       }
     };

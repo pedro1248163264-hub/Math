@@ -30,7 +30,9 @@ const Store = {
         dailyGoal:DEFAULT_DAILY_GOAL,   // contas por dia
         roundSize:'normal',             // short | normal | long
         challenge:'balanced',           // gentle | balanced | intense  (taxa de acerto desejada)
-        activeTracks:[...DEFAULT_ACTIVE_TRACKS]
+        activeTracks:[...DEFAULT_ACTIVE_TRACKS],
+        exportReminder:true,            // avisar quando for hora de exportar para a IA
+        exportEvery:EXPORT_EVERY_DEFAULT // ...a cada X contas feitas desde a última exportação
       },
       settingsVersion:SETTINGS_VERSION,
       tracks:{},                        // estado de cada trilha (ver Engine.newTrack)
@@ -42,7 +44,8 @@ const Store = {
       history:[],
       log:[],                           // uma linha por conta: [t,trilha,level,m,ms,meta,acerto,zona,tipo,lapso]
       events:[],                        // marcos: nivelamento, prova, level, patente, reforço
-      bestStreak:0                      // melhor sequência de acertos (dentro de uma rodada)
+      bestStreak:0,                     // melhor sequência de acertos (dentro de uma rodada)
+      exportMark:{items:0, at:0}        // player.items e data da última exportação p/ IA (zera o contador do aviso)
     };
   },
   // Mescla um objeto salvo sobre os defaults e saneia cada campo (nunca confia no que veio).
@@ -61,12 +64,13 @@ const Store = {
     if(!CHALLENGE_LEVELS[s.challenge]) s.challenge = 'balanced';
     s.activeTracks = Array.isArray(s.activeTracks) ? s.activeTracks.filter(k=>TRACKS[k]) : [];
     if(!s.activeTracks.length) s.activeTracks = [...DEFAULT_ACTIVE_TRACKS];
-    ['tts','hideDuringTts','vibration','sounds','confirmBeforeAccept','stopClockOnFirstKey','focusMode','masteryFlash']
+    ['tts','hideDuringTts','vibration','sounds','confirmBeforeAccept','stopClockOnFirstKey','focusMode','masteryFlash','exportReminder']
       .forEach(k=>{ s[k] = !!s[k]; });
     s.flashTracks = Array.isArray(s.flashTracks) ? s.flashTracks.filter(k=>FLASH_TRACKS.includes(k)) : [...FLASH_TRACKS];
     s.gapMs = U.clamp(Math.round(+s.gapMs)||base.gapMs, 100, 1200);
     s.correctAnswerShowMs = U.clamp(Math.round(+s.correctAnswerShowMs)||base.correctAnswerShowMs, 500, 2000);
     s.voiceRate = U.clamp(+s.voiceRate||1, 0.5, 2);
+    s.exportEvery = U.clamp(Math.round(+s.exportEvery)||EXPORT_EVERY_DEFAULT, EXPORT_EVERY_MIN, EXPORT_EVERY_MAX);
 
     out.tracks = {};
     const rawTracks = (src.tracks && typeof src.tracks==='object') ? src.tracks : {};
@@ -124,6 +128,8 @@ const Store = {
     out.log = Array.isArray(src.log) ? src.log.filter(e=>Array.isArray(e) && e.length>=10).slice(-LOG_MAX) : [];
     out.events = Array.isArray(src.events) ? src.events.filter(e=>e && typeof e==='object' && e.type).slice(-EVENTS_MAX) : [];
     out.bestStreak = Math.max(0, Math.round(+src.bestStreak)||0);
+    const em = (src.exportMark && typeof src.exportMark==='object') ? src.exportMark : {};
+    out.exportMark = {items:Math.min(out.player.items, Math.max(0, Math.round(+em.items)||0)), at:Number.isFinite(+em.at) ? +em.at : 0};
     out.settingsVersion = SETTINGS_VERSION;
     return out;
   },
