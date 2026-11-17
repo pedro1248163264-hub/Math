@@ -80,14 +80,23 @@ const UI = {
     $('homeXpFill').style.width = Math.round(info.frac*100)+'%';
     $('homeXpText').textContent = info.into+' / '+info.need+' XP';
     // meta do dia
-    const day = Progress.day(), goal = Progress.goal(), frac = U.clamp(day.items/goal, 0, 1);
+    const day = Progress.day(), goal = Progress.goal(), frac = Progress.goalFrac(), timeGoal = Progress.goalMode()==='time';
     const C = 2*Math.PI*44;
     $('goalRingFg').style.strokeDasharray = C.toFixed(1);
     $('goalRingFg').style.strokeDashoffset = (C*(1-frac)).toFixed(1);
     $('goalRingFg').classList.toggle('done', day.goalHit);
-    $('goalNum').textContent = Math.min(day.items, 9999);
-    $('goalOf').textContent = '/ '+goal;
-    $('goalSub').textContent = day.goalHit ? t('goal_done') : tf('goal_left', {n:Math.max(0, goal-day.items)});
+    if(timeGoal){
+      const txt = U.fmtClock(Progress.todayMs());
+      $('goalNum').textContent = txt;
+      $('goalNum').style.fontSize = txt.length>5 ? '0.95rem' : txt.length>4 ? '1.1rem' : '';
+      $('goalOf').textContent = tf('goal_of_min', {n:Store.data.settings.dailyGoalMinutes});
+      $('goalSub').textContent = day.goalHit ? t('goal_done') : tf('goal_left_time', {t:U.fmtClock(Math.max(0, Progress.goalMs()-Progress.todayMs())+999)});
+    } else {
+      $('goalNum').textContent = Math.min(day.items, 9999);
+      $('goalNum').style.fontSize = '';
+      $('goalOf').textContent = '/ '+goal;
+      $('goalSub').textContent = day.goalHit ? t('goal_done') : tf('goal_left', {n:Math.max(0, goal-day.items)});
+    }
     const streak = Progress.currentStreak();
     $('streakNum').textContent = streak;
     $('streakLabel').textContent = streak===1 ? t('day_streak_one') : t('day_streak');
@@ -255,6 +264,7 @@ const UI = {
     $('hudXp').textContent = '+0 XP';
     this.hideOverlays();
     this.setPaused(false);
+    this.updateHudTime();
     $('screen-training').classList.toggle('focus', !!Store.data.settings.focusMode);
     this.clearAnswerFeedback();
     this.updateAnswerDisplay('');
@@ -287,6 +297,32 @@ const UI = {
     if(session.combo>=3){ c.textContent = '🔥 '+session.combo; c.classList.add('on'); } else c.classList.remove('on');
     $('hudXp').textContent = '+'+st.xp+' XP';
   },
+  // Contador do dia no HUD (só com meta por tempo): tempo treinado hoje / meta.
+  updateHudTime(){
+    const el = $('hudTime'); if(!el) return;
+    if(Progress.goalMode()!=='time'){ el.classList.add('hidden'); return; }
+    el.classList.remove('hidden');
+    el.textContent = '⏱ '+U.fmtClock(Progress.todayMs())+' / '+U.fmtClock(Progress.goalMs());
+    el.classList.toggle('done', !!Progress.day().goalHit);
+  },
+  // Tela "meta batida" (aviso em tela): as contas ficam paradas até escolher continuar ou sair.
+  showGoalReached(info, onContinue, onExit){
+    const ov = $('overlayGoal');
+    $('goalOvTitle').textContent = t('goal_done');
+    $('goalOvLine').textContent = info.mode==='time' ? tf('goal_ov_time', {t:U.fmtClock(info.ms)}) : tf('goal_ov_count', {n:info.items});
+    $('goalOvXp').textContent = '+'+info.xp+' XP';
+    $('goalOvStreak').textContent = info.streak>0 ? '🔥 '+info.streak+' '+t(info.streak===1 ? 'day_streak_one' : 'day_streak') : '';
+    $('goalOvGo').textContent = t('goal_ov_continue');
+    $('goalOvExit').textContent = t('exit_training');
+    const close = ()=>{ ov.classList.add('hidden'); this.overlayAction = null; };
+    const go = ()=>{ close(); onContinue(); };
+    $('goalOvGo').onclick = go;
+    $('goalOvExit').onclick = ()=>{ close(); onExit(); };
+    this.overlayAction = go;
+    ov.classList.remove('hidden');
+    this.celebrate('goal');
+    setTimeout(()=>{ try{ $('goalOvGo').focus(); }catch(e){} }, 30);
+  },
   popXp(gained, comboBonus, correct){
     if(!correct || !gained) return;
     const el = document.createElement('div');
@@ -299,10 +335,10 @@ const UI = {
     $('overlayPause').classList.toggle('hidden', !on);
     $('btnPause').textContent = on ? '▶' : '⏸';
     if(on) this.overlayAction = ()=>Session.togglePause();
-    else if($('overlayIntro').classList.contains('hidden') && $('overlayResult').classList.contains('hidden')) this.overlayAction = null;
+    else if($('overlayIntro').classList.contains('hidden') && $('overlayResult').classList.contains('hidden') && $('overlayGoal').classList.contains('hidden')) this.overlayAction = null;
   },
   hideOverlays(){
-    ['overlayIntro','overlayResult','overlayPause'].forEach(id=>{ const el=$(id); if(el) el.classList.add('hidden'); });
+    ['overlayIntro','overlayResult','overlayGoal','overlayPause'].forEach(id=>{ const el=$(id); if(el) el.classList.add('hidden'); });
     this.overlayAction = null;
   },
   showBlockIntro(info, onGo){
@@ -653,11 +689,12 @@ const UI = {
     $('sumPlayerText').textContent = pi.into+' / '+pi.need+' XP';
     // meta do dia
     const g = sum.goal;
-    $('sumGoalText').textContent = g.hit ? t('goal_done') : tf('goal_left',{n:Math.max(0, g.goal-g.items)});
-    $('sumGoalCount').textContent = Math.min(g.items, 9999)+' / '+g.goal;
+    const gTime = g.mode==='time', gFrac = gTime ? g.ms/g.goalMs : g.items/g.goal;
+    $('sumGoalText').textContent = g.hit ? t('goal_done') : gTime ? tf('goal_left_time',{t:U.fmtClock(Math.max(0, g.goalMs-g.ms)+999)}) : tf('goal_left',{n:Math.max(0, g.goal-g.items)});
+    $('sumGoalCount').textContent = gTime ? U.fmtClock(g.ms)+' / '+U.fmtClock(g.goalMs) : Math.min(g.items, 9999)+' / '+g.goal;
     $('sumGoalFill').style.width = '0%';
     $('sumGoalFill').classList.toggle('done', g.hit);
-    setTimeout(()=>{ $('sumGoalFill').style.width = Math.round(U.clamp(g.items/g.goal,0,1)*100)+'%'; }, 150);
+    setTimeout(()=>{ $('sumGoalFill').style.width = Math.round(U.clamp(gFrac,0,1)*100)+'%'; }, 150);
     $('sumStreak').textContent = '🔥 '+sum.streak;
     // métricas
     $('sumAcc').textContent = U.fmtPct(sum.accuracy);
@@ -754,12 +791,14 @@ const UI = {
   drawBars(id, series){
     const svg = $(id), w = 300, h = 110, pad = 8, ns = 'http://www.w3.org/2000/svg';
     svg.setAttribute('viewBox', `0 0 ${w} ${h}`); svg.innerHTML = '';
-    const goal = Progress.goal(), max = Math.max(goal, ...series.map(s=>s.items), 1);
+    const goal = Progress.goalMode()==='time' ? 0 : Progress.goal(), max = Math.max(goal, ...series.map(s=>s.items), 1);   // meta por tempo: sem linha (barras verdes marcam os dias batidos)
     const bw = (w-2*pad)/series.length;
-    const gy = h-pad-(goal/max)*(h-2*pad-6);
-    const gl = document.createElementNS(ns,'line');
-    gl.setAttribute('x1',pad); gl.setAttribute('x2',w-pad); gl.setAttribute('y1',gy); gl.setAttribute('y2',gy);
-    gl.setAttribute('stroke','var(--muted)'); gl.setAttribute('stroke-dasharray','3 4'); gl.setAttribute('opacity','0.6'); svg.appendChild(gl);
+    if(goal>0){
+      const gy = h-pad-(goal/max)*(h-2*pad-6);
+      const gl = document.createElementNS(ns,'line');
+      gl.setAttribute('x1',pad); gl.setAttribute('x2',w-pad); gl.setAttribute('y1',gy); gl.setAttribute('y2',gy);
+      gl.setAttribute('stroke','var(--muted)'); gl.setAttribute('stroke-dasharray','3 4'); gl.setAttribute('opacity','0.6'); svg.appendChild(gl);
+    }
     series.forEach((s,i)=>{
       const bh = Math.max(s.items>0?3:1, (s.items/max)*(h-2*pad-6));
       const r = document.createElementNS(ns,'rect');
@@ -822,7 +861,31 @@ const UI = {
     };
 
     section(t('section_goals'));
-    addSeg(t('daily_goal'), t('daily_goal_sub'), 'dailyGoal', DAILY_GOALS.map(n=>({v:n,l:String(n)})), ()=>this.renderHome(), true);
+    addSeg(t('daily_goal'), t('daily_goal_sub'), 'goalMode', [{v:'count',l:t('goal_mode_count')},{v:'time',l:t('goal_mode_time')}], ()=>{ this.buildAppSettings(); this.renderHome(); });
+    {
+      // Valor da meta: atalhos sugeridos + campo livre (qualquer número).
+      const time = s.goalMode==='time';
+      const key = time ? 'dailyGoalMinutes' : 'dailyGoal', sugg = time ? DAILY_GOAL_MINUTES : DAILY_GOALS, max = time ? DAILY_GOAL_MINUTES_MAX : DAILY_GOAL_MAX;
+      const row = document.createElement('div'); row.className = 'row'; row.style.flexDirection = 'column'; row.style.alignItems = 'stretch';
+      row.innerHTML = `<div><div class="label">${t(time?'daily_goal_time':'daily_goal_count')}</div><div class="sub">${t(time?'daily_goal_time_sub':'daily_goal_count_sub')}</div></div>`;
+      const ctl = document.createElement('div'); ctl.className = 'goal-input-row';
+      const seg = document.createElement('div'); seg.className = 'seg';
+      const num = document.createElement('input'); num.type = 'number'; num.inputMode = 'numeric'; num.min = 1; num.max = max; num.step = 1; num.value = s[key];
+      const unit = document.createElement('span'); unit.className = 'unit'; unit.textContent = time ? t('goal_unit_min') : t('items_word');
+      const btns = sugg.map(n=>{
+        const b = document.createElement('button'); b.textContent = time ? n+' '+t('goal_unit_min') : String(n);
+        b.onclick = ()=>{ s[key] = n; Store.save(); num.value = n; sync(); this.renderHome(); };
+        seg.appendChild(b); return [n, b];
+      });
+      const sync = ()=>btns.forEach(([n,b])=>b.classList.toggle('active', s[key]===n));
+      const apply = ()=>{ const v = Math.round(+num.value); if(num.value!=='' && Number.isFinite(v) && v>=1){ s[key] = Math.min(max, v); Store.save(); sync(); this.renderHome(); } };
+      num.oninput = apply;
+      num.onchange = ()=>{ apply(); num.value = s[key]; };
+      sync();
+      ctl.appendChild(seg); ctl.appendChild(num); ctl.appendChild(unit);
+      row.appendChild(ctl); box.appendChild(row);
+    }
+    addSeg(t('goal_alert'), t('goal_alert_sub'), 'goalAlert', [{v:'discreet',l:t('goal_alert_discreet')},{v:'screen',l:t('goal_alert_screen')}]);
     addSeg(t('round_size'), '', 'roundSize', [{v:'short',l:t('round_short')},{v:'normal',l:t('round_normal')},{v:'long',l:t('round_long')}]);
     addSeg(t('challenge'), t('challenge_sub'), 'challenge', [{v:'gentle',l:t('challenge_gentle')},{v:'balanced',l:t('challenge_balanced')},{v:'intense',l:t('challenge_intense')}]);
 

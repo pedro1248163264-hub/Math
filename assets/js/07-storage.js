@@ -27,7 +27,10 @@ const Store = {
         confirmBeforeAccept:true, stopClockOnFirstKey:true,
         focusMode:false, masteryFlash:true,
         flashTracks:[...FLASH_TRACKS],  // trilhas onde o aquecimento relâmpago pode esconder a conta
-        dailyGoal:DEFAULT_DAILY_GOAL,   // contas por dia
+        goalMode:'count',               // count (por contas) | time (por tempo treinado no dia)
+        dailyGoal:DEFAULT_DAILY_GOAL,   // meta em contas por dia (qualquer inteiro 1..DAILY_GOAL_MAX)
+        dailyGoalMinutes:DEFAULT_DAILY_GOAL_MINUTES,   // meta em minutos por dia
+        goalAlert:'discreet',           // discreet | screen (pausa e mostra tela com continuar/sair)
         roundSize:'normal',             // short | normal | long
         challenge:'balanced',           // gentle | balanced | intense  (taxa de acerto desejada)
         activeTracks:[...DEFAULT_ACTIVE_TRACKS],
@@ -38,6 +41,7 @@ const Store = {
       tracks:{},                        // estado de cada trilha (ver Engine.newTrack)
       player:{xp:0, rounds:0, items:0, createdAt:Date.now()},
       daily:{},                         // 'AAAA-MM-DD' → {items, correct, xp, goalHit}
+      dayTimer:{day:'', ms:0},          // tempo treinado NO DIA (só o dia atual; vira zero quando o dia muda)
       streak:{current:0, best:0, lastGoalDay:''},
       seenTips:{},                      // 'trilha:level' → true (dica do level já mostrada)
       onboarded:false,
@@ -59,7 +63,12 @@ const Store = {
     if(!['dark','light','auto'].includes(s.theme)) s.theme = 'dark';
     if(!['pt-BR','en-US'].includes(s.voiceLang)) s.voiceLang = 'pt-BR';
     s.fontScale = [0.9,1,1.15].includes(+s.fontScale) ? +s.fontScale : 1;
-    if(!DAILY_GOALS.includes(+s.dailyGoal)) s.dailyGoal = DEFAULT_DAILY_GOAL; else s.dailyGoal = +s.dailyGoal;
+    if(!GOAL_MODES.includes(s.goalMode)) s.goalMode = 'count';
+    if(!GOAL_ALERTS.includes(s.goalAlert)) s.goalAlert = 'discreet';
+    // Meta livre: qualquer inteiro ≥ 1 (valor ausente/inválido volta ao padrão; absurdo é limitado ao máximo).
+    const goalN = Math.round(+s.dailyGoal), goalM = Math.round(+s.dailyGoalMinutes);
+    s.dailyGoal = goalN>=1 ? Math.min(DAILY_GOAL_MAX, goalN) : DEFAULT_DAILY_GOAL;
+    s.dailyGoalMinutes = goalM>=1 ? Math.min(DAILY_GOAL_MINUTES_MAX, goalM) : DEFAULT_DAILY_GOAL_MINUTES;
     if(!ROUND_SIZES[s.roundSize]) s.roundSize = 'normal';
     if(!CHALLENGE_LEVELS[s.challenge]) s.challenge = 'balanced';
     s.activeTracks = Array.isArray(s.activeTracks) ? s.activeTracks.filter(k=>TRACKS[k]) : [];
@@ -119,6 +128,8 @@ const Store = {
       if(!/^\d{4}-\d{2}-\d{2}$/.test(k) || !e || typeof e!=='object'){ delete out.daily[k]; return; }
       out.daily[k] = {items:Math.max(0,+e.items||0), correct:Math.max(0,+e.correct||0), xp:Math.max(0,+e.xp||0), goalHit:!!e.goalHit};
     });
+    const dt = (src.dayTimer && typeof src.dayTimer==='object') ? src.dayTimer : {};
+    out.dayTimer = {day:/^\d{4}-\d{2}-\d{2}$/.test(dt.day||'') ? dt.day : '', ms:Number.isFinite(+dt.ms) ? Math.max(0, Math.round(+dt.ms)) : 0};
     const st = (src.streak && typeof src.streak==='object') ? src.streak : {};
     out.streak = {current:Math.max(0,Math.round(+st.current)||0), best:Math.max(0,Math.round(+st.best)||0),
       lastGoalDay:/^\d{4}-\d{2}-\d{2}$/.test(st.lastGoalDay||'') ? st.lastGoalDay : ''};

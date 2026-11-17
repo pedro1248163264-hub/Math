@@ -95,7 +95,10 @@ Aquecimento, reforço e nivelamento usam uma medida média (1,7 × G, a antiga).
 ## Recompensas e retenção
 
 - **Level geral** (XP acumulado = 100·(n−1)^1,6) com títulos (Iniciante → Calculadora Humana).
-- **Meta diária** (20/40/80/150 contas; padrão 40) com anel de progresso, **bônus de 50 XP** e **sequência de dias** (+ faixa da semana, aviso de sequência em risco).
+- **Meta diária** com anel de progresso, **bônus de 50 XP** e **sequência de dias** (+ faixa da semana, aviso de sequência em risco). Em Ajustes → *Metas e desafio*:
+  - **Tipo de meta:** por **contas** (sugestões 20/40/80/150, ou qualquer número até 9999; padrão 40) ou por **tempo** (sugestões 5/10/20/30 min, ou qualquer valor até 600; padrão 10).
+  - **Relógio do dia:** conta o tempo de treino enquanto há rodada — acertando, errando ou deixando a conta passar. **Não** conta com a rodada pausada, com o app escondido nem nas telas de introdução/aviso. Fica guardado só para o dia atual (`Store.data.dayTimer`; zera quando o dia vira) e acumula mesmo na meta por contas, então trocar de tipo no meio do dia não perde nada. Com meta por tempo, o HUD do treino mostra `⏱ tempo / meta`.
+  - **Aviso de meta batida:** *Discreto* (toast, som e confete; as contas seguem) ou *Tela* (pausa as contas e mostra uma tela com **Continuar** ou **Sair**). O bônus de XP vale nos dois. A tela nunca interrompe uma conta: se a meta bate no meio de uma conta (meta por tempo), ela espera a conta terminar — respondida ou com o tempo esgotado — e entra depois do feedback, antes da próxima.
 - **Fim de rodada:** 1–3 estrelas (sempre ≥ 1 ao concluir), +20 XP de conclusão, XP com contagem animada, barras das trilhas "de → para", lista de conquistas (level, estrelas, patente, recordes de mediana, prova liberada…).
 - **Recordes pessoais** por level (mediana do bloco), confete, sons/vibração, balões de XP e combo no treino.
 

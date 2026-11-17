@@ -22,6 +22,8 @@ const Session = {
   answering:false, inputLocked:true,
   itemTimeoutHandle:null, nextHandle:null, masteryBlurHandle:null, pendingFn:null,
   records:[], combo:0, stats:null,
+  // Relógio do dia e aviso de meta (ver "RELÓGIO DO DIA" e "META BATIDA" abaixo).
+  clockHandle:null, _clockLast:0, _clockSaved:0, goalPending:false,
 
   /* ----- início ----- */
   // opts: {onlyTrack:'multiplicacao'} treina só uma trilha; {size:N} sobrescreve o tamanho.
@@ -34,7 +36,7 @@ const Session = {
     this.plannedTotal = this.plan.reduce((a,b)=>a+b.count, 0);
     this.records = []; this.combo = 0; this.flashWarned = false;
     this.active = true; this.paused = false; this.waiting = false; this.answering = false;
-    this.current = null; this.pendingFn = null;
+    this.current = null; this.pendingFn = null; this.goalPending = false;
     const p = Store.data.player;
     this.stats = {startedAt:Date.now(), xp:0, bestCombo:0, events:[], tests:[], placements:[], itemsDone:0,
       playerLevelBefore:Progress.levelInfo(p.xp).level, goalWasHit:Progress.day().goalHit, goalJustHit:false,
@@ -43,12 +45,14 @@ const Session = {
     Engine.activeKeys().forEach(k=>{ const tr = Engine.track(k); st0(this.stats.snap, k, tr); });
     UI.resetTraining(this.plannedTotal);
     UI.showScreen('training');
+    this._clockStart();
     this.beginBlockAt(0);
     return true;
   },
   _clearTimers(){
     clearTimeout(this.itemTimeoutHandle); clearTimeout(this.nextHandle); clearTimeout(this.masteryBlurHandle);
     this.itemTimeoutHandle = this.nextHandle = this.masteryBlurHandle = null;
+    this._clockStop();
     try{ if(typeof speechSynthesis!=='undefined' && speechSynthesis.cancel) speechSynthesis.cancel(); }catch(e){}
   },
   // Agenda a próxima ação respeitando a pausa (se pausou no intervalo entre contas, retoma depois).
@@ -125,6 +129,7 @@ const Session = {
     if(!this.active || this.waiting) return;
     if(!this.paused){
       this.paused = true;
+      Store.save();   // o relógio do dia só é gravado de tempos em tempos; pausar é um bom momento
       clearTimeout(this.itemTimeoutHandle); clearTimeout(this.masteryBlurHandle);
       try{ if(typeof speechSynthesis!=='undefined' && speechSynthesis.cancel) speechSynthesis.cancel(); }catch(e){}
       UI.setPaused(true);
@@ -209,13 +214,7 @@ const Session = {
     const gained = res.xp + comboBonus;
     this._award(gained);
     const day = Progress.recordItem(correct);
-    if(day.goalJustHit){
-      st.goalJustHit = true;
-      this._award(DAILY_GOAL_XP);
-      st.events.push({type:'goal', xp:DAILY_GOAL_XP});
-      UI.toast(tf('ev_goal', {n:DAILY_GOAL_XP}));
-      Sound.levelUp(); Haptics.celebrate(); UI.celebrate('goal');
-    }
+    if(day.goalJustHit) this._goalReached();
     res.events.forEach(e=>{ st.events.push(e); this._logEvent(e); });
     this._logItem(item, cognitiveMs, correct, res);
     this.records.push({key:item.key, level:item.level, kind:item.kind, warm:item.isWarmup, ms:cognitiveMs, totalMs, motorMs, correct,
@@ -232,13 +231,70 @@ const Session = {
     }
     const gap = Store.data.settings.gapMs;
     const hold = correct ? 0 : Store.data.settings.correctAnswerShowMs;
+    const proceed = ()=>{
+      if(res.blockDone) this.onBlockDone(res.blockResult);
+      else this.nextQuestion();
+    };
     this._schedule(()=>{
       UI.clearAnswerFeedback();
-      this._schedule(()=>{
-        if(res.blockDone) this.onBlockDone(res.blockResult);
-        else this.nextQuestion();
-      }, gap);
+      this._schedule(()=>this._afterAnswer(proceed), gap);
     }, hold);
+  },
+  // Fim do feedback de uma conta: se a meta foi batida nela (aviso em tela), a tela entra aqui, antes da próxima conta.
+  _afterAnswer(proceed){
+    if(this.goalPending){ this.goalPending = false; this._showGoalScreen(proceed); }
+    else proceed();
+  },
+
+  /* ----- RELÓGIO DO DIA -----
+     Conta o tempo de treino do dia (Progress.addTime) enquanto há rodada em andamento: certo, errado ou
+     conta deixada passar — tudo conta. Só NÃO conta com a rodada pausada, com o app escondido ou numa tela
+     de aviso/introdução (ninguém está fazendo conta). Passos longos demais (aparelho suspenso) são limitados. */
+  _clockStart(){
+    this._clockStop();
+    this._clockLast = this._clockSaved = U.now();
+    this.clockHandle = setInterval(()=>this._clockTick(), CLOCK_TICK_MS);
+    if(this.clockHandle && this.clockHandle.unref) this.clockHandle.unref();   // Node (testes): não segura o processo
+  },
+  _clockStop(){ if(this.clockHandle){ clearInterval(this.clockHandle); this.clockHandle = null; } },
+  _clockRunning(){ return this.active && !this.paused && !this.waiting && !(typeof document!=='undefined' && document.hidden); },
+  _clockTick(now){
+    now = now==null ? U.now() : now;
+    const dt = now - this._clockLast; this._clockLast = now;
+    if(!this._clockRunning()) return;
+    const r = Progress.addTime(Math.min(dt, CLOCK_MAX_GAP_MS));
+    UI.updateHudTime();
+    if(now-this._clockSaved>5000){ this._clockSaved = now; Store.save(); }
+    if(r.goalJustHit) this._goalReached();
+  },
+
+  /* ----- META BATIDA -----
+     Bônus de XP e registro do marco sempre acontecem. O aviso depende do ajuste goalAlert:
+       'discreet' → só um toast + som/vibração/confete e as contas seguem;
+       'screen'   → as contas param e uma tela mostra a meta batida, com "Continuar" ou "Sair".
+     A tela nunca interrompe uma conta: se a meta bate com uma conta na tela (meta por tempo), ela espera a conta
+     terminar (respondida ou tempo esgotado) e entra depois do feedback, antes da próxima conta. */
+  _goalReached(){
+    const st = this.stats;
+    st.goalJustHit = true;
+    this._award(DAILY_GOAL_XP);
+    st.events.push({type:'goal', xp:DAILY_GOAL_XP});
+    Store.save();
+    if(Store.data.settings.goalAlert==='screen'){
+      this.goalPending = true;
+    } else {
+      UI.toast(tf('ev_goal', {n:DAILY_GOAL_XP}));
+      Sound.levelUp(); Haptics.celebrate(); UI.celebrate('goal');
+    }
+  },
+  _showGoalScreen(onContinue){
+    this.waiting = true;
+    Sound.levelUp(); Haptics.celebrate();
+    UI.showGoalReached({mode:Progress.goalMode(), items:Progress.day().items, goal:Progress.goal(), ms:Progress.todayMs(), goalMs:Progress.goalMs(),
+      xp:DAILY_GOAL_XP, streak:Progress.currentStreak()}, ()=>{
+      this.waiting = false;
+      if(this.active) onContinue();
+    }, ()=>{ this.exit(true); });
   },
   // Registro compacto por conta (relatório de IA): [t, trilha#, level, m, ms, meta, acerto, zona, tipo, lapso, tamanho(g/p/m), limite]
   _logItem(item, ms, correct, res){
@@ -315,7 +371,7 @@ const Session = {
   // completed=false quando a pessoa saiu antes (o progresso feito até ali já está salvo).
   finish(completed){
     if(!this.active) return;
-    this.active = false; this.answering = false; this.paused = false; this.waiting = false;
+    this.active = false; this.answering = false; this.paused = false; this.waiting = false; this.goalPending = false;
     this._clearTimers();
     Engine.abortBlock();
     const st = this.stats;
@@ -347,9 +403,10 @@ const Session = {
     if(!this.active) return;
     if(!skipConfirm && !confirm(t('confirm_exit_training'))) return;
     if(this.records.length){ this.finish(false); return; }
-    this.active = false; this.paused = false; this.waiting = false; this.answering = false;
+    this.active = false; this.paused = false; this.waiting = false; this.answering = false; this.goalPending = false;
     this._clearTimers();
     Engine.abortBlock();
+    Store.save();
     UI.setPaused(false);
     UI.showScreen('home'); UI.setTab('home'); UI.renderHome();
   }

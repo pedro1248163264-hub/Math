@@ -54,7 +54,7 @@ const Analytics = {
       median:s.median, stars, xp:ctx.xp, roundBonus:ctx.roundBonus, bestCombo:ctx.bestCombo, events:ctx.events||[], tests:ctx.tests||[],
       placements:ctx.placements||[], byTrack, evolution, focus,
       player:{before:ctx.playerLevelBefore, now:player.level, info:player},
-      goal:{items:day.items, goal:Progress.goal(), hit:day.goalHit, justHit:!!ctx.goalJustHit},
+      goal:{mode:Progress.goalMode(), items:day.items, goal:Progress.goal(), ms:Progress.todayMs(), goalMs:Progress.goalMs(), hit:day.goalHit, justHit:!!ctx.goalJustHit},
       streak:Progress.currentStreak()};
   },
   historicalMedian(key){

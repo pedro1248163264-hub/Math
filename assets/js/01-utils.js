@@ -20,6 +20,12 @@ const U = {
   median(arr){ return U.percentile(arr, 50); },
   mean(arr){ return arr.length ? arr.reduce((a,b)=>a+b,0)/arr.length : 0; },
   fmtSec(ms){ if(ms==null||isNaN(ms)) return '-'; return (ms/1000).toFixed(2)+'s'; },
+  // Relógio: m:ss (ou h:mm:ss a partir de 1 hora). Arredonda para baixo, como um cronômetro.
+  fmtClock(ms){
+    const total = Math.max(0, Math.floor((+ms||0)/1000)), h = Math.floor(total/3600), m = Math.floor(total%3600/60), s = total%60;
+    const p = n=>n<10 ? '0'+n : ''+n;
+    return h>0 ? h+':'+p(m)+':'+p(s) : m+':'+p(s);
+  },
   fmtPct(v){ if(v==null||isNaN(v)) return '-'; return Math.round(v*100)+'%'; },
   uid(){ return Date.now().toString(36)+Math.random().toString(36).slice(2,7); },
   // Formata um número para exibição/fala respeitando o separador decimal do idioma do

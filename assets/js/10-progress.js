@@ -50,24 +50,52 @@ const Progress = {
   },
 
   /* ----- meta diária e sequência ----- */
-  goal(){ return Store.data.settings.dailyGoal; },
+  // A meta do dia é por CONTAS (goalMode 'count') ou por TEMPO treinado (goalMode 'time').
+  goalMode(){ return Store.data.settings.goalMode==='time' ? 'time' : 'count'; },
+  goal(){ return Store.data.settings.dailyGoal; },                          // meta em contas
+  goalMs(){ return Store.data.settings.dailyGoalMinutes*60000; },           // meta em tempo (ms)
+  // Relógio do dia: só existe para o dia atual (ao virar o dia o tempo anterior é descartado).
+  // Acumula sempre durante o treino, qualquer que seja o tipo de meta — assim trocar de tipo no meio do dia não perde nada.
+  timer(){
+    const T = Store.data.dayTimer, k = this.dayKey();
+    if(T.day!==k){ T.day = k; T.ms = 0; }
+    return T;
+  },
+  todayMs(){ return this.timer().ms; },
+  // Quanto da meta do dia já foi feito (0..1), no tipo de meta atual.
+  goalFrac(){
+    const d = this.day();
+    return U.clamp(this.goalMode()==='time' ? this.todayMs()/this.goalMs() : d.items/this.goal(), 0, 1);
+  },
+  // Marca a meta como batida (uma vez por dia) e atualiza a sequência. Devolve true só na hora em que bate.
+  checkGoal(){
+    const d = this.day();
+    if(d.goalHit) return false;
+    const reached = this.goalMode()==='time' ? this.todayMs()>=this.goalMs() : d.items>=this.goal();
+    if(!reached) return false;
+    d.goalHit = true;
+    const st = Store.data.streak, today = this.dayKey();
+    if(st.lastGoalDay!==today){
+      st.current = st.lastGoalDay===this.addDays(today,-1) ? st.current+1 : 1;
+      st.best = Math.max(st.best, st.current);
+      st.lastGoalDay = today;
+    }
+    return true;
+  },
   // Registra uma conta respondida (lapsos contam: foi tentativa real). Devolve {goalJustHit}.
   recordItem(correct){
     const d = this.day();
     d.items++; if(correct) d.correct++;
     Store.data.player.items++;
-    let goalJustHit = false;
-    if(!d.goalHit && d.items>=this.goal()){
-      d.goalHit = true; goalJustHit = true;
-      const st = Store.data.streak, today = this.dayKey();
-      if(st.lastGoalDay!==today){
-        st.current = st.lastGoalDay===this.addDays(today,-1) ? st.current+1 : 1;
-        st.best = Math.max(st.best, st.current);
-        st.lastGoalDay = today;
-      }
-    }
+    const goalJustHit = this.checkGoal();
     this.prune();
     return {goalJustHit};
+  },
+  // Soma tempo treinado ao relógio do dia. Devolve {goalJustHit} (só pode bater por aqui se a meta for de tempo).
+  addTime(ms){
+    const T = this.timer();
+    T.ms += Math.max(0, Math.round(ms||0));
+    return {goalJustHit: this.goalMode()==='time' ? this.checkGoal() : false};
   },
   prune(){
     const keys = Object.keys(Store.data.daily).sort();

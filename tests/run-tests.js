@@ -698,6 +698,18 @@ ok(!TRACKS.potencia && !TRACKS.raiz, 'não há trilhas próprias de potência/ra
   ok(Progress.streakAtRisk() && Progress.currentStreak()===2, 'sequência em risco quando ontem bateu e hoje ainda não');
   ok(Progress.weekStrip().length===7 && Progress.weekStrip()[6].today, 'faixa da semana tem 7 dias terminando hoje');
   ok(Progress.roundStars(0.95,0.7)===3 && Progress.roundStars(0.85,0.1)===2 && Progress.roundStars(0.4,0)===1, 'estrelas da rodada (mínimo 1)');
+  // meta por tempo: o relógio do dia
+  freshStore(); Store.data.settings.goalMode = 'time'; Store.data.settings.dailyGoalMinutes = 1;
+  ok(Progress.todayMs()===0 && Progress.addTime(30000).goalJustHit===false && Math.abs(Progress.goalFrac()-0.5)<1e-9, 'meta por tempo: relógio soma e a fração anda');
+  for(let i=0;i<5;i++) Progress.recordItem(true);
+  ok(!Progress.day().goalHit, 'meta por tempo: contas não batem a meta');
+  ok(Progress.addTime(30000).goalJustHit===true && Progress.day().goalHit && Store.data.streak.current===1, 'meta por tempo: bate ao completar o tempo e abre a sequência');
+  ok(Progress.addTime(5000).goalJustHit===false, 'meta por tempo: dispara uma única vez');
+  Store.data.dayTimer = {day:Progress.addDays(today,-1), ms:99999};
+  ok(Progress.todayMs()===0 && Store.data.dayTimer.day===today, 'relógio zera quando o dia muda');
+  freshStore(); Store.data.settings.dailyGoal = 20; Progress.addTime(3600000);
+  ok(!Progress.day().goalHit && Progress.todayMs()===3600000, 'meta por contas: tempo acumula mas não bate a meta');
+  ok(U.fmtClock(65000)==='1:05' && U.fmtClock(3725000)==='1:02:05' && U.fmtClock(-5)==='0:00', 'fmtClock');
   // poda do histórico diário
   freshStore(); for(let i=0;i<DAILY_KEEP_DAYS+30;i++){ Store.data.daily[Progress.addDays(today,-i-5)] = {items:1,correct:1,xp:1,goalHit:false}; }
   Progress.prune(); ok(Object.keys(Store.data.daily).length<=DAILY_KEEP_DAYS, 'poda dias antigos');
@@ -705,13 +717,16 @@ ok(!TRACKS.potencia && !TRACKS.raiz, 'não há trilhas próprias de potência/ra
 
 /* ---------- 5. STORAGE ---------- */
 {
-  const junk = Store.normalize({settings:{appLang:'xx', theme:5, dailyGoal:7, roundSize:'gigante', challenge:null, activeTracks:['nada'], gapMs:'abc', fontScale:3},
+  const junk = Store.normalize({settings:{appLang:'xx', theme:5, dailyGoal:'abc', goalMode:'xx', goalAlert:3, dailyGoalMinutes:-5, roundSize:'gigante', challenge:null, activeTracks:['nada'], gapMs:'abc', fontScale:3},
     tracks:{soma:{level:99, xp:-5, m:7, rank:42, stars:{'1':9,'x':1}, window:'oops'}, inexistente:{level:1}}, player:{xp:'a'}, daily:{'ontem':{}, '2026-01-01':{items:'5'}}, streak:{current:-4}});
-  ok(junk.settings.appLang==='pt' && junk.settings.theme==='dark' && junk.settings.dailyGoal===DEFAULT_DAILY_GOAL && junk.settings.roundSize==='normal' && junk.settings.challenge==='balanced', 'ajustes inválidos viram padrão');
+  ok(junk.settings.appLang==='pt' && junk.settings.theme==='dark' && junk.settings.dailyGoal===DEFAULT_DAILY_GOAL && junk.settings.goalMode==='count' && junk.settings.goalAlert==='discreet' && junk.settings.dailyGoalMinutes===DEFAULT_DAILY_GOAL_MINUTES && junk.settings.roundSize==='normal' && junk.settings.challenge==='balanced', 'ajustes inválidos viram padrão');
   ok(junk.settings.activeTracks.length>0 && junk.settings.gapMs>=100 && junk.settings.fontScale===1, 'listas/limites saneados');
   const s = junk.tracks.soma;
   ok(s && s.level===TRACKS.soma.levels.length && s.xp===0 && s.m===1 && s.rank===RANK_MAX && Array.isArray(s.window) && s.stars['1']===3 && !junk.tracks.inexistente, 'trilha corrompida é saneada');
   ok(junk.player.xp===0 && !junk.daily.ontem && junk.daily['2026-01-01'].items===5 && junk.streak.current===0, 'jogador/dias/sequência saneados');
+  // meta livre: qualquer inteiro ≥ 1, limitado aos máximos
+  ok(Store.normalize({settings:{dailyGoal:7}}).settings.dailyGoal===7 && Store.normalize({settings:{dailyGoal:123456}}).settings.dailyGoal===DAILY_GOAL_MAX && Store.normalize({settings:{dailyGoalMinutes:45}}).settings.dailyGoalMinutes===45 && Store.normalize({settings:{dailyGoalMinutes:99999}}).settings.dailyGoalMinutes===DAILY_GOAL_MINUTES_MAX, 'meta diária aceita qualquer número (com teto)');
+  ok(Store.normalize({dayTimer:{day:'lixo', ms:-3}}).dayTimer.ms===0 && Store.normalize({dayTimer:{day:'2026-01-02', ms:5000}}).dayTimer.ms===5000, 'relógio do dia saneado');
   // migração v2 → v3
   localStorage._data = {};
   localStorage.setItem('calcrapido_db_v2', JSON.stringify({settings:{appLang:'en', theme:'light', tts:true, voiceRate:1.4, mode:'hiit', selectedSkills:['x']}, history:[{date:1,total:10,accuracy:0.9,avgTime:1000}], bestStreak:12, speedProfiles:{a:1}}));
@@ -733,11 +748,11 @@ ok(!TRACKS.potencia && !TRACKS.raiz, 'não há trilhas próprias de potência/ra
 {
   freshStore(); Store.data.settings.gapMs = 0; Store.data.settings.correctAnswerShowMs = 0; Store.data.settings.confirmBeforeAccept = false;
   placeAll(3, 0.5);
-  const noop = ()=>{}; let summary = null, intros = 0, results = 0;
+  const noop = ()=>{}; let summary = null, intros = 0, results = 0; const goalScreens = []; let goalAction = (go)=>go();
   Object.assign(UI, {resetTraining:noop, showScreen:noop, setBlockChip:noop, setItemChip:noop, updateHud:noop, popXp:noop, setPaused:noop, celebrate:noop,
     toast:noop, flashAnswer:noop, pushPulse:noop, clearAnswerFeedback:noop, showCorrectAnswer:noop, showHint:noop, setMasteryBlur:noop,
     updateAnswerDisplay:noop, setKeypadMode:noop, setTab:noop, renderHome:noop, hideOverlays:noop,
-    renderQuestion:(item,ready)=>ready(), renderSummary:s=>{ summary = s; },
+    updateHudTime:noop, showGoalReached:(info,go,exit)=>{ goalScreens.push(info); setTimeout(()=>goalAction(go,exit),0); }, renderQuestion:(item,ready)=>ready(), renderSummary:s=>{ summary = s; },
     showBlockIntro:(info,go)=>{ intros++; setTimeout(go,0); }, showTestResult:(res,go)=>{ results++; setTimeout(go,0); }});
   const xp0 = Store.data.player.xp;
   ok(Session.start({size:16}), 'Session.start inicia');
@@ -770,6 +785,45 @@ ok(!TRACKS.potencia && !TRACKS.raiz, 'não há trilhas próprias de potência/ra
   Session.exit(true);
   ok(!Session.active && summary && !summary.completed && summary.stars===0 && Store.data.history.length===1, 'sair no meio fecha como rodada parcial (sem estrelas)');
   ok(Engine.block===null, 'sair descarta o bloco em andamento');
+  // meta batida: aviso discreto não para nada; aviso em tela para e espera continuar/sair
+  const play = async (until)=>{ let g = 0; while(Session.active && !until() && g++<4000){
+    if(Session.current && !Session.answering && !Session.inputLocked && !Session.waiting){
+      for(const ch of String(Session.current.answer).replace('.',',')) Session.submitDigit(ch==='-'?'sign':ch===','?'dec':ch);
+      Session.evaluate(false);
+    }
+    await sleep(1);
+  } };
+  Store.data.history.length = 0; summary = null; goalScreens.length = 0;
+  Store.data.settings.goalMode = 'count'; Store.data.settings.dailyGoal = Progress.day().items + 3; Store.data.settings.goalAlert = 'discreet';
+  Progress.day().goalHit = false;
+  Session.start({size:16}); await play(()=>false);
+  ok(summary && summary.completed && goalScreens.length===0 && summary.goal.hit && summary.goal.mode==='count', 'aviso discreto: rodada segue sem tela de meta');
+  Store.data.settings.goalAlert = 'screen'; Store.data.settings.dailyGoal = Progress.day().items + 3; Progress.day().goalHit = false; summary = null;
+  Session.start({size:16}); await play(()=>false);
+  ok(goalScreens.length===1 && summary && summary.completed && goalScreens[0].mode==='count', 'aviso em tela: tela aparece uma vez e "continuar" termina a rodada');
+  // sair pela tela de meta
+  Store.data.settings.dailyGoal = Progress.day().items + 3; Progress.day().goalHit = false; summary = null; goalScreens.length = 0;
+  goalAction = (go,exit)=>exit();
+  Session.start({size:24}); await play(()=>false);
+  ok(goalScreens.length===1 && !Session.active && summary && !summary.completed, 'tela de meta: "sair" fecha como rodada parcial');
+  // meta por tempo: o relógio dispara a tela no meio da rodada; pausa e tela de aviso não contam tempo
+  goalAction = (go)=>go(); goalScreens.length = 0; summary = null; Progress.day().goalHit = false;
+  Store.data.settings.goalMode = 'time'; Store.data.settings.dailyGoalMinutes = 1; Store.data.dayTimer = {day:Progress.dayKey(), ms:58000};
+  Session.start({size:24}); await play(()=>Session.records.length>=2);
+  while(Session.answering || Session.inputLocked) await sleep(1);
+  const t0 = Progress.todayMs(); Session.togglePause(); Session._clockTick(Session._clockLast+1500); ok(Progress.todayMs()===t0, 'pausado: o relógio não conta');
+  Session.togglePause(); Session._clockTick(Session._clockLast+500); ok(Progress.todayMs()===t0+500, 'rodando: o relógio conta');
+  Session._clockTick(Session._clockLast+60000); ok(Progress.todayMs()-t0<=500+CLOCK_MAX_GAP_MS, 'passo longo (aparelho suspenso) é limitado');
+  ok(goalScreens.length===0 && Session.goalPending===true && Progress.day().goalHit && Session.current && !Session.answering, 'meta por tempo bate no meio de uma conta: a tela espera, a conta segue');
+  Session._clockTick(Session._clockLast+500); ok(goalScreens.length===0, 'tela não interrompe a conta em andamento');
+  const cur = Session.current; while(Session.inputLocked) await sleep(1);
+  for(const ch of String(cur.answer).replace('.',',')) Session.submitDigit(ch==='-'?'sign':ch===','?'dec':ch);
+  Session.evaluate(false);
+  ok(goalScreens.length===0, 'tela só entra depois do feedback da conta'); await sleep(10);
+  ok(goalScreens.length===1 && Session.goalPending===false, 'terminada a conta, a tela de meta aparece uma vez');
+  await play(()=>false);
+  ok(summary && summary.completed && summary.goal.mode==='time' && summary.goal.hit && goalScreens.length===1, 'rodada por tempo termina com resumo da meta');
+  Store.data.settings.goalMode = 'count'; Store.data.settings.goalAlert = 'discreet';
   // errar não é punido: rodada toda errada ainda conclui e rende ≥ 0 XP
   Store.data.history.length = 0; summary = null;
   Session.start({size:16}); guard = 0;

@@ -128,8 +128,17 @@ const TIMEOUT_MULT = 2.4, TIMEOUT_MIN_MS = 6000, TIMEOUT_MAX_MS = 25000;
 
 /* ---------- 7. JOGADOR (level geral) ---------- */
 const PLAYER_LEVEL_EXP = 1.6, PLAYER_LEVEL_SCALE = 100; // XP acumulado p/ nível n = SCALE*(n-1)^EXP
+// Meta diária: por QUANTIDADE de contas ou por TEMPO treinado no dia. As listas são só sugestões
+// (atalhos na tela de Ajustes); a pessoa pode digitar qualquer valor dentro dos máximos.
 const DAILY_GOALS = [20, 40, 80, 150];
 const DEFAULT_DAILY_GOAL = 40;
+const DAILY_GOAL_MAX = 9999;
+const DAILY_GOAL_MINUTES = [5, 10, 20, 30];
+const DEFAULT_DAILY_GOAL_MINUTES = 10;
+const DAILY_GOAL_MINUTES_MAX = 600;
+const GOAL_MODES = ['count', 'time'];
+const GOAL_ALERTS = ['discreet', 'screen'];     // discreto (toast) · tela que pausa e pergunta continuar/sair
+const CLOCK_TICK_MS = 250, CLOCK_MAX_GAP_MS = 2000;   // relógio do dia: passo e teto por passo (suspensão do aparelho não conta)
 const DAILY_KEEP_DAYS = 400;
 const EXPORT_EVERY_MIN = 20, EXPORT_EVERY_MAX = 5000, EXPORT_EVERY_DEFAULT = 300;   // aviso de exportar p/ IA (a cada X contas)
 const LOG_MAX = 5000, EVENTS_MAX = 400;   // registro por conta / eventos (para o relatório de IA)

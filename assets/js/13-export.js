@@ -75,7 +75,7 @@ const Export = {
     L.push('- Período coberto pelo registro de contas: '+(first?dayOf(first)+' a '+dayOf(last):'sem dados')+' ('+rows.length+' contas registradas; o registro guarda as últimas '+LOG_MAX+')');
     L.push('- Dias com treino: '+days.length+' · contas totais (histórico do app): '+d.player.items+' · rodadas: '+d.player.rounds+' · XP: '+d.player.xp+' · nível geral: '+Progress.levelInfo(d.player.xp).level);
     L.push('- Contas feitas desde a última exportação para IA: '+this.pendingItems()+(d.exportMark.at?' (última em '+new Date(d.exportMark.at).toISOString().slice(0,10)+')':' (primeira exportação)'));
-    L.push('- Meta diária: '+d.settings.dailyGoal+' contas · sequência atual: '+Progress.currentStreak()+' dias · melhor: '+d.streak.best+' dias');
+    L.push('- Meta diária: '+(d.settings.goalMode==='time' ? d.settings.dailyGoalMinutes+' min de treino' : d.settings.dailyGoal+' contas')+' · sequência atual: '+Progress.currentStreak()+' dias · melhor: '+d.streak.best+' dias');
     L.push('- Ajustes relevantes: desafio='+d.settings.challenge+' (ρ*='+Engine.rho()+') · tamanho da rodada='+d.settings.roundSize+' · trilhas ativas='+Engine.activeKeys().join(', ')+' · aquecimento relâmpago='+(d.settings.masteryFlash?'ligado ('+d.settings.flashTracks.join(', ')+')':'desligado')+' · TTS='+(d.settings.tts?'ligado':'desligado'));
     const all = stats(core);
     L.push('- Contas de treino/prova (sem aquecimento/lapsos): n='+all.n+' · acerto '+pct(all.acc)+' · dentro da meta '+pct(all.fast)+' · mediana tempo/limite '+f2(all.ratio),'');

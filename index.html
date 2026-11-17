@@ -87,7 +87,7 @@
     </div>
     <div class="hud-row">
       <div class="hud-chip" id="hudChip" data-kind="practice"><span class="cs" id="chipSym">+</span><span class="cn" id="chipName">Soma</span><span class="cl" id="chipLevel"></span><span class="ct" id="chipTag"></span></div>
-      <div class="hud-right"><span class="hud-combo" id="hudCombo"></span><span class="hud-xp" id="hudXp">+0 XP</span></div>
+      <div class="hud-right"><span class="hud-time hidden" id="hudTime"></span><span class="hud-combo" id="hudCombo"></span><span class="hud-xp" id="hudXp">+0 XP</span></div>
     </div>
 
     <div class="equation-zone" id="equationZone">
@@ -123,6 +123,17 @@
         <div class="res-note" id="resNote"></div>
         <div class="res-xp" id="resXp"></div>
         <button class="btn btn-primary" id="resGo">Continuar</button>
+      </div>
+    </div>
+    <div class="overlay hidden" id="overlayGoal">
+      <div class="ov-card goal-ov">
+        <div class="ov-sym goal-sym">🎯</div>
+        <h2 id="goalOvTitle">Meta do dia batida! 🎉</h2>
+        <p id="goalOvLine"></p>
+        <div class="res-xp" id="goalOvXp"></div>
+        <div class="res-note" id="goalOvStreak"></div>
+        <button class="btn btn-primary" id="goalOvGo" data-i18n="goal_ov_continue">Continuar</button>
+        <button class="btn btn-ghost" id="goalOvExit" style="margin-top:10px;" data-i18n="exit_training">Sair do treino</button>
       </div>
     </div>
     <div class="overlay hidden" id="overlayPause">
