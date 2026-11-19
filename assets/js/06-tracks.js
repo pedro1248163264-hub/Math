@@ -413,6 +413,136 @@ function exprGroupPower(m){
   }, 120);
 }
 
+// ---- contas com VÁRIAS parcelas do mesmo tipo (3 ou 4 números, mais baixos que nas contas de dois números) ----
+// Mesma operação repetida (a + b + c, a − b − c, a × b × c, a ÷ b ÷ c): treina manter o parcial na cabeça
+// sem misturar estilos (isso é papel das Expressões). Tudo exato e positivo; só o nº de parcelas e o tamanho variam.
+function chainItem(vals, opKey, answer){
+  const terms = vals.map(termInt), ops = vals.slice(1).map(()=>opKey);
+  return {terms, ops, answer, exprText:chainText(terms,ops), features:{chain:true}};
+}
+function shuffled(arr){ const a = arr.slice(); for(let i=a.length-1;i>0;i--){ const j = rr(0,i); [a[i],a[j]] = [a[j],a[i]]; } return a; }
+// número de lo..hi; com chance p vira múltiplo de 10 (ex.: 210), como numa conta de cabeça de verdade
+const roundish = (lo,hi,p)=>{ const v = rr(lo,hi); return Math.random()<p ? U.clamp(Math.round(v/10)*10, lo, hi) : v; };
+function addChain(n, lo, hi, p10=0){
+  const vals = Array.from({length:n}, ()=>roundish(lo,hi,p10));
+  return chainItem(vals, 'soma', vals.reduce((s,v)=>s+v,0));
+}
+// a − b − c [− d]: escolhe os que saem e o resultado e monta o primeiro número (sempre ≥ resultado mínimo, ≤ capA)
+function subChain(k, subLo, subHi, resLo, resHi, capA, p10=0){
+  let vals = null;
+  for(let t=0;t<60 && !vals;t++){
+    const subs = Array.from({length:k}, ()=>roundish(subLo,subHi,p10)), r = rr(resLo,resHi), a = r + subs.reduce((s,v)=>s+v,0);
+    if(a<=capA) vals = [a, ...subs];
+  }
+  if(!vals){ const subs = Array.from({length:k}, ()=>subLo); vals = [resLo + subs.reduce((s,v)=>s+v,0), ...subs]; }
+  return chainItem(vals, 'subtracao', vals[0] - vals.slice(1).reduce((s,v)=>s+v,0));
+}
+// fatores sorteados por `pick`, ordem embaralhada, produto ≤ cap
+function mulChain(pick, cap, tries=80){
+  let f = null;
+  for(let t=0;t<tries && !f;t++){ const c = pick(); if(c.reduce((p,v)=>p*v,1)<=cap) f = c; }
+  if(!f) f = pick().map(()=>2);
+  f = shuffled(f);
+  return chainItem(f, 'multiplicacao', f.reduce((p,v)=>p*v,1));
+}
+// a ÷ b ÷ c [÷ d]: parte do quociente (sempre exata em cada passo); dividendo dentro de [aLo, aHi]
+function divChain(k, dLo, dHi, qLo, qHi, aLo, aHi){
+  let last = null;
+  for(let t=0;t<80;t++){
+    const ds = Array.from({length:k}, ()=>rr(dLo,dHi)), p = ds.reduce((x,v)=>x*v,1);
+    const qa = Math.max(qLo, Math.ceil(aLo/p)), qb = Math.min(qHi, Math.floor(aHi/p));
+    if(qa>qb){ last = last || [qLo*p, ...ds]; continue; }
+    last = [rr(qa,qb)*p, ...ds]; break;
+  }
+  const answer = last.slice(1).reduce((a,d)=>a/d, last[0]);
+  return chainItem(last, 'divisao', answer);
+}
+
+// ---- Expressões GRANDES: mistura todos os estilos (+ − × ÷, grupos, às vezes potência) com números maiores ----
+// Continuam bem menores que as contas de dois números das trilhas básicas, mas já exigem ordem das operações
+// E cálculo de verdade. Construção por árvore: toda divisão é exata, nada fica negativo e nenhum passo passa de `cap`.
+const MIX_PREC = {soma:1, subtracao:1, multiplicacao:2, divisao:2};
+function mixWrap(child, parentOp, side){
+  if(child.t!=='bin') return child;
+  const cp = MIX_PREC[child.op], pp = MIX_PREC[parentOp];
+  const need = cp<pp || (side==='r' && (parentOp==='divisao' || (parentOp==='subtracao' && cp<=pp) || (parentOp==='multiplicacao' && child.op==='divisao')));
+  return need ? X.group(child) : child;
+}
+function mixLeaf(cfg, small){
+  const N = X.num, B = X.bin;
+  if(!small && cfg.groupPow && Math.random()<cfg.groupPow){            // (a + b)² / (a − b)²
+    const v = rr(3,9), x = rr(1,v-1);
+    if(v*v<=cfg.cap) return {n:X.pow(X.group(Math.random()<0.5 ? B('soma',N(x),N(v-x)) : B('subtracao',N(v+x),N(x))),2), v:v*v};
+  }
+  if(!small && cfg.pow && Math.random()<cfg.pow){ const a = rr(3,cfg.powMax); return {n:X.pow(N(a),2), v:a*a}; }
+  const v = small ? rr(2,cfg.mulHi) : rr(cfg.lo,cfg.hi);
+  return {n:N(v), v};
+}
+function mixBuild(k, cfg, small=false){
+  if(k===0) return mixLeaf(cfg, small);
+  const kl = rr(0,k-1), kr = k-1-kl, op = U.choice(cfg.ops), B = X.bin;
+  let L, R;
+  if(op==='divisao'){
+    let d;
+    if(kl===0){   // dividendo sorteado já como múltiplo do divisor, dentro da faixa de números do level
+      d = rr(2,cfg.dMax);
+      const q = rr(Math.max(2,Math.ceil(cfg.lo/d)), Math.max(2,Math.floor(cfg.hi/d)));
+      L = {n:X.num(d*q), v:d*q};
+    } else {
+      L = mixBuild(kl, cfg);
+      if(!L) return null;
+      const ds = []; for(let x=2; x<=cfg.dMax && x<=L.v; x++) if(L.v%x===0) ds.push(x);
+      if(!ds.length) return null;
+      d = U.choice(ds);
+    }
+    R = {n:X.num(d), v:d};
+    return mixPack(op, L, R, L.v/d, cfg);
+  }
+  const small2 = op==='multiplicacao';
+  L = mixBuild(kl, cfg, small2); R = mixBuild(kr, cfg, small2);
+  if(!L || !R) return null;
+  if(op==='subtracao'){ if(L.v<R.v) [L,R] = [R,L]; if(L.v===R.v) return null; return mixPack(op, L, R, L.v-R.v, cfg); }
+  if(op==='multiplicacao') return mixPack(op, L, R, L.v*R.v, cfg);
+  return mixPack(op, L, R, L.v+R.v, cfg);
+}
+function mixPack(op, L, R, v, cfg){
+  if(v>cfg.cap) return null;
+  return {n:X.bin(op, mixWrap(L.n,op,'l'), mixWrap(R.n,op,'r')), v};
+}
+function mixOpsCount(n){ return n.t==='bin' ? 1+mixOpsCount(n.l)+mixOpsCount(n.r) : n.t==='group' ? mixOpsCount(n.e) : n.t==='pow' ? mixOpsCount(n.base) : 0; }
+function mixKinds(n, set=new Set()){ if(n.t==='bin'){ set.add(n.op); mixKinds(n.l,set); mixKinds(n.r,set); } else if(n.t==='group') mixKinds(n.e,set); else if(n.t==='pow') mixKinds(n.base,set); return set; }
+function exprMix(cfg, relax=0){
+  for(let t=0;t<800;t++){
+    const k = rr(cfg.kMin, cfg.kMax), r = mixBuild(k, cfg);
+    if(!r) continue;
+    const it = treeItem(r.n), n = mixOpsCount(r.n), d = exprDepth(r.n);
+    if(!(it.answer>=2) || !Number.isInteger(it.answer)) continue;
+    if(n<cfg.kMin || n>cfg.kMax || d<cfg.depMin || d>cfg.depMax) continue;
+    if(mixKinds(r.n).size<cfg.minKinds || it.exprText.length>cfg.maxChars) continue;
+    return it;
+  }
+  // raríssimo: afrouxa o teto de valor e o tamanho do texto (a estrutura exigida do level continua) antes de desistir
+  if(relax<3) return exprMix(Object.assign({}, cfg, {cap:Math.round(cfg.cap*1.4), maxChars:cfg.maxChars+3}), relax+1);
+  return treeItem(X.bin('soma', X.bin('multiplicacao', X.num(12), X.num(7)), X.bin('divisao', X.num(96), X.num(8))));
+}
+const MIX_OPS = ['soma','soma','subtracao','subtracao','multiplicacao','multiplicacao','divisao','divisao'];
+// Nível 12 — sem grupos: × e ÷ antes de + e −, com números de 2 dígitos (48 + 7 × 13 − 96 ÷ 8).
+function exprMixPlain(m){
+  return exprMix({kMin:3, kMax:4, depMin:0, depMax:0, lo:mix(12,16,m), hi:mix(40,70,m), mulHi:mix(9,13,m), dMax:9, cap:mix(250,500,m), ops:MIX_OPS, minKinds:3, maxChars:26});
+}
+// Nível 13 — um nível de parênteses ((47 + 38) × 6 − 120 ÷ 8).
+function exprMixParens(m){
+  return exprMix({kMin:3, kMax:4, depMin:1, depMax:1, lo:12, hi:mix(50,99,m), mulHi:mix(9,15,m), dMax:12, cap:mix(500,900,m), ops:MIX_OPS, minKinds:3, maxChars:30});
+}
+// Nível 14 — colchetes com parênteses dentro ([(48 + 27) × 4 − 150] ÷ 6).
+function exprMixBrackets(m){
+  return exprMix({kMin:4, kMax:5, depMin:2, depMax:2, lo:12, hi:mix(50,99,m), mulHi:mix(9,14,m), dMax:12, cap:mix(700,1200,m), ops:MIX_OPS, minKinds:3, maxChars:34});
+}
+// Nível 15 — chaves, colchetes e parênteses, com quadrados e potência de grupo no meio.
+function exprMixBraces(m){
+  return exprMix({kMin:4, kMax:6, depMin:3, depMax:3, lo:10, hi:mix(40,90,m), mulHi:mix(8,12,m), dMax:12, cap:mix(900,1800,m), ops:MIX_OPS, minKinds:3, maxChars:38, pow:0.15, powMax:12, groupPow:0.1});
+}
+
 // ---- equações ----
 function eqText(a,b,c,d){
   const left = fmtCoefTerm(a) + (b!==0 ? ` ${b>0?'+':'−'} ${Math.abs(b)}` : '');
@@ -439,18 +569,27 @@ const TRACKS = {
     {n:['2 dígitos + 2 dígitos (vai-um)','2 digits + 2 digits (carrying)'], goal:2400, shape:[2,2],
      tip:['Compense: 47 + 38 → 47 + 40 − 2 = 85.','Round and compensate: 47 + 38 → 47 + 40 − 2 = 85.'],
      gen(m,tr){ const hi=mix(40,99,m); return addPair(()=>rr(10,hi), ()=>rr(10,hi), tr, ['um','varios']); }},
+    {n:['3 números de 2 dígitos','3 numbers, 2 digits'], goal:2800, shape:null,
+     tip:['Junte dois e some o terceiro, sem recomeçar: 47 + 38 + 26 → 85, depois 85 + 26 = 111. Procure pares que fecham dezena.','Combine two, then add the third without restarting: 47 + 38 + 26 → 85, then 85 + 26 = 111. Look for pairs that make a ten.'],
+     gen(m,tr){ return addChain(3, 11, mix(45,99,m)); }},
     {n:['3 dígitos + 2 dígitos','3 digits + 2 digits'], goal:3000, shape:[3,2],
      tip:['Da esquerda para a direita: 482 + 67 → 482 + 60 = 542, + 7 = 549.','Left to right: 482 + 67 → 482 + 60 = 542, + 7 = 549.'],
      gen(m,tr){ const hi=mix(300,999,m); return addPair(()=>rr(100,hi), ()=>rr(11,99), tr, ['sem','um','varios']); }},
     {n:['3 dígitos + 3 dígitos','3 digits + 3 digits'], goal:3800, shape:[3,3],
      tip:['Quebre o segundo número: 482 + 359 → 482 + 300 = 782, + 50 = 832, + 9 = 841.','Split the second number: 482 + 359 → 482 + 300 = 782, + 50 = 832, + 9 = 841.'],
      gen(m,tr){ const hi=mix(400,999,m); return addPair(()=>rr(100,hi), ()=>rr(100,hi), tr, ['sem','um','varios']); }},
+    {n:['3 números de 3 dígitos','3 numbers, 3 digits'], goal:4600, shape:null,
+     tip:['Centenas, dezenas e unidades de todos juntos: 384 + 278 + 210 → 300 + 200 + 200 = 700; 80 + 70 + 10 = 160; 4 + 8 = 12 → 872.','Hundreds, tens and units of all of them together: 384 + 278 + 210 → 300 + 200 + 200 = 700; 80 + 70 + 10 = 160; 4 + 8 = 12 → 872.'],
+     gen(m,tr){ return addChain(3, 100, mix(400,999,m), 0.2); }},
     {n:['4 dígitos + 3 dígitos','4 digits + 3 digits'], goal:4800, shape:[4,3],
      tip:['Some por casas sem recomeçar: 4821 + 356 → 4821 + 300 = 5121, + 56 = 5177.','Add place by place: 4821 + 356 → 4821 + 300 = 5121, + 56 = 5177.'],
      gen(m,tr){ const hi=mix(3000,9999,m); return addPair(()=>rr(1000,hi), ()=>rr(100,999), tr, ['sem','um','varios']); }},
     {n:['4 dígitos + 4 dígitos','4 digits + 4 digits'], goal:5800, shape:[4,4],
      tip:['Milhar, centena, dezena e unidade em sequência, mantendo o total parcial na cabeça.','Thousands, hundreds, tens, units in sequence, holding the running total.'],
-     gen(m,tr){ const hi=mix(4000,9999,m); return addPair(()=>rr(1000,hi), ()=>rr(1000,hi), tr, ['sem','um','varios']); }}
+     gen(m,tr){ const hi=mix(4000,9999,m); return addPair(()=>rr(1000,hi), ()=>rr(1000,hi), tr, ['sem','um','varios']); }},
+    {n:['4 números de 3 dígitos','4 numbers, 3 digits'], goal:6800, shape:null,
+     tip:['Acumule e arredonde: 384 + 278 + 398 + 210 → 384 + 278 = 662; 662 + 398 → 662 + 400 − 2 = 1060; + 210 = 1270.','Accumulate and round: 384 + 278 + 398 + 210 → 384 + 278 = 662; 662 + 398 → 662 + 400 − 2 = 1060; + 210 = 1270.'],
+     gen(m,tr){ return addChain(4, 100, mix(400,999,m), 0.25); }},
   ]},
 
   subtracao:{ sym:'−', color:'#F59E0B', op:'subtracao', label:['Subtração','Subtraction'], levels:[
@@ -467,18 +606,27 @@ const TRACKS = {
     {n:['2 dígitos − 2 dígitos (empréstimo)','2 digits − 2 digits (borrowing)'], goal:2600, shape:[2,2],
      tip:['Compense: 82 − 38 → 82 − 40 + 2 = 44.','Round and compensate: 82 − 38 → 82 − 40 + 2 = 44.'],
      gen(m,tr){ const hi=mix(50,99,m); return subPair(()=>rr(21,hi), a=>rr(11,a-1), tr, ['um']); }},
+    {n:['3 números de 2 dígitos (a − b − c)','3 numbers, 2 digits (a − b − c)'], goal:3000, shape:null,
+     tip:['Some o que sai e tire de uma vez: 95 − 28 − 17 → 28 + 17 = 45, 95 − 45 = 50. Ou tire um de cada vez, sem recomeçar.','Add what is taken away and subtract once: 95 − 28 − 17 → 28 + 17 = 45, 95 − 45 = 50. Or subtract one at a time without restarting.'],
+     gen(m,tr){ return subChain(2, 11, mix(22,35,m), 5, mix(25,45,m), 99); }},
     {n:['3 dígitos − 2 dígitos','3 digits − 2 digits'], goal:3300, shape:[3,2],
      tip:['Tire o segundo em partes: 543 − 67 → 543 − 60 = 483, − 7 = 476.','Take the second number in parts: 543 − 67 → 543 − 60 = 483, − 7 = 476.'],
      gen(m,tr){ const hi=mix(300,999,m); return subPair(()=>rr(100,hi), a=>rr(11,99), tr, ['sem','um','varios']); }},
     {n:['3 dígitos − 3 dígitos','3 digits − 3 digits'], goal:4200, shape:[3,3],
      tip:['Compense na centena: 742 − 398 → 742 − 400 + 2 = 344.','Compensate at the hundred: 742 − 398 → 742 − 400 + 2 = 344.'],
      gen(m,tr){ const hi=mix(500,999,m); return subPair(()=>rr(200,hi), a=>rr(100,a-1), tr, ['sem','um','varios']); }},
+    {n:['3 números de 3 dígitos (a − b − c)','3 numbers, 3 digits (a − b − c)'], goal:4600, shape:null,
+     tip:['Some o que sai e subtraia uma vez só: 842 − 265 − 198 → 265 + 198 = 463, 842 − 463 = 379.','Add what is taken away and subtract once: 842 − 265 − 198 → 265 + 198 = 463, 842 − 463 = 379.'],
+     gen(m,tr){ return subChain(2, 40, mix(150,380,m), 20, mix(150,300,m), 999, 0.2); }},
     {n:['4 dígitos − 3 dígitos','4 digits − 3 digits'], goal:5200, shape:[4,3],
      tip:['Arredonde e ajuste: 5210 − 387 → 5210 − 400 + 13 = 4823.','Round and adjust: 5210 − 387 → 5210 − 400 + 13 = 4823.'],
      gen(m,tr){ const hi=mix(3000,9999,m); return subPair(()=>rr(1000,hi), a=>rr(100,999), tr, ['sem','um','varios']); }},
     {n:['4 dígitos − 4 dígitos','4 digits − 4 digits'], goal:6300, shape:[4,4],
      tip:['Vá ao múltiplo de 1000 ou 100 mais próximo e ajuste no fim.','Go to the nearest multiple of 1000 or 100, then adjust at the end.'],
-     gen(m,tr){ const hi=mix(5000,9999,m); return subPair(()=>rr(2000,hi), a=>rr(1000,a-1), tr, ['sem','um','varios']); }}
+     gen(m,tr){ const hi=mix(5000,9999,m); return subPair(()=>rr(2000,hi), a=>rr(1000,a-1), tr, ['sem','um','varios']); }},
+    {n:['4 números (a − b − c − d)','4 numbers (a − b − c − d)'], goal:7200, shape:null,
+     tip:['Some tudo o que sai e tire de uma vez: 1250 − 384 − 278 − 210 → 384 + 278 + 210 = 872; 1250 − 872 = 378.','Add everything that is taken away and subtract once: 1250 − 384 − 278 − 210 → 384 + 278 + 210 = 872; 1250 − 872 = 378.'],
+     gen(m,tr){ return subChain(3, 30, mix(120,260,m), 20, mix(100,250,m), 1999, 0.25); }},
   ]},
 
   multiplicacao:{ sym:'×', color:'#6366F1', op:'multiplicacao', label:['Multiplicação','Multiplication'], levels:[
@@ -488,6 +636,9 @@ const TRACKS = {
     {n:['Tabuada do 2 ao 9','Times table 2–9'], goal:1500, shape:[1,1],
      tip:['9 × n = 10 × n − n. Para 7 × 8 lembre da sequência 5-6-7-8 → 56 = 7 × 8.','9 × n = 10 × n − n. For 7 × 8 remember the run 5-6-7-8 → 56 = 7 × 8.'],
      gen(m,tr){ return multTable(tr,2,mix(7,9,m),'mult'); }},
+    {n:['3 fatores de 1 dígito','3 single-digit factors'], goal:2000, shape:null,
+     tip:['Agrupe o que fecha número redondo: 4 × 7 × 5 → 4 × 5 = 20, depois 20 × 7 = 140. Com 4 fatores, resolva dois a dois.','Group what makes a round number: 4 × 7 × 5 → 4 × 5 = 20, then 20 × 7 = 140. With 4 factors, go two by two.'],
+     gen(m,tr){ const hi=mix(5,9,m), n=(m>0.6 && Math.random()<0.35)?4:3; return mulChain(()=>Array.from({length:n},()=>rr(2,hi)), 720); }},
     {n:['11 a 19 × 1 dígito','11–19 × 1 digit'], goal:2200, shape:[2,1],
      tip:['Decomponha: 14 × 6 → 10 × 6 + 4 × 6 = 60 + 24 = 84.','Split: 14 × 6 → 10 × 6 + 4 × 6 = 60 + 24 = 84.'],
      gen(m,tr){ const hi=mix(13,19,m), a=tr?Engine.pickRow(tr,'mult11',11,hi):rr(11,hi), b=rr(2,9);
@@ -495,6 +646,9 @@ const TRACKS = {
     {n:['2 dígitos × 1 dígito','2 digits × 1 digit'], goal:2800, shape:[2,1],
      tip:['Decomponha o maior: 47 × 6 → 40 × 6 + 7 × 6 = 240 + 42 = 282.','Split the larger: 47 × 6 → 40 × 6 + 7 × 6 = 240 + 42 = 282.'],
      gen(m,tr){ const a=rr(21,mix(49,99,m)), b=rr(2,9); return {a,b,answer:a*b,features:{}}; }},
+    {n:['3 fatores com dezena redonda','3 factors with a round ten'], goal:3400, shape:null,
+     tip:['20 × 3 × 15 → 20 × 3 = 60 e 60 × 15 = 900; ou 20 × 15 = 300 e 300 × 3 = 900. Una primeiro os fatores que dão número redondo (25 × 4, 20 × 5).','20 × 3 × 15 → 20 × 3 = 60 and 60 × 15 = 900; or 20 × 15 = 300 and 300 × 3 = 900. Pair first the factors that make a round number (25 × 4, 20 × 5).'],
+     gen(m,tr){ return mulChain(()=>[U.choice([10,20,25,30,40,50]), rr(2,9), rr(11,mix(15,19,m))], mix(1500,3200,m)); }},
     {n:['11 a 19 × 11 a 19','11–19 × 11–19'], goal:3800, shape:[2,2],
      tip:['13 × 17 → 13 × 10 + 13 × 7 = 130 + 91 = 221.','13 × 17 → 13 × 10 + 13 × 7 = 130 + 91 = 221.'],
      gen(m,tr){ const hi=mix(14,19,m), a=rr(11,hi), b=rr(11,hi); return {a,b,answer:a*b,features:{}}; }},
@@ -506,7 +660,10 @@ const TRACKS = {
      gen(m,tr){ const a=rr(101,mix(300,999,m)), b=rr(2,9); return {a,b,answer:a*b,features:{}}; }},
     {n:['3 dígitos × 2 dígitos','3 digits × 2 digits'], goal:9000, shape:[3,2],
      tip:['Quebre o de 2 dígitos: 327 × 24 → 327 × 20 + 327 × 4 = 6540 + 1308 = 7848.','Split the 2-digit factor: 327 × 24 → 327 × 20 + 327 × 4 = 6540 + 1308 = 7848.'],
-     gen(m,tr){ const a=rr(101,mix(300,999,m)), b=rr(11,mix(30,99,m)); return {a,b,answer:a*b,features:{}}; }}
+     gen(m,tr){ const a=rr(101,mix(300,999,m)), b=rr(11,mix(30,99,m)); return {a,b,answer:a*b,features:{}}; }},
+    {n:['3 fatores de até 2 dígitos','3 factors up to 2 digits'], goal:9500, shape:null,
+     tip:['14 × 15 × 6 → 14 × 15 = 210, depois 210 × 6 = 1260. Comece pelo par mais fácil e deixe o fator pequeno para o fim.','14 × 15 × 6 → 14 × 15 = 210, then 210 × 6 = 1260. Start with the easiest pair and leave the small factor for last.'],
+     gen(m,tr){ return mulChain(()=>[rr(11,mix(19,35,m)), rr(11,mix(15,25,m)), rr(3,9)], mix(3000,9000,m)); }},
   ]},
 
   divisao:{ sym:'÷', color:'#EC4899', op:'divisao', label:['Divisão','Division'], levels:[
@@ -516,6 +673,9 @@ const TRACKS = {
     {n:['Tabuada do 2 ao 9','Times table 2–9'], goal:1800, shape:null,
      tip:['Procure o número que multiplicado pelo divisor dá o dividendo: 56 ÷ 7 → 7 × 8.','Find the number that times the divisor gives the dividend: 56 ÷ 7 → 7 × 8.'],
      gen(m,tr){ return divTable(tr,2,mix(7,9,m)); }},
+    {n:['Duas divisões na tabuada','Two divisions, times table'], goal:2400, shape:null,
+     tip:['72 ÷ 3 ÷ 4 → 72 ÷ 3 = 24, depois 24 ÷ 4 = 6. Dividir por 3 e depois por 4 é o mesmo que dividir por 12 de uma vez.','72 ÷ 3 ÷ 4 → 72 ÷ 3 = 24, then 24 ÷ 4 = 6. Dividing by 3 and then by 4 is the same as dividing by 12.'],
+     gen(m,tr){ return divChain(2, 2, mix(4,9,m), 2, mix(5,9,m), 24, mix(200,500,m)); }},
     {n:['2 dígitos ÷ 1 dígito','2 digits ÷ 1 digit'], goal:2800, shape:[2,1],
      tip:['Divida em partes: 84 ÷ 4 → 80 ÷ 4 + 4 ÷ 4 = 20 + 1 = 21.','Divide in parts: 84 ÷ 4 → 80 ÷ 4 + 4 ÷ 4 = 20 + 1 = 21.'],
      gen(m,tr){ const d=tr?Engine.pickRow(tr,'div',2,9):rr(2,9);
@@ -524,13 +684,19 @@ const TRACKS = {
      tip:['Divida por casas: 672 ÷ 4 → 600 ÷ 4 + 72 ÷ 4 = 150 + 18 = 168.','Divide by place: 672 ÷ 4 → 600 ÷ 4 + 72 ÷ 4 = 150 + 18 = 168.'],
      gen(m,tr){ const d=tr?Engine.pickRow(tr,'div',2,9):rr(2,9);
        const it=divExact(d, Math.ceil(100/d), Math.floor(mix(300,999,m)/d)); it.digitKey='div'; it.digits=[d]; return it; }},
+    {n:['3 dígitos ÷ 1 dígito ÷ 1 dígito','3 digits ÷ 1 digit ÷ 1 digit'], goal:4400, shape:null,
+     tip:['840 ÷ 4 ÷ 3 → 840 ÷ 4 = 210, depois 210 ÷ 3 = 70. Comece pelo divisor que deixa a conta mais redonda.','840 ÷ 4 ÷ 3 → 840 ÷ 4 = 210, then 210 ÷ 3 = 70. Start with the divisor that leaves the roundest number.'],
+     gen(m,tr){ return divChain(2, 2, 9, 3, 99, 100, mix(400,999,m)); }},
     {n:['3 dígitos ÷ 2 dígitos','3 digits ÷ 2 digits'], goal:5000, shape:[3,2],
      tip:['Estime e ajuste: 345 ÷ 15 → 15 × 20 = 300; sobram 45 = 15 × 3 → 23.','Estimate and adjust: 345 ÷ 15 → 15 × 20 = 300; 45 left = 15 × 3 → 23.'],
      gen(m,tr){ const d=rr(11,mix(15,25,m)); return divExact(d, Math.max(4,Math.ceil(100/d)), Math.floor(mix(400,999,m)/d)); }},
     {n:['4 dígitos ÷ 1 dígito','4 digits ÷ 1 digit'], goal:6000, shape:[4,1],
      tip:['Divida em blocos redondos: 3528 ÷ 7 → 3500 ÷ 7 + 28 ÷ 7 = 500 + 4 = 504.','Divide in round chunks: 3528 ÷ 7 → 3500 ÷ 7 + 28 ÷ 7 = 500 + 4 = 504.'],
      gen(m,tr){ const d=tr?Engine.pickRow(tr,'div',2,9):rr(2,9);
-       const it=divExact(d, Math.ceil(1000/d), Math.floor(mix(3000,9999,m)/d)); it.digitKey='div'; it.digits=[d]; return it; }}
+       const it=divExact(d, Math.ceil(1000/d), Math.floor(mix(3000,9999,m)/d)); it.digitKey='div'; it.digits=[d]; return it; }},
+    {n:['4 dígitos em 3 divisões','4 digits, 3 divisions'], goal:7000, shape:null,
+     tip:['2520 ÷ 3 ÷ 4 ÷ 5 → 2520 ÷ 3 = 840; 840 ÷ 4 = 210; 210 ÷ 5 = 42. Um passo de cada vez, sempre com o número menor.','2520 ÷ 3 ÷ 4 ÷ 5 → 2520 ÷ 3 = 840; 840 ÷ 4 = 210; 210 ÷ 5 = 42. One step at a time, always with the smaller number.'],
+     gen(m,tr){ return divChain(3, 2, 9, 2, 99, 1000, mix(3000,9999,m)); }},
   ]},
 
   porcentagem:{ sym:'%', color:'#F97316', op:'porcentagem', label:['Porcentagem','Percentages'], levels:[
@@ -638,7 +804,19 @@ const TRACKS = {
      gen(m,tr){ return exprBraces(m); }},
     {n:['Potência de grupo e sinais','Powers of groups and signs'], goal:7000, shape:null,
      tip:['Resolva o parêntese e depois a potência: (2 + 3)² = 5² = 25. Atenção à base: −3² = −9 (só o 3 é elevado), mas (−3)² = 9.','Solve the parentheses, then the power: (2 + 3)² = 5² = 25. Watch the base: −3² = −9 (only the 3 is squared), but (−3)² = 9.'],
-     gen(m,tr){ return exprGroupPower(m); }}
+     gen(m,tr){ return exprGroupPower(m); }},
+    {n:['Misturas maiores (sem parênteses)','Bigger mixes (no parentheses)'], goal:7500, shape:null,
+     tip:['× e ÷ primeiro (esquerda → direita), guardando cada resultado; só depois some e subtraia: 48 + 7 × 13 − 96 ÷ 8 → 48 + 91 − 12 = 127.','× and ÷ first (left to right), keeping each result; only then add and subtract: 48 + 7 × 13 − 96 ÷ 8 → 48 + 91 − 12 = 127.'],
+     gen(m,tr){ return exprMixPlain(m); }},
+    {n:['Parênteses e números maiores','Parentheses and bigger numbers'], goal:8500, shape:null,
+     tip:['Resolva cada parêntese, anote o resultado e siga a ordem das operações: (47 + 38) × 6 − 120 ÷ 8 → 85 × 6 − 15 = 510 − 15 = 495.','Solve each parenthesis, note the result and follow the order of operations: (47 + 38) × 6 − 120 ÷ 8 → 85 × 6 − 15 = 510 − 15 = 495.'],
+     gen(m,tr){ return exprMixParens(m); }},
+    {n:['Colchetes e números maiores','Brackets and bigger numbers'], goal:9500, shape:null,
+     tip:['De dentro para fora, reescrevendo a conta a cada passo: [(48 + 27) × 4 − 150] ÷ 6 → [75 × 4 − 150] ÷ 6 → [300 − 150] ÷ 6 → 150 ÷ 6 = 25.','Inside out, rewriting the expression at each step: [(48 + 27) × 4 − 150] ÷ 6 → [75 × 4 − 150] ÷ 6 → [300 − 150] ÷ 6 → 150 ÷ 6 = 25.'],
+     gen(m,tr){ return exprMixBrackets(m); }},
+    {n:['Chaves, potências e números maiores','Braces, powers and bigger numbers'], goal:10000, shape:null,
+     tip:['Três níveis, sempre de dentro para fora, e potências antes de × e ÷: {[(8 + 4) × 5 − 36] ÷ 6 + 3²} × 2 → {[60 − 36] ÷ 6 + 9} × 2 → {4 + 9} × 2 = 26.','Three levels, always inside out, with powers before × and ÷: {[(8 + 4) × 5 − 36] ÷ 6 + 3²} × 2 → {[60 − 36] ÷ 6 + 9} × 2 → {4 + 9} × 2 = 26.'],
+     gen(m,tr){ return exprMixBraces(m); }},
   ]},
 
   equacoes:{ sym:'x', color:'#84CC16', op:'equacao', label:['Equações','Equations'], levels:[
@@ -677,7 +855,12 @@ const TRACKS = {
    dígitos do level: b − a < 0, a − (−b), (−a) × b, (−a) ÷ (−b)... A resposta pode ser negativa
    (digita-se com ±). Essas contas ficam fora dos pesos de vai-um/empréstimo (features = {neg}). */
 const NEG_RATE = [0.22, 0.38];
-const NEG_LEVELS = {subtracao:3, multiplicacao:3, divisao:2};  // quantos levels finais recebem sinais
+// Quais levels recebem sinais (pelo nome PT do level, assim levels novos no meio da escada não deslocam nada).
+const NEG_LEVELS = {
+  subtracao:['3 dígitos − 3 dígitos','4 dígitos − 3 dígitos','4 dígitos − 4 dígitos'],
+  multiplicacao:['2 dígitos × 2 dígitos','3 dígitos × 1 dígito','3 dígitos × 2 dígitos'],
+  divisao:['3 dígitos ÷ 2 dígitos','4 dígitos ÷ 1 dígito']
+};
 const NEG_TIP = {
   subtracao:['Sinais: subtrair um negativo é somar (7 − (−3) = 10); e se o 1º número é menor, o resultado é negativo: calcule o maior − menor e ponha o sinal.',
     'Signs: subtracting a negative means adding (7 − (−3) = 10); if the first number is smaller the result is negative: do bigger − smaller and add the sign.'],
@@ -701,13 +884,32 @@ function negify(it, key){
   return Object.assign({}, it, {terms, ops, answer, exprText:chainText(terms,ops), features:{neg:true}});
 }
 Object.keys(NEG_LEVELS).forEach(key=>{
-  const L = TRACKS[key].levels, n = L.length;
-  for(let i=n-NEG_LEVELS[key]; i<n; i++){
-    const lv = L[i], g = lv.gen;
+  TRACKS[key].levels.forEach(lv=>{
+    if(!NEG_LEVELS[key].includes(lv.n[0])) return;
+    const g = lv.gen;
+    lv.neg = true;
     lv.gen = (m,tr)=>{ const it = g(m,tr); return Math.random()<NEG_RATE[0]+(NEG_RATE[1]-NEG_RATE[0])*m ? negify(it, key) : it; };
     lv.tip = [lv.tip[0]+' '+NEG_TIP[key][0], lv.tip[1]+' '+NEG_TIP[key][1]];
-  }
+  });
 });
+
+/* ---------- migração da ESCADA de levels ----------
+   v2: entraram levels de várias parcelas (3–4 números) NO MEIO das trilhas Soma, Subtração, Multiplicação e
+   Divisão. `map[i]` = posição nova do level antigo i+1. Quem tem progresso salvo na escada antiga é remapeado
+   em 07-storage.js (level, estrelas, subida em andamento, recordes, dicas vistas, histórico). Os levels novos
+   começam sem estrela, e quem tinha concluído a trilha volta ao primeiro level ainda sem estrela. */
+const LADDERS = {
+  soma:{v:2, map:[1,2,3,4,6,7,9,10]},
+  subtracao:{v:2, map:[1,2,3,4,6,7,9,10]},
+  multiplicacao:{v:2, map:[1,2,4,5,7,8,9,10]},
+  divisao:{v:2, map:[1,2,4,5,7,8]}
+};
+const ladderVersion = key=>(LADDERS[key] && LADDERS[key].v) || 1;
+// Posição nova de um level da escada antiga (clamp ao tamanho da escada antiga).
+function ladderMapLevel(key, lvl){
+  const lad = LADDERS[key]; if(!lad) return lvl;
+  return lad.map[U.clamp(Math.round(+lvl)||1, 1, lad.map.length)-1];
+}
 
 const TRACK_ORDER = ['soma','subtracao','multiplicacao','divisao','porcentagem','decimais','fracoes','expressoes','equacoes'];
 const DEFAULT_ACTIVE_TRACKS = ['soma','subtracao','multiplicacao','divisao'];

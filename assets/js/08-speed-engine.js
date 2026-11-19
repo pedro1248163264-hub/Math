@@ -18,7 +18,7 @@
 const Engine = {
   block:null,           // bloco em andamento ({kind,key,level,count,...})
   newTrack(key){
-    return {key, level:1, xp:0, m:M_START, rank:0, placed:false, testReady:false, done:false,
+    return {key, ladder:ladderVersion(key), level:1, xp:0, m:M_START, rank:0, placed:false, testReady:false, done:false,
       stars:{}, climb:null, strength:0.6, window:[], items:0, lastPracticeAt:0, reinforce:0, recentPairs:[],
       patternWeights:{}, digitWeights:{}, patternErrorStreak:{}, hotPairs:{}, bestMedian:{}};
   },

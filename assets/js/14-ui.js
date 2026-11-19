@@ -535,8 +535,9 @@ const UI = {
   renderMathQuestion(item, eqEl){
     eqEl.replaceChildren();
     // Contas com grupos podem ser longas: a fonte encolhe pelo nº de caracteres (ver .fit-chars no CSS).
-    eqEl.classList.toggle('fit-chars', !!item.tree);
-    if(item.tree) eqEl.style.setProperty('--chars', String(item.exprText.length));
+    const longChain = !!(item.terms && item.ops && item.ops.length>=2 && item.exprText);   // 3+ parcelas (ex.: 384 + 278 + 398 + 210)
+    eqEl.classList.toggle('fit-chars', !!item.tree || longChain);
+    if(item.tree || longChain) eqEl.style.setProperty('--chars', String(item.exprText.length));
     if(item.isEquation){
       const prompt = this.mathSpan('x = ?', 'math-equation-prompt');
       const line = document.createElement('div');

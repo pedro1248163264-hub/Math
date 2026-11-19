@@ -122,7 +122,7 @@ function bracketsMatchDepth(text){
 function evalItem(it){
   const f = it.features||{};
   if(it.tree) return parseExprText(it.exprText);
-  if(f.neg){ let v=it.terms[0].value; for(let i=0;i<it.ops.length;i++) v=applyOp2(it.ops[i],v,it.terms[i+1].value); return v; }
+  if(f.neg || f.chain){ let v=it.terms[0].value; for(let i=0;i<it.ops.length;i++) v=applyOp2(it.ops[i],v,it.terms[i+1].value); return v; }
   switch(it.op){
     case 'soma': return it.a+it.b;
     case 'subtracao': return it.a-it.b;
@@ -178,7 +178,7 @@ for(const key of TRACK_ORDER){
         }
         if(it.op!=='fracao_comparacao' && it.op!=='equacao' && !Number.isInteger(it.answer) && !(it.features&&it.features.decimalPlaces)) bad('resposta não inteira');
         if(it.answer<0 && it.op!=='equacao' && it.op!=='fracao_comparacao' && key!=='expressoes' && !(it.features&&it.features.neg)) bad('resposta negativa');
-        if(it.features&&it.features.neg){ negItems[key]=(negItems[key]||0)+1; if(it.answer<0) negAns[key]=(negAns[key]||0)+1; if(L<TRACKS[key].levels.length-(NEG_LEVELS[key]||0)) bad('sinais fora dos levels finais'); }
+        if(it.features&&it.features.neg){ negItems[key]=(negItems[key]||0)+1; if(it.answer<0) negAns[key]=(negAns[key]||0)+1; if(!def.neg) bad('sinais fora dos levels com sinais'); }
         if(it.answer<0 && key==='expressoes') negAnswers++;
         if(['soma','subtracao','multiplicacao','divisao'].includes(it.op) && def.shape){
           const sh = [digitCount(it.a),digitCount(it.b)].sort((x,y)=>y-x);
@@ -219,7 +219,7 @@ ok(!TRACKS.potencia && !TRACKS.raiz, 'não há trilhas próprias de potência/ra
 /* ---------- 1b. EXPRESSÕES COM GRUPOS (sinal, ÷, ( ) [ ] { }, potência de grupo) ---------- */
 {
   const E = 'expressoes', N = TRACKS[E].levels.length;
-  ok(N===11, 'trilha Expressões tem 11 levels ('+N+')');
+  ok(N===15, 'trilha Expressões tem 15 levels ('+N+')');
   const caps = {7:100, 8:100, 9:100, 10:150, 11:120};
   const seen = {}; let bad = 0; const badSamples = [];
   for(let L=7; L<=11; L++){
@@ -329,8 +329,150 @@ ok(!TRACKS.potencia && !TRACKS.raiz, 'não há trilhas próprias de potência/ra
   ok(tr.done===false && tr.level===7 && tr.rank===0, 'trilha concluída antes dos levels novos reabre no level 7 (done='+tr.done+', level='+tr.level+')');
   ok(tr.stars[6]===3, 'estrelas já conquistadas são mantidas');
   const starsAll = {}; for(let l=1;l<=TRACKS.soma.levels.length;l++) starsAll[l] = 2;
-  const d2 = Store.normalize({tracks:{soma:{placed:true, level:TRACKS.soma.levels.length, done:true, rank:1, stars:starsAll}}});
+  const d2 = Store.normalize({tracks:{soma:{ladder:2, placed:true, level:TRACKS.soma.levels.length, done:true, rank:1, stars:starsAll}}});
   ok(d2.tracks.soma.done===true && d2.tracks.soma.rank===1, 'trilha realmente concluída continua concluída');
+}
+
+
+/* ---------- 1c. LEVELS DE VÁRIAS PARCELAS (mesma operação repetida) e EXPRESSÕES GRANDES ---------- */
+{
+  // [level, nº mínimo e máximo de números, dígitos máximos do maior número]
+  const specs = {
+    soma:{5:[3,3,2], 8:[3,3,3], 11:[4,4,3]},
+    subtracao:{5:[3,3,2], 8:[3,3,3], 11:[4,4,4]},
+    multiplicacao:{3:[3,4,1], 6:[3,3,2], 11:[3,3,2]},
+    divisao:{3:[3,3,3], 6:[3,3,3], 9:[4,4,4]}
+  };
+  const OPK = {soma:'soma', subtracao:'subtracao', multiplicacao:'multiplicacao', divisao:'divisao'};
+  let bad = 0; const samples = [];
+  Object.keys(specs).forEach(key=>{
+    const n = TRACKS[key].levels.length;
+    ok(Object.keys(specs[key]).length===3, key+': 3 levels de várias parcelas');
+    for(let L=1; L<=n; L++){
+      const isChain = !!specs[key][L], seenMulti = {n:0, plain:0};
+      for(const m of [0,0.5,1]) for(let i=0;i<150;i++){
+        const it = Engine.generateItem(key, L, m, {kind:'practice'});
+        const flag = msg=>{ bad++; if(samples.length<8) samples.push(key+'/L'+L+'/m'+m+' '+it.exprText+': '+msg); };
+        const multi = !!(it.features && it.features.chain);
+        if(multi!==isChain){ if(!(it.features&&it.features.neg)) flag(isChain ? 'level de várias parcelas gerou conta de 2 números' : 'level normal gerou várias parcelas'); }
+        if(!isChain) continue;
+        const [lo, hi, dig] = specs[key][L];
+        if(!it.terms || it.terms.length<lo || it.terms.length>hi) flag('nº de parcelas '+(it.terms&&it.terms.length));
+        if(!it.ops.every(o=>o===OPK[key])) flag('mistura de operações '+it.ops);
+        if(it.op!==OPK[key]) flag('op da trilha trocada');
+        const vals = it.terms.map(t=>t.value);
+        if(Math.max(...vals.map(digitCount))>dig) flag('número com mais de '+dig+' dígitos');
+        let v = vals[0];
+        for(let j=1;j<vals.length;j++){
+          if(key==='divisao' && v%vals[j]!==0) flag('divisão inexata no passo '+j);
+          v = applyOp2(it.ops[j-1], v, vals[j]);
+          if(key==='subtracao' && v<=0) flag('resultado do passo ≤ 0');
+        }
+        if(v!==it.answer) flag('resposta '+it.answer+' ≠ '+v);
+        if(!(it.answer>0)) flag('resposta não positiva');
+        if(it.isReversePath || it.digitKey) flag('conta de parcelas com marca de tabuada');
+      }
+    }
+  });
+  ok(bad===0, 'levels de várias parcelas: '+bad+' problemas → '+samples.join(' | '));
+  // equilíbrio: cada trilha básica mistura levels de 2 números (os grandes ficam) e de várias parcelas
+  for(const key of Object.keys(specs)){
+    const n = TRACKS[key].levels.length, nc = Object.keys(specs[key]).length;
+    ok(n-nc>=6 && nc===3, key+': '+(n-nc)+' levels de 2 números mantidos + '+nc+' de várias parcelas');
+    ok(!!specs[key][n], key+': a escada termina em um level de várias parcelas');
+    const goals = TRACKS[key].levels.map(l=>l.goal);
+    Object.keys(specs[key]).forEach(L=>{ ok(goals[L-1]>goals[L-2], key+' L'+L+': meta de tempo maior que a do level anterior'); });
+  }
+  // texto/voz de conta com 4 parcelas
+  const it4 = Engine.generateItem('soma', 11, 0.5, {kind:'practice'});
+  ok(/^[0-9]+ [+] [0-9]+ [+] [0-9]+ [+] [0-9]+$/.test(it4.exprText) && spokenPhrase(it4,'pt-BR').split(' mais ').length===4, 'texto e fala de 4 parcelas: '+it4.exprText+' → '+spokenPhrase(it4,'pt-BR'));
+
+  // Expressões grandes (12–15): números maiores que nos levels 7–11, todos os estilos misturados
+  const caps = {12:500, 13:900, 14:1200, 15:1800}, maxChars = {12:26, 13:30, 14:34, 15:38};
+  let eb = 0, relaxed = 0, total = 0; const es = []; const seen = {};
+  for(let L=12; L<=15; L++){
+    seen[L] = new Set();
+    for(const m of [0,0.5,1]) for(let i=0;i<300;i++){
+      const it = Engine.generateItem('expressoes', L, m, {});
+      const flag = msg=>{ eb++; if(es.length<8) es.push('L'+L+'/m'+m+' '+it.exprText+': '+msg); };
+      seen[L].add(it.exprText); total++;
+      if(it.op!=='expressao_composta' || !it.tree){ flag('sem árvore'); continue; }
+      const parsed = parseExprText(it.exprText);
+      if(parsed!==it.answer || exprEval(it.tree)!==it.answer) flag('resposta diverge do texto ('+parsed+')');
+      if(exprToText(it.tree)!==it.exprText) flag('texto ≠ árvore');
+      if(!Number.isInteger(it.answer) || it.answer<2) flag('resposta fora do esperado');
+      if(it.answer>caps[L]) relaxed++;
+      if(it.exprText.length>maxChars[L]) relaxed++;
+      if(!bracketsMatchDepth(it.exprText)) flag('símbolo ( ) [ ] { } não bate com o aninhamento');
+      if(new Set(it.exprText.match(/[+−×÷]/g)).size<3) flag('menos de 3 tipos de operação');
+      const hasP = it.exprText.includes('('), hasB = it.exprText.includes('['), hasC = it.exprText.includes('{');
+      if(L===12 && (hasP||hasB||hasC)) flag('L12 não pode ter grupos');
+      if(L===13 && !(hasP && !hasB && !hasC)) flag('L13 só com parênteses');
+      if(L===14 && !(hasP && hasB && !hasC)) flag('L14 com [ ( ) ] e sem chaves');
+      if(L===15 && !(hasP && hasB && hasC)) flag('L15 com { [ ( ) ] }');
+      // divisões exatas em todos os passos: nada de resultado intermediário fracionado
+      (function chk(nd){ if(nd.t==='bin'){ if(nd.op==='divisao' && exprEval(nd.l)%exprEval(nd.r)!==0) flag('divisão inexata'); if(exprEval(nd)<0) flag('passo negativo'); chk(nd.l); chk(nd.r); } else if(nd.t==='group') chk(nd.e); else if(nd.t==='pow') chk(nd.base); })(it.tree);
+    }
+  }
+  ok(eb===0, 'expressões grandes (12–15): '+eb+' problemas → '+es.join(' | '));
+  ok(relaxed/total<0.005, 'teto de valor/tamanho do texto respeitado (afrouxado em '+relaxed+' de '+total+' contas)');
+  ok([12,13,14,15].every(L=>seen[L].size>=150), 'expressões grandes têm variedade: '+[12,13,14,15].map(L=>L+':'+seen[L].size).join(' '));
+  // os números das expressões novas são maiores que os dos levels de grupos (7–11)
+  const medLit = L=>{ const a=[]; for(let i=0;i<300;i++) a.push(...(Engine.generateItem('expressoes',L,0.5,{}).exprText.match(/[0-9]+/g)||[]).map(Number)); a.sort((x,y)=>x-y); return a[a.length>>1]; };
+  ok(medLit(13)>medLit(9) && medLit(14)>medLit(10), 'números típicos das expressões 13/14 maiores que os dos levels 9/10 ('+medLit(13)+'>'+medLit(9)+', '+medLit(14)+'>'+medLit(10)+')');
+}
+
+/* ---------- 1d. MIGRAÇÃO DA ESCADA DE LEVELS (progresso salvo antes dos levels de parcelas) ---------- */
+{
+  // as formas dos levels antigos continuam as mesmas depois do remapeamento
+  const oldShapes = {
+    soma:[[1,1],[2,1],[2,2],[2,2],[3,2],[3,3],[4,3],[4,4]],
+    subtracao:[[1,1],[2,1],[2,2],[2,2],[3,2],[3,3],[4,3],[4,4]],
+    multiplicacao:[[1,1],[1,1],[2,1],[2,1],[2,2],[2,2],[3,1],[3,2]],
+    divisao:[null,null,[2,1],[3,1],[3,2],[4,1]]
+  };
+  Object.keys(oldShapes).forEach(key=>{
+    ok(LADDERS[key].map.length===oldShapes[key].length, key+': mapa cobre todos os levels antigos');
+    oldShapes[key].forEach((sh,i)=>{
+      const nw = levelDef(key, LADDERS[key].map[i]);
+      ok(JSON.stringify(nw.shape)===JSON.stringify(sh), key+': level antigo '+(i+1)+' → novo '+LADDERS[key].map[i]+' mantém a forma ('+JSON.stringify(sh)+')');
+    });
+    ok(LADDERS[key].map.every((v,i,a)=>i===0 || v>a[i-1]), key+': mapa crescente');
+  });
+  const t0 = Date.now();
+  const old = {
+    tracks:{
+      soma:{placed:true, level:5, xp:30, stars:{1:3, 5:2, 8:1}, climb:{level:6, need:12, results:[]}, bestMedian:{5:3000}, window:[{ms:3000, correct:true, level:5, kind:'practice'}]},
+      multiplicacao:{placed:true, level:3, xp:10, stars:{1:3,2:3}},
+      expressoes:{placed:true, level:4, stars:{1:3}}
+    },
+    seenTips:{'soma:5':true, 'multiplicacao:3':true, 'divisao:2':true},
+    log:[[t0, TRACK_ORDER.indexOf('soma'), 5, 0.5, 3000, 2500, 1, 'ok','x',0, 0], [t0, TRACK_ORDER.indexOf('divisao'), 5, 0.5, 3000, 2500, 1, 'ok','x',0, 0]],
+    events:[{type:'levelUp', key:'soma', level:5, newLevel:6, stars:1}, {type:'levelUp', key:'divisao', level:2, newLevel:3, stars:1}]
+  };
+  const snapshot = JSON.stringify(old);
+  const d = Store.normalize(old);
+  const so = d.tracks.soma;
+  ok(JSON.stringify(old)===snapshot, 'normalize não altera o objeto de entrada');
+  ok(so.ladder===2 && so.level===6 && so.xp===30, 'soma: level antigo 5 (3 dígitos + 2 dígitos) → novo 6, XP mantido ('+so.level+')');
+  ok(so.stars[1]===3 && so.stars[6]===2 && so.stars[10]===1 && !so.stars[5] && !so.stars[8], 'soma: estrelas acompanham os levels antigos: '+JSON.stringify(so.stars));
+  ok(so.climb && so.climb.level===7, 'soma: subida em andamento aponta para o novo level (7)');
+  ok(so.bestMedian[6]===3000 && so.bestMedian[5]===undefined, 'soma: recorde de tempo acompanha o level');
+  ok(so.window[0].level===6, 'soma: janela de contas recentes acompanha o level');
+  ok(d.tracks.multiplicacao.level===4 && d.tracks.multiplicacao.stars[4]===undefined && d.tracks.multiplicacao.stars[1]===3 && d.tracks.multiplicacao.stars[2]===3, 'multiplicação: level antigo 3 (11–19 × 1 dígito) → novo 4');
+  ok(d.tracks.expressoes.level===4 && d.tracks.expressoes.ladder===1 && d.tracks.expressoes.stars[1]===3, 'expressões não são remapeadas (só ganharam levels no fim)');
+  ok(d.seenTips['soma:6'] && !d.seenTips['soma:5'] && d.seenTips['multiplicacao:4'] && d.seenTips['divisao:2'], 'dicas já vistas acompanham os levels (o level novo ainda mostra a dica): '+JSON.stringify(d.seenTips));
+  ok(d.log[0][2]===6 && d.log[1][2]===5, 'histórico de contas acompanha só a trilha migrada');
+  ok(d.events[0].level===6 && d.events[0].newLevel===7 && d.events[1].level===2, 'marcos acompanham o level');
+  // idempotente: normalizar de novo (ou recarregar) não remapeia outra vez
+  const again = Store.normalize(JSON.parse(JSON.stringify(d)));
+  ok(again.tracks.soma.level===6 && again.tracks.soma.stars[6]===2 && again.log[0][2]===6 && again.seenTips['soma:6'], 'migração roda uma vez só');
+  // quem tinha concluído a trilha reabre no primeiro level novo (sem estrela), com as estrelas mantidas
+  const allOld = {}; for(let l=1;l<=8;l++) allOld[l] = 3;
+  const done = Store.normalize({tracks:{soma:{placed:true, level:8, done:true, rank:2, stars:allOld}}}).tracks.soma;
+  ok(done.done===false && done.level===5 && done.rank===0 && done.stars[10]===3 && done.stars[4]===3, 'soma concluída antes reabre no 1º level novo (L5): done='+done.done+' level='+done.level);
+  // dado novo e dado sem trilhas
+  ok(Store.normalize({}).tracks.soma===undefined && Engine.newTrack('soma').ladder===2 && Engine.newTrack('expressoes').ladder===1, 'trilha nova já nasce na escada nova');
 }
 
 /* ---------- 3. MOTOR ---------- */
@@ -501,8 +643,8 @@ ok(!TRACKS.potencia && !TRACKS.raiz, 'não há trilhas próprias de potência/ra
     if(a.limit-a.meta>2000 || b.limit-b.meta>2000) gapsOk = false;
   }));
   ok(orderOk && gapsOk, 'meta < limite, pequena < grande, folga da meta ≤ 2 s em todos os levels');
-  const g = levelTimes('soma',8,'big');
-  ok(g.limit>=10000 && g.limit<=13000, 'Soma Nv8: limite grande ≈ '+(g.limit/1000)+'s');
+  const g = levelTimes('soma',10,'big');
+  ok(g.limit>=10000 && g.limit<=13000, 'Soma Nv10 (4 dígitos + 4 dígitos): limite grande ≈ '+(g.limit/1000)+'s');
   // entre a meta e o limite: vale como "no tempo" (não bloqueia), só rende menos XP
   const it = Engine.generateItem('soma', 6, 0.5, {kind:'practice', size:'big'});
   const mid = (it.goalMs+it.limitMs)/2;
@@ -718,7 +860,7 @@ ok(!TRACKS.potencia && !TRACKS.raiz, 'não há trilhas próprias de potência/ra
 /* ---------- 5. STORAGE ---------- */
 {
   const junk = Store.normalize({settings:{appLang:'xx', theme:5, dailyGoal:'abc', goalMode:'xx', goalAlert:3, dailyGoalMinutes:-5, roundSize:'gigante', challenge:null, activeTracks:['nada'], gapMs:'abc', fontScale:3},
-    tracks:{soma:{level:99, xp:-5, m:7, rank:42, stars:{'1':9,'x':1}, window:'oops'}, inexistente:{level:1}}, player:{xp:'a'}, daily:{'ontem':{}, '2026-01-01':{items:'5'}}, streak:{current:-4}});
+    tracks:{soma:{ladder:2, level:99, xp:-5, m:7, rank:42, stars:{'1':9,'x':1}, window:'oops'}, inexistente:{level:1}}, player:{xp:'a'}, daily:{'ontem':{}, '2026-01-01':{items:'5'}}, streak:{current:-4}});
   ok(junk.settings.appLang==='pt' && junk.settings.theme==='dark' && junk.settings.dailyGoal===DEFAULT_DAILY_GOAL && junk.settings.goalMode==='count' && junk.settings.goalAlert==='discreet' && junk.settings.dailyGoalMinutes===DEFAULT_DAILY_GOAL_MINUTES && junk.settings.roundSize==='normal' && junk.settings.challenge==='balanced', 'ajustes inválidos viram padrão');
   ok(junk.settings.activeTracks.length>0 && junk.settings.gapMs>=100 && junk.settings.fontScale===1, 'listas/limites saneados');
   const s = junk.tracks.soma;

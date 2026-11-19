@@ -20,19 +20,19 @@ A v1 sorteava a próxima conta entre ~40 famílias, uma a uma, e ajustava a difi
 
 | Trilha | Levels | Ativa por padrão |
 |---|---|---|
-| Soma | 8 (unidades → 4 dígitos + 4 dígitos) | sim |
-| Subtração | 8 | sim |
-| Multiplicação | 8 (tabuada 2–5 → 3 dígitos × 2 dígitos) | sim |
-| Divisão | 6 | sim |
+| Soma | 11 (unidades → 4 dígitos + 4 dígitos, com **3 levels de várias parcelas** no meio e no fim) | sim |
+| Subtração | 11 (idem: a − b − c e a − b − c − d) | sim |
+| Multiplicação | 11 (tabuada 2–5 → 3 dígitos × 2 dígitos, com **3 levels de 3 fatores**) | sim |
+| Divisão | 9 (tabuada → 4 dígitos ÷ 1 dígito, com **3 levels de divisões em sequência**) | sim |
 | Porcentagem | 6 (10% e 50% → acréscimo/desconto → "é quantos %?" → valor original, variação e descontos sucessivos) | não |
 | Contas com vírgula | 6 | não |
 | Frações | 5 (soma/subtração, multiplicação/divisão, comparação) | não |
-| Expressões | 11 (parênteses, cadeias, dois parênteses, **potências, cubos e raízes simples**, **ordem das operações**, **sinal na frente do parêntese**, **× e ÷ em ordem**, **colchetes**, **chaves** e **potência de grupo**) | não |
+| Expressões | 15 (parênteses, cadeias, dois parênteses, **potências, cubos e raízes simples**, **ordem das operações**, **sinal na frente do parêntese**, **× e ÷ em ordem**, **colchetes**, **chaves** **potência de grupo** e, depois deles, **4 levels de misturas com números maiores**) | não |
 | Equações | 5 | não |
 
 Potenciação e radiciação **não são trilhas**: aparecem só dentro das Expressões, de forma leve (quadrados de bases até 13, cubos de bases até 5 — inclusive negativas, p.ex. (−3)³ — e raízes quadradas exatas até √169), para treinar a ordem das operações.
 
-Cada level tem nome, **meta de tempo** (ex.: Soma Nv 1 = 1,0 s … Nv 8 = 5,8 s) e uma **dica de tática** (mostrada na primeira vez que o level aparece, na prova e na aba Trilhas). **Números negativos:** nos últimos levels de Subtração (3 últimos), Multiplicação (3 últimos) e Divisão (2 últimos), de ~22% a ~38% das contas (sobe com `m`) vêm com sinal — `menor − maior`, `a − (−b)`, `(−a) × b`, `(−a) ÷ (−b)` — mantendo o número de dígitos do level. A resposta pode ser negativa (tecla ±, ✓ para confirmar) e a dica do level explica a regra de sinais. Essas contas não entram nos pesos de vai-um/empréstimo.
+Cada level tem nome, **meta de tempo** (ex.: Soma Nv 1 = 1,0 s … Nv 10 = 5,8 s) e uma **dica de tática** (mostrada na primeira vez que o level aparece, na prova e na aba Trilhas). **Números negativos:** nos levels finais de dois números de Subtração (3 dígitos − 3 dígitos em diante), Multiplicação (2 dígitos × 2 dígitos em diante) e Divisão (3 dígitos ÷ 2 dígitos e 4 dígitos ÷ 1 dígito) — os levels de várias parcelas não têm sinais —, de ~22% a ~38% das contas (sobe com `m`) vêm com sinal — `menor − maior`, `a − (−b)`, `(−a) × b`, `(−a) ÷ (−b)` — mantendo o número de dígitos do level. A resposta pode ser negativa (tecla ±, ✓ para confirmar) e a dica do level explica a regra de sinais. Essas contas não entram nos pesos de vai-um/empréstimo.
 
 ### Expressões: grupos, colchetes e chaves
 
@@ -51,6 +51,36 @@ Os 5 últimos levels da trilha (7–11) usam uma **árvore de expressão** (`X` 
 - **Voz:** cada símbolo é dito pelo nome ("abre colchetes", "fecha chaves") e o `−` na frente de grupo/base é lido como "menos".
 - **Tela:** a fonte encolhe com o tamanho da conta (`.fit-chars`) para não passar da largura do celular.
 - **Migração:** quem já tinha concluído a trilha (6/6) antes dos levels novos volta ao level 7 (as estrelas ficam); trilhas realmente concluídas não mudam.
+
+### Contas de várias parcelas (Soma, Subtração, Multiplicação e Divisão)
+
+Além das contas grandes entre **dois** números, cada operação básica tem 3 levels em que a **mesma operação se repete** em 3–4 números **menores** (ex.: `384 + 278 + 398 + 210`, `20 × 3 × 15`, `1250 − 384 − 278 − 210`, `2520 ÷ 3 ÷ 4 ÷ 5`). Nada de misturar tipos de conta aqui — isso é papel das Expressões. Eles ficam **intercalados** com os levels de dois números, para equilibrar "uma conta grande" e "várias contas pequenas":
+
+| Trilha | Levels de várias parcelas (posição na escada) |
+|---|---|
+| Soma | 5 — 3 números de 2 dígitos · 8 — 3 números de 3 dígitos · 11 — 4 números de 3 dígitos |
+| Subtração | 5 — a − b − c (2 dígitos) · 8 — a − b − c (3 dígitos) · 11 — a − b − c − d |
+| Multiplicação | 3 — 3 fatores de 1 dígito (às vezes 4) · 6 — 3 fatores com uma dezena redonda (`20 × 3 × 15`) · 11 — 3 fatores de até 2 dígitos |
+| Divisão | 3 — duas divisões na tabuada · 6 — 3 dígitos ÷ 1 dígito ÷ 1 dígito · 9 — 4 dígitos em 3 divisões |
+
+- **Gerador** (`addChain`, `subChain`, `mulChain`, `divChain` em `06-tracks.js`): devolve `terms`/`ops` (mesmo formato das cadeias de Expressões, então tela, voz e correção já funcionavam) e `features.chain`. Somas têm parcelas "redondas" ocasionais (ex.: 210); subtrações partem do resultado (nunca ≤ 0); divisões partem do quociente (exatas em **todos** os passos); produtos têm teto (ex.: 3 fatores de 2 dígitos ≤ 3 000–9 000).
+- **Meta e limite próprios:** cada level tem sua `goal` (ex.: Soma 4 números de 3 dígitos = 6,8 s), pequena/grande e meta × limite funcionam como nos demais.
+- **Tela:** contas com 3+ parcelas encolhem a fonte pelo nº de caracteres (`.fit-chars`), como as expressões longas.
+- **Migração de quem já treinava:** a escada antiga foi remapeada (`LADDERS` em `06-tracks.js`, `remapLadder` em `07-storage.js`): level, estrelas, subida em andamento, recordes, janela de contas, dicas vistas, histórico e marcos acompanham o level antigo para a nova posição (a forma de cada level é preservada). Os levels novos começam sem estrela e mostram a dica na primeira vez; quem tinha **concluído** a trilha volta ao primeiro level novo sem estrela (estrelas ficam). Cada trilha guarda `ladder` (versão da escada) e a migração roda uma única vez. Ao mexer nas escadas de novo, some uma versão em `LADDERS` com o mapa antigo → novo.
+
+### Expressões grandes (levels 12–15)
+
+Depois de dominar os levels 1–11 (estrutura, sinais, grupos), os 4 últimos levels de Expressões **mantêm o estilo misto** (`+ − × ÷`, grupos, às vezes potência) mas **aumentam os números** — ainda bem menores que nas contas de dois números das trilhas básicas. É a ponte entre "entendo a ordem" e "faço de cabeça com números de verdade".
+
+| Lv | Nome | Estrutura | Exemplo |
+|---|---|---|---|
+| 12 | Misturas maiores | sem grupos; 3–4 operações; × e ÷ antes de + e −; números de 2 dígitos | `48 + 7 × 13 − 96 ÷ 8` |
+| 13 | Parênteses e números maiores | 1 nível de `( )`; 3–4 operações | `(47 + 38) × 6 − 120 ÷ 8` |
+| 14 | Colchetes e números maiores | `[ ( ) ]`; 4–5 operações | `[(48 + 27) × 4 − 150] ÷ 6` |
+| 15 | Chaves, potências e números maiores | `{ [ ( ) ] }`; 4–6 operações; quadrados e `(a ± b)²` | `{[(8 + 4) × 5 − 36] ÷ 6 + 3²} × 2` |
+
+- **Gerador** (`exprMix` em `06-tracks.js`): monta a árvore com divisões exatas, nenhum passo negativo, teto de valor por level (500 / 900 / 1 200 / 1 800), mínimo de 3 tipos de operação por conta e limite de caracteres (26–38) para caber no celular. Parênteses só aparecem onde a precedência exige, e a profundidade (`( )`, `[ ]`, `{ }`) é exigida por level.
+- **Migração:** quem tinha concluído as Expressões (11/11) volta ao level 12 (as estrelas ficam).
 
 Os geradores ficam em `06-tracks.js` e garantem resposta exata, resposta inteira (ou decimal de ≤ 2 casas), sem resposta negativa (exceto equação, comparação e Expressões, onde a resposta pode ser negativa — digite com a tecla ±) e forma de dígitos fixa por level.
 
@@ -77,7 +107,7 @@ Na primeira vez numa trilha, 6 contas em escada (acerto bom sobe 1 level, o rest
 
 ## Contas grandes × pequenas, limite × meta
 Metade das contas de cada level é **grande** (parte alta do level, mais tempo) e metade é **pequena** (parte baixa, rápida) — o sorteio é balanceado dentro de cada bloco. Cada conta tem:
-- **Limite** (decide): pequena = 1,25 × G, grande = 2,0 × G, onde G é o tempo-base do level (ex.: Soma Nv 8: pequena 7,3 s, grande 11,6 s; Multiplicação Nv 6: 6,3 s / 10 s). Só o limite decide se o acerto valeu "no tempo" e se a subida/prova passa (mediana de *tempo ÷ limite* ≤ 1,1).
+- **Limite** (decide): pequena = 1,25 × G, grande = 2,0 × G, onde G é o tempo-base do level (ex.: Soma Nv 10: pequena 7,3 s, grande 11,6 s; Multiplicação Nv 6: 6,3 s / 10 s). Só o limite decide se o acerto valeu "no tempo" e se a subida/prova passa (mediana de *tempo ÷ limite* ≤ 1,1).
 - **Meta** (bônus): o limite menos uma folga de 20% (entre 0,3 s e 2 s). Bater a meta rende XP extra e conta para as estrelas, mas **nunca bloqueia** o avanço.
 Aquecimento, reforço e nivelamento usam uma medida média (1,7 × G, a antiga). Para ajustar: `LIMIT_MULT`, `BIG_SHARE` e `META_GAP_*` em `02-engine-constants.js`, e o `goal` de cada level em `06-tracks.js`. A aba Trilhas mostra, por level, a mediana recente × limite de pequenas e grandes.
 

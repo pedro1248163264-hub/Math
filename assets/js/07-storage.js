@@ -83,10 +83,14 @@ const Store = {
 
     out.tracks = {};
     const rawTracks = (src.tracks && typeof src.tracks==='object') ? src.tracks : {};
+    const migrated = [];   // trilhas cuja escada de levels mudou desde o que estava salvo
     Object.keys(rawTracks).forEach(key=>{
       if(!TRACKS[key]) return;
-      const t = rawTracks[key] || {}, n = TRACKS[key].levels.length;
+      let t = rawTracks[key] || {};
+      const n = TRACKS[key].levels.length;
+      if(LADDERS[key] && (Math.round(+t.ladder)||1) < ladderVersion(key)){ t = this.remapLadder(key, t); migrated.push(key); }
       const tr = Engine.newTrack(key);
+      tr.ladder = ladderVersion(key);
       tr.level = U.clamp(Math.round(+t.level)||1, 1, n);
       tr.xp = Math.max(0, +t.xp||0);
       tr.m = U.clamp(Number.isFinite(+t.m) ? +t.m : M_START, 0, 1);
@@ -119,6 +123,11 @@ const Store = {
       out.tracks[key] = tr;
     });
 
+    out.seenTips = (src.seenTips && typeof src.seenTips==='object') ? src.seenTips : {};
+    out.log = Array.isArray(src.log) ? src.log.filter(e=>Array.isArray(e) && e.length>=10).slice(-LOG_MAX) : [];
+    out.events = Array.isArray(src.events) ? src.events.filter(e=>e && typeof e==='object' && e.type).slice(-EVENTS_MAX) : [];
+    migrated.forEach(key=>this.remapLadderHistory(key, out));
+
     const p = (src.player && typeof src.player==='object') ? src.player : {};
     out.player = {xp:Math.max(0,Math.round(+p.xp)||0), rounds:Math.max(0,Math.round(+p.rounds)||0),
       items:Math.max(0,Math.round(+p.items)||0), createdAt:Number.isFinite(+p.createdAt)?+p.createdAt:Date.now()};
@@ -133,16 +142,40 @@ const Store = {
     const st = (src.streak && typeof src.streak==='object') ? src.streak : {};
     out.streak = {current:Math.max(0,Math.round(+st.current)||0), best:Math.max(0,Math.round(+st.best)||0),
       lastGoalDay:/^\d{4}-\d{2}-\d{2}$/.test(st.lastGoalDay||'') ? st.lastGoalDay : ''};
-    out.seenTips = (src.seenTips && typeof src.seenTips==='object') ? src.seenTips : {};
     out.onboarded = !!src.onboarded;
     out.history = Array.isArray(src.history) ? src.history.filter(h=>h && typeof h==='object') : [];
-    out.log = Array.isArray(src.log) ? src.log.filter(e=>Array.isArray(e) && e.length>=10).slice(-LOG_MAX) : [];
-    out.events = Array.isArray(src.events) ? src.events.filter(e=>e && typeof e==='object' && e.type).slice(-EVENTS_MAX) : [];
     out.bestStreak = Math.max(0, Math.round(+src.bestStreak)||0);
     const em = (src.exportMark && typeof src.exportMark==='object') ? src.exportMark : {};
     out.exportMark = {items:Math.min(out.player.items, Math.max(0, Math.round(+em.items)||0)), at:Number.isFinite(+em.at) ? +em.at : 0};
     out.settingsVersion = SETTINGS_VERSION;
     return out;
+  },
+  // Remapeia uma trilha salva na escada antiga para a nova (ver LADDERS em 06-tracks.js).
+  remapLadder(key, t){
+    const mp = l=>ladderMapLevel(key, l), c = Object.assign({}, t);
+    c.level = mp(t.level);
+    if(t.stars && typeof t.stars==='object'){ c.stars = {}; Object.keys(t.stars).forEach(l=>{ if(+l>=1) c.stars[mp(l)] = t.stars[l]; }); }
+    if(t.climb && typeof t.climb==='object') c.climb = Object.assign({}, t.climb, {level:mp(t.climb.level)});
+    if(t.bestMedian && typeof t.bestMedian==='object'){ c.bestMedian = {}; Object.keys(t.bestMedian).forEach(l=>{ if(+l>=1) c.bestMedian[mp(l)] = t.bestMedian[l]; }); }
+    if(Array.isArray(t.window)) c.window = t.window.map(w=>(w && Number.isFinite(+w.level)) ? Object.assign({}, w, {level:mp(w.level)}) : w);
+    return c;
+  },
+  // Dicas já vistas, histórico de contas e marcos referem-se a levels pelo número: acompanha a migração.
+  remapLadderHistory(key, out){
+    const mp = l=>ladderMapLevel(key, l), idx = TRACK_ORDER.indexOf(key);
+    const tips = {};
+    Object.keys(out.seenTips).forEach(k=>{
+      const m = /^([^:]+):(\d+)$/.exec(k);
+      tips[(m && m[1]===key) ? key+':'+mp(+m[2]) : k] = out.seenTips[k];
+    });
+    out.seenTips = tips;
+    out.log = out.log.map(e=>e.slice()); out.events = out.events.map(e=>Object.assign({}, e));   // não altera o que veio de fora
+    out.log.forEach(e=>{ if(e[1]===idx && Number.isFinite(+e[2])) e[2] = mp(e[2]); });
+    out.events.forEach(e=>{
+      if(e.key!==key) return;
+      if(Number.isFinite(+e.level)) e.level = mp(e.level);
+      if(Number.isFinite(+e.newLevel)) e.newLevel = mp(e.newLevel);
+    });
   },
   load(){
     try{
