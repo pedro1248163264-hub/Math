@@ -9,6 +9,13 @@
 /* ---------- 2b. IDIOMA DO APP (PT/EN) ---------- */
 const I18N = {
   pt:{
+    // modo livre
+    free_mode:'Modo livre', free_back:'Voltar', block_free:'Livre',
+    free_intro:'Sem cronômetro e sem pontuação. Escolha o que treinar e responda no seu ritmo. Nada disso conta para XP, level, meta do dia ou histórico — e nada fica salvo.',
+    free_track:'Trilha', free_level:'Level das contas', free_size:'Tamanho das contas', free_start:'Começar',
+    free_size_small:'Menores', free_size_mix:'Variadas', free_size_big:'Maiores',
+    free_title_bar:'Modo livre · sem tempo · nada é salvo', free_continue_hint:'Toque em ✓ para continuar.',
+    free_exit_toast:'Modo livre: {h} de {n} certas. Nada foi salvo.',
     // navegação
     tab_home:'Início', tab_tracks:'Trilhas', tab_stats:'Estatísticas', tab_settings:'Ajustes',
     // home
@@ -124,6 +131,13 @@ const I18N = {
     date_locale:'pt-BR'
   },
   en:{
+    // free mode
+    free_mode:'Free mode', free_back:'Back', block_free:'Free',
+    free_intro:'No timer and no scoring. Pick what to practice and answer at your own pace. None of it counts toward XP, levels, the daily goal or history — and nothing is saved.',
+    free_track:'Track', free_level:'Problem level', free_size:'Problem size', free_start:'Start',
+    free_size_small:'Smaller', free_size_mix:'Mixed', free_size_big:'Bigger',
+    free_title_bar:'Free mode · no timer · nothing saved', free_continue_hint:'Tap ✓ to continue.',
+    free_exit_toast:'Free mode: {h} of {n} correct. Nothing was saved.',
     tab_home:'Home', tab_tracks:'Tracks', tab_stats:'Stats', tab_settings:'Settings',
     home_tagline:'Train faster. Think sharper. Every day.',
     home_today:"Today's goal", home_reaction:'Reaction time', home_accuracy:'Accuracy',

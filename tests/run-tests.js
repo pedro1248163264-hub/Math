@@ -11,6 +11,7 @@
      4. Progress: curva de nível, meta diária, sequência de dias, estrelas da rodada.
      5. Storage: saneamento de dados corrompidos e migração do formato v2.
      6. Session: rodada completa com a UI "muda" (stubs) — XP, histórico, meta, saída parcial.
+     7. Modo livre: contas de todo level/tamanho corretas e, acima de tudo, NADA é salvo nem pontuado.
 
    NÃO COBRE: layout/teclado/TTS reais (ver teste de navegador descrito no README).
 
@@ -38,7 +39,7 @@ global.performance = global.performance || { now:()=>Date.now() };
 // Mesmos módulos, mesma ordem do index.html — exceto 15-init.js (efeitos colaterais de inicialização).
 const jsDir = path.join(__dirname, '..', 'assets', 'js');
 const MODULES = ['01-utils.js','02-engine-constants.js','03-i18n.js','04-operations.js','05-expression-terms.js','06-tracks.js',
-  '07-storage.js','08-speed-engine.js','09-feedback.js','10-progress.js','11-session.js','12-analytics.js','13-export.js','14-ui.js'];
+  '07-storage.js','08-speed-engine.js','09-feedback.js','10-progress.js','11-session.js','12-analytics.js','13-export.js','14-ui.js','14b-free-mode.js'];
 const engineSrc = MODULES.map(name => fs.readFileSync(path.join(jsDir, name), 'utf8')).join('\n');
 
 let failures = 0, passed = 0;
@@ -999,6 +1000,91 @@ ok(!TRACKS.potencia && !TRACKS.raiz, 'não há trilhas próprias de potência/ra
   ok(Store.normalize({settings:{exportEvery:1}}).settings.exportEvery===EXPORT_EVERY_MIN && Store.normalize({settings:{exportEvery:99999}}).settings.exportEvery===EXPORT_EVERY_MAX, 'exportEvery limitado');
   // exportação CSV não quebra
   ok(typeof Export.csvText()==='string' && Export.csvText().includes('trilha'), 'CSV gerado');
+}
+
+/* ---------- 7. MODO LIVRE: sem tempo, sem pontuação, nada salvo ---------- */
+{
+  freshStore({settings:{activeTracks:['soma']}}); Store.data.settings.gapMs = 0; Store.data.settings.confirmBeforeAccept = true; Store.data.settings.tts = false;
+  placeAll(3, 0.5);
+  Store.data.player.xp = 123; Store.data.player.items = 77;
+  // 7a. contas: toda trilha × level × tamanho tem resposta conferível e formato de conta normal
+  let badItem = 0;
+  for(const key of TRACK_ORDER){
+    for(let l=1; l<=trackLevels(key); l++){
+      FreeMode.setTrack(key); FreeMode.setLevel(l);
+      for(const size of ['small','mix','big']){
+        FreeMode.setSize(size); FreeMode.recent = [];
+        for(let i=0;i<6;i++){
+          const it = FreeMode.makeItem();
+          const typed = it.op==='fracao_comparacao' ? ({'-1':'<','0':'=','1':'>'})[it.answer] : String(it.answer).replace('.',',');
+          if(it.kind!=='free' || it.key!==key || it.level!==l || !Number.isFinite(it.m) || it.timeoutMs!==undefined || it.limitMs!==undefined || !answerMatches(typed, it)) badItem++;
+        }
+      }
+    }
+  }
+  ok(badItem===0, 'modo livre: toda trilha × level × tamanho gera conta correta, sem campos de tempo ('+badItem+' ruins)');
+  FreeMode.setTrack('soma'); FreeMode.setLevel(99); ok(FreeMode.cfg.level===trackLevels('soma'), 'modo livre: level fora da escada é limitado');
+  FreeMode.setLevel(-4); ok(FreeMode.cfg.level===1, 'modo livre: level abaixo de 1 vira 1');
+  FreeMode.setTrack('equacoes'); ok(FreeMode.cfg.level<=trackLevels('equacoes'), 'modo livre: trocar de trilha mantém o level válido');
+  // o tamanho escolhido muda mesmo a faixa de m
+  FreeMode.setTrack('soma'); FreeMode.setSize('small'); let mMax = 0; for(let i=0;i<200;i++) mMax = Math.max(mMax, FreeMode._pickM());
+  FreeMode.setSize('big'); let mMin = 1; for(let i=0;i<200;i++) mMin = Math.min(mMin, FreeMode._pickM());
+  ok(mMax<=0.35 && mMin>=0.65, 'modo livre: "menores" e "maiores" usam faixas diferentes do level');
+
+  // 7b. uma sessão inteira não toca em nada persistido
+  const noop = ()=>{}; const shown = []; let chosen = null;
+  const fake = {classList:{add(){},remove(){},toggle(){},contains(){return false;}}, style:{setProperty(){}}, dataset:{}, textContent:'', innerHTML:'', onclick:null, disabled:false, appendChild(){}, replaceChildren(){}};
+  const realGet = document.getElementById, realAll = document.querySelectorAll;
+  document.getElementById = ()=>Object.assign({}, fake, {classList:fake.classList, style:fake.style, dataset:{}});
+  document.querySelectorAll = ()=>[];
+  const uiBackup = Object.assign({}, UI);
+  Object.assign(UI, {resetTraining:noop, showScreen:n=>shown.push(n), setBlockChip:noop, pushPulse:noop, flashAnswer:noop, clearAnswerFeedback:noop,
+    showCorrectAnswer:noop, showHint:noop, updateAnswerDisplay:noop, setKeypadMode:noop, hideOverlays:noop, toast:noop, renderQuestion:(item,ready)=>{ chosen = item; ready(); }});
+  let saves = 0; const realSave = Store.save; Store.save = ()=>{ saves++; };
+  const snapshot = JSON.stringify(Store.data), ls0 = JSON.stringify(localStorage._data);
+  const player0 = JSON.stringify(Store.data.player), hist0 = Store.data.history.length, log0 = Store.data.log.length, ev0 = Store.data.events.length, tracks0 = Object.keys(Store.data.tracks).sort().join();
+
+  FreeMode.setTrack('multiplicacao'); FreeMode.setLevel(4); FreeMode.setSize('mix');
+  FreeMode.open(); ok(shown.includes('free'), 'modo livre: abre a tela de escolha');
+  FreeMode.start(); ok(FreeMode.active && UI.ctl()===FreeMode && !Session.active, 'modo livre: ativo e o teclado vai para ele, não para a rodada');
+  // sem cronômetro: parado numa conta por mais tempo que qualquer limite, nada acontece
+  const first = FreeMode.current; await sleep(60);
+  ok(FreeMode.current===first && !FreeMode.answering && Session.itemTimeoutHandle===null && Session.clockHandle===null, 'modo livre: sem tempo limite e sem relógio do dia');
+  // errar: mostra a resposta e espera ✓ (sem pressa)
+  FreeMode.submitDigit('9'); FreeMode.submitDigit('9'); FreeMode.submitDigit('9'); FreeMode.submitDigit('9'); FreeMode.submitDigit('9');
+  FreeMode.evaluate();
+  ok(FreeMode.awaitingNext && FreeMode.current===first, 'modo livre: erro espera a pessoa continuar');
+  FreeMode.submitDigit('1'); ok(FreeMode.typed==='99999', 'modo livre: dígitos são ignorados enquanto espera');
+  FreeMode.evaluate(); ok(!FreeMode.awaitingNext && FreeMode.current!==first, '✓ depois do erro leva à próxima conta');
+  // 30 contas: metade certas, metade erradas, trocando level e tamanho no caminho
+  let right = 0;
+  for(let i=0;i<30;i++){
+    if(i===10) FreeMode.changeLevel(+1);
+    if(i===15) FreeMode.setSize('big');
+    if(i===20) FreeMode.changeLevel(-2);
+    const it = FreeMode.current, win = i%2===0, key = it.op==='fracao_comparacao' ? (win ? ({'-1':'<','0':'=','1':'>'})[it.answer] : '<>'.includes(({'-1':'<','0':'=','1':'>'})[it.answer]) ? '=' : '<') : null;
+    if(key!==null) FreeMode.submitComparison(key); else (win ? String(it.answer).replace('.',',') : '99999').split('').forEach(ch=>FreeMode.submitDigit(ch===','?'dec':ch));
+    if(FreeMode.typed.length) FreeMode.evaluate();
+    if(win) right++;
+    if(FreeMode.awaitingNext) FreeMode.evaluate(); else { await sleep(2); }
+  }
+  ok(FreeMode.done>=30 && FreeMode.hits>0 && FreeMode.cfg.level===3 && chosen.level===3, 'modo livre: troca de level no meio do treino vale para as contas seguintes');
+  // sem "confirmar": envia sozinho ao completar os dígitos, como na rodada normal
+  Store.data.settings.confirmBeforeAccept = false; FreeMode.setSize('small');
+  FreeMode.nextQuestion(); const auto = FreeMode.current; String(auto.answer).split('').forEach(ch=>FreeMode.submitDigit(ch));
+  ok(auto.op==='fracao_comparacao' || auto.answer<0 || FreeMode.hits>0 && FreeMode.answering, 'modo livre: auto-envio ao completar os dígitos (sem "confirmar")');
+  Store.data.settings.confirmBeforeAccept = true;   // o teste mexeu neste ajuste; volta ao valor da foto
+  FreeMode.exit();
+  ok(!FreeMode.active && UI.ctl()===Session && shown[shown.length-1]==='free', 'modo livre: sair volta para a escolha e devolve o teclado à rodada');
+
+  ok(saves===0, 'modo livre: Store.save nunca foi chamado ('+saves+')');
+  ok(JSON.stringify(Store.data)===snapshot, 'modo livre: Store.data idêntico antes e depois (nada de XP, meta, histórico, pesos, trilhas)');
+  ok(JSON.stringify(localStorage._data)===ls0, 'modo livre: localStorage intocado');
+  ok(JSON.stringify(Store.data.player)===player0 && Store.data.history.length===hist0 && Store.data.log.length===log0 && Store.data.events.length===ev0, 'modo livre: sem XP, rodada, histórico, log nem marcos');
+  ok(Object.keys(Store.data.tracks).sort().join()===tracks0, 'modo livre: nenhuma trilha criada ou alterada');
+  ok(Progress.day().items===0 && Progress.todayMs()===0, 'modo livre: não conta para a meta diária nem para o relógio do dia');
+  Store.save = realSave;
+  Object.assign(UI, uiBackup); document.getElementById = realGet; document.querySelectorAll = realAll;
 }
 
 })(ok, sleep);

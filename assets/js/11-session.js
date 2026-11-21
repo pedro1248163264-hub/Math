@@ -14,6 +14,11 @@
      3. Session     — runtime de UMA rodada (plano, contas respondidas, combo, timers).
      4. UI          — só apresentação (faixa de pulso, popups).
    Nada além do 1º é serializado. */
+// A resposta digitada confere com a da conta? (comparação de frações usa < = >; decimais aceitam vírgula)
+function answerMatches(typed, item){
+  const code = COMPARE_SYMBOLS[typed];
+  return typed.length>0 && (code!==undefined ? code===item.answer : (+typed.replace(',', '.') === item.answer));
+}
 function st0(snap, key, tr){ snap[key] = {placed:tr.placed, level:tr.level, frac:Engine.barFrac(tr), done:tr.done, rank:tr.rank, stars:Engine.starsTotal(tr)}; }
 const Session = {
   active:false, paused:false, waiting:false,
@@ -197,9 +202,7 @@ const Session = {
     const split = Store.data.settings.stopClockOnFirstKey && !!this.firstKeyAt;
     const cognitiveMs = timedOut ? item.timeoutMs : (split ? (this.firstKeyAt - this.qShownAt) : totalMs);
     const motorMs = timedOut ? 0 : (split ? (now - this.firstKeyAt) : 0);
-    const typedNorm = this.typed.replace(',', '.');
-    const code = COMPARE_SYMBOLS[this.typed];
-    const correct = !timedOut && this.typed.length>0 && (code!==undefined ? code===item.answer : (+typedNorm === item.answer));
+    const correct = !timedOut && answerMatches(this.typed, item);
 
     const res = Engine.registerResult(item, cognitiveMs, correct, !!timedOut, this.typed);
     const st = this.stats;

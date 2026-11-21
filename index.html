@@ -63,6 +63,7 @@
     <div class="export-notice-slot" id="exportNoticeHome"></div>
 
     <button class="btn btn-primary cta" id="btnStart" data-i18n="start_round">Treinar</button>
+    <button class="btn btn-ghost free-cta" id="btnFree" data-i18n="free_mode">Modo livre</button>
 
     <div class="quick-row">
       <div class="q"><div class="v" id="homeTotal">0</div><div class="l" data-i18n="exercises">Exercícios</div></div>
@@ -78,17 +79,48 @@
     <div id="trackList"></div>
   </section>
 
+  <!-- ================= FREE MODE (setup) ================= -->
+  <section class="screen" id="screen-free">
+    <div class="navbar"><button class="back" id="freeBack" data-i18n-aria="free_back" aria-label="Voltar">‹</button><div class="title" data-i18n="free_mode">Modo livre</div></div>
+    <p class="free-intro" data-i18n="free_intro">Sem cronômetro e sem pontuação. Escolha o que treinar e responda no seu ritmo. Nada disso conta para XP, level, meta do dia ou histórico — e nada fica salvo.</p>
+
+    <div class="card">
+      <div class="section-title"><h2 data-i18n="free_track">Trilha</h2></div>
+      <div class="free-tracks" id="freeTracks"></div>
+    </div>
+    <div class="card">
+      <div class="section-title"><h2 data-i18n="free_level">Level das contas</h2></div>
+      <div class="ladder" id="freeLevels"></div>
+      <div class="tc-lvl" id="freeLevelName"></div>
+      <div class="tc-tip" id="freeLevelTip" style="margin-top:6px"></div>
+    </div>
+    <div class="card">
+      <div class="section-title"><h2 data-i18n="free_size">Tamanho das contas</h2></div>
+      <div class="seg free-seg" id="freeSizes"></div>
+    </div>
+    <button class="btn btn-primary cta" id="freeStart" data-i18n="free_start">Começar</button>
+  </section>
+
   <!-- ================= TRAINING ================= -->
   <section class="screen" id="screen-training">
     <div class="train-top">
       <button class="pause-btn" id="btnExitTraining" data-i18n-aria="exit_training" aria-label="Sair do treino">✕</button>
       <div class="hud-bar"><i id="hudBarFill"></i></div>
+      <div class="free-title" data-i18n="free_title_bar">Modo livre · sem tempo · nada é salvo</div>
       <button class="pause-btn" id="btnPause" aria-label="Pausar">⏸</button>
     </div>
     <div class="hud-row">
       <div class="hud-chip" id="hudChip" data-kind="practice"><span class="cs" id="chipSym">+</span><span class="cn" id="chipName">Soma</span><span class="cl" id="chipLevel"></span><span class="ct" id="chipTag"></span></div>
       <div class="hud-right"><span class="hud-time hidden" id="hudTime"></span><span class="hud-combo" id="hudCombo"></span><span class="hud-xp" id="hudXp">+0 XP</span></div>
     </div>
+
+    <div class="free-bar" id="freeBar">
+      <button class="free-step" id="freeDown" aria-label="−">‹</button>
+      <div class="free-now" id="freeLevelNow"></div>
+      <button class="free-step" id="freeUp" aria-label="+">›</button>
+      <button class="free-step tip" id="freeTipBtn" aria-label="Tática">💡</button>
+    </div>
+    <div class="tc-tip free-tip hidden" id="freeTip"></div>
 
     <div class="equation-zone" id="equationZone">
       <div class="math-card"><div class="equation" id="equationText">7 × 8</div><div class="xp-pop-wrap" id="xpPop"></div></div>
@@ -278,6 +310,7 @@
   <script src="assets/js/12-analytics.js"></script>
   <script src="assets/js/13-export.js"></script>
   <script src="assets/js/14-ui.js"></script>
+  <script src="assets/js/14b-free-mode.js"></script>
   <script src="assets/js/15-init.js"></script>
 </body>
 </html>

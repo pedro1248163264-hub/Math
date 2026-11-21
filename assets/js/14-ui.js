@@ -27,10 +27,11 @@ const UI = {
     this.renderHome();
     this.renderTracks();
     $('btnStart').onclick = ()=>Session.start();
+    FreeMode.bind();
     $('btnPause').onclick = ()=>Session.togglePause();
     $('btnResume').onclick = ()=>Session.togglePause();
     $('btnPauseExit').onclick = ()=>Session.exit();
-    $('btnExitTraining').onclick = ()=>Session.exit();
+    $('btnExitTraining').onclick = ()=>this.ctl().exit();
     $('btnAnotherRound').onclick = ()=>Session.start(Session.opts && Session.opts.onlyTrack && !Session.opts.size ? {onlyTrack:Session.opts.onlyTrack} : {});
     $('btnFinish').onclick = ()=>{ this.showScreen('home'); this.setTab('home'); this.renderHome(); };
     $('btnGoHistory').onclick = ()=>{ this.showScreen('stats'); this.renderStats(); this.setTab('stats'); };
@@ -39,6 +40,8 @@ const UI = {
       if(document.hidden && Session.active && !Session.paused && !Session.waiting && Session.current && !Session.answering) Session.togglePause();
     });
   },
+  // Quem recebe o teclado: o Modo livre (sem registro) ou a rodada normal.
+  ctl(){ return FreeMode.active ? FreeMode : Session; },
   toast(msg){
     const el = $('toast');
     el.textContent = msg; el.classList.add('show');
@@ -47,6 +50,7 @@ const UI = {
   },
   tabScreens:['home','tracks','stats','settings'],
   showScreen(name){
+    if(name!=='training') $('screen-training').classList.remove('free');
     document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
     $('screen-'+name).classList.add('active');
     document.querySelector('.tabbar').style.display = this.tabScreens.includes(name) ? 'flex' : 'none';
@@ -282,6 +286,7 @@ const UI = {
     if(kind==='test') return t('block_test');
     if(kind==='climb') return t('block_climb');
     if(kind==='placement') return t('block_placement');
+    if(kind==='free') return t('block_free');
     if(o && o.reinforce) return t('block_reinforce');
     return t('block_practice');
   },
@@ -300,7 +305,7 @@ const UI = {
   // Contador do dia no HUD (só com meta por tempo): tempo treinado hoje / meta.
   updateHudTime(){
     const el = $('hudTime'); if(!el) return;
-    if(Progress.goalMode()!=='time'){ el.classList.add('hidden'); return; }
+    if(FreeMode.active || Progress.goalMode()!=='time'){ el.classList.add('hidden'); return; }
     el.classList.remove('hidden');
     el.textContent = '⏱ '+U.fmtClock(Progress.todayMs())+' / '+U.fmtClock(Progress.goalMs());
     el.classList.toggle('done', !!Progress.day().goalHit);
@@ -416,12 +421,12 @@ const UI = {
       ['<','=','>'].forEach(k=>{
         const btn = document.createElement('button');
         btn.className = 'key func'; btn.dataset.compare = k; btn.textContent = k;
-        this.pressKey(btn, ()=>Session.submitComparison(k));
+        this.pressKey(btn, ()=>this.ctl().submitComparison(k));
         grid.appendChild(btn);
       });
       const okBtn = document.createElement('button');
       okBtn.className = 'key func wide3'; okBtn.dataset.ok = '1'; okBtn.textContent = '✓';
-      this.pressKey(okBtn, ()=>Session.evaluate(false));
+      this.pressKey(okBtn, ()=>this.ctl().evaluate(false));
       grid.appendChild(okBtn);
       return;
     }
@@ -430,36 +435,37 @@ const UI = {
       btn.className = 'key'+(k==='←'||k==='±' ? ' func':'');
       btn.textContent = k;
       this.pressKey(btn, ()=>{
-        if(k==='←') Session.submitDigit('back');
-        else if(k==='±') Session.submitDigit('sign');
-        else Session.submitDigit(k);
+        if(k==='←') this.ctl().submitDigit('back');
+        else if(k==='±') this.ctl().submitDigit('sign');
+        else this.ctl().submitDigit(k);
       });
       grid.appendChild(btn);
     });
     const decBtn = document.createElement('button');
     decBtn.className = 'key func'; decBtn.textContent = U.decimalSep();
-    this.pressKey(decBtn, ()=>Session.submitDigit('dec'));
+    this.pressKey(decBtn, ()=>this.ctl().submitDigit('dec'));
     grid.appendChild(decBtn);
     const okBtn = document.createElement('button');
     okBtn.className = 'key func wide2'; okBtn.dataset.ok = '1'; okBtn.textContent = '✓';
-    this.pressKey(okBtn, ()=>Session.evaluate(false));
+    this.pressKey(okBtn, ()=>this.ctl().evaluate(false));
     grid.appendChild(okBtn);
   },
   bindTraining(){
     document.addEventListener('keydown', e=>{
-      if(!Session.active || !$('screen-training').classList.contains('active')) return;
+      const c = this.ctl();
+      if(!c.active || !$('screen-training').classList.contains('active')) return;
       if(this.overlayAction){
         if(e.key==='Enter' || e.key===' '){ e.preventDefault(); const a = this.overlayAction; a(); }
         return;
       }
-      if(/^[0-9]$/.test(e.key)) Session.submitDigit(e.key);
-      else if(e.key==='Backspace') Session.submitDigit('back');
-      else if(e.key==='-') Session.submitDigit('sign');
-      else if(e.key==='.' || e.key===',') Session.submitDigit('dec');
-      else if(e.key==='<') Session.submitComparison('<');
-      else if(e.key==='>') Session.submitComparison('>');
-      else if(e.key==='=') Session.submitComparison('=');
-      else if(e.key==='Enter') Session.evaluate(false);
+      if(/^[0-9]$/.test(e.key)) c.submitDigit(e.key);
+      else if(e.key==='Backspace') c.submitDigit('back');
+      else if(e.key==='-') c.submitDigit('sign');
+      else if(e.key==='.' || e.key===',') c.submitDigit('dec');
+      else if(e.key==='<') c.submitComparison('<');
+      else if(e.key==='>') c.submitComparison('>');
+      else if(e.key==='=') c.submitComparison('=');
+      else if(e.key==='Enter') c.evaluate(false);
     });
   },
 

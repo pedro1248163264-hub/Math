@@ -508,3 +508,28 @@ svg.chart{width:100%; height:120px; overflow:visible;}
 .export-notice .en-tx small{color:var(--dim); font-size:0.78rem; margin-top:2px; line-height:1.35;}
 .export-notice .en-btns{display:flex; flex-wrap:wrap; gap:6px; margin-top:10px; align-items:center;}
 .export-notice .en-copy{width:auto; padding:8px 14px; font-size:0.82rem; box-shadow:none;}
+
+/* ===================== MODO LIVRE ===================== */
+.free-cta{margin-top:10px;}
+.free-intro{margin:-8px 0 14px 0;}
+.free-tracks{display:grid; grid-template-columns:repeat(2,1fr); gap:8px;}
+.free-track{display:flex; align-items:center; gap:8px; padding:9px 10px; border-radius:12px; border:1.5px solid var(--border); background:var(--surface); color:var(--text); font-family:var(--font-ui); font-weight:600; font-size:0.85rem; text-align:left; cursor:pointer; min-width:0;}
+.free-track .sym{width:26px; height:26px; border-radius:50%; background:var(--c); color:#fff; display:flex; align-items:center; justify-content:center; font-family:var(--font-num); font-weight:800; font-size:0.78rem; flex-shrink:0;}
+.free-track.active{border-color:var(--c); background:var(--surface-2);}
+button.free-lad{font-family:inherit; color:var(--text); cursor:pointer; min-width:42px; min-height:38px;}
+.free-seg{flex-wrap:wrap;}
+.free-seg button{min-height:38px;}
+.free-title{display:none; flex:1; text-align:center; font-size:0.78rem; font-weight:700; color:var(--dim);}
+.free-bar{display:none; align-items:center; gap:8px; margin-top:4px;}
+.free-now{flex:1; min-width:0; text-align:center; font-size:0.8rem; font-weight:700; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+.free-step{width:36px; height:36px; border-radius:10px; border:1px solid var(--border); background:var(--surface); color:var(--text); font-size:1.2rem; line-height:1; cursor:pointer;}
+.free-step:disabled{opacity:0.35;}
+.free-tip{margin-top:6px;}
+#screen-training.free .hud-bar, #screen-training.free #btnPause{display:none;}
+#screen-training.free .free-title{display:block;}
+#screen-training.free .free-bar{display:flex;}
+#screen-training.free .hud-combo{display:none;}
+#screen-training:not(.free) .free-tip{display:none !important;}
+/* A tática abre por cima da conta (não empurra o teclado nem corta a conta em telas baixas). */
+#screen-training{position:relative;}
+#screen-training.free .free-tip{position:absolute; left:20px; right:20px; top:150px; z-index:5; margin:0; box-shadow:0 10px 30px rgba(0,0,0,0.45);}

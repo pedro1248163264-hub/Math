@@ -132,9 +132,21 @@ Aquecimento, reforço e nivelamento usam uma medida média (1,7 × G, a antiga).
 - **Fim de rodada:** 1–3 estrelas (sempre ≥ 1 ao concluir), +20 XP de conclusão, XP com contagem animada, barras das trilhas "de → para", lista de conquistas (level, estrelas, patente, recordes de mediana, prova liberada…).
 - **Recordes pessoais** por level (mediana do bloco), confete, sons/vibração, balões de XP e combo no treino.
 
+## Modo livre
+
+Botão **Modo livre** na tela Início (abaixo de Treinar). Treino sem pressão e sem rastro:
+
+- **Sem tempo:** não há limite por conta, meta de tempo, pausa nem relógio do dia. Cada conta espera o quanto for preciso.
+- **Sem pontuação:** não dá XP, combo, estrela, barra de level, prova/subida, meta diária nem sequência — nem para melhorar, nem para piorar. A adaptação (`m`), os pesos por padrão e o "reforço" não são tocados.
+- **Nada fica salvo:** o módulo `14b-free-mode.js` **nunca** escreve em `Store.data` nem chama `Store.save()`; não entra no histórico, no log/relatório para IA nem nos marcos. A escolha (trilha, level, tamanho) e o placar "✓ acertos/contas" ficam só na memória e somem ao sair ou recarregar.
+- **Você escolhe as contas:** qualquer uma das 9 trilhas (ativa ou não, com ou sem nivelamento), qualquer level da escada e o **tamanho** dentro do level — *Menores* (`m` 0–0,35), *Variadas* (0–1) ou *Maiores* (0,65–1). Durante o treino, **‹ ›** troca de level na hora e **💡** mostra a tática do level.
+- **Erro:** mostra a resposta certa e espera você tocar **✓** (sem pressa). Acerto passa sozinho para a próxima. O auto-envio segue o ajuste "confirmar" dos Ajustes.
+- **Como gera:** direto do gerador do level (`levelDef(key, level).gen(m, null)`); com `tr = null` os geradores ignoram os pesos pessoais e não mexem em nada. `Engine.itemFromGen` monta os campos da conta (compartilhado com o treino normal).
+- **Teclado:** `UI.ctl()` devolve o `FreeMode` enquanto ele está ativo e a `Session` no resto, então teclado na tela e físico funcionam igual.
+
 ## Telas
 
-Início (nível, meta, sequência, semana, botão **Treinar** ou **Começar nivelamento**, avisos "Recomendado: subir de level") · Trilhas (liga/desliga, level, barra, estrelas, escada de levels, dica, "treinar só esta", subir de level) · Treino (barra da rodada, chip da trilha/level, combo e XP, teclado) · Resumo da rodada · Estatísticas (precisão, % dentro da meta, contas por dia, por trilha) · Ajustes (meta, tamanho da rodada, desafio, tema, idioma PT/EN, voz/TTS, vibração, sons, modo foco, exportação CSV/JSON, aviso de exportar para a IA, apagar dados).
+Início (nível, meta, sequência, semana, botão **Treinar** ou **Começar nivelamento**, botão **Modo livre**, avisos "Recomendado: subir de level") · Trilhas (liga/desliga, level, barra, estrelas, escada de levels, dica, "treinar só esta", subir de level) · Treino (barra da rodada, chip da trilha/level, combo e XP, teclado) · Resumo da rodada · Estatísticas (precisão, % dentro da meta, contas por dia, por trilha) · Ajustes (meta, tamanho da rodada, desafio, tema, idioma PT/EN, voz/TTS, vibração, sons, modo foco, exportação CSV/JSON, aviso de exportar para a IA, apagar dados).
 
 ## Relatório para IA
 
@@ -174,6 +186,7 @@ Para lembrar de revisar a evolução de tempos em tempos, o app avisa quando pas
 | `12-analytics.js` | Resumo da rodada e agregados do histórico. |
 | `13-export.js` | CSV/JSON, relatório para IA e contador do aviso de exportação. |
 | `14-ui.js` | Interface. |
+| `14b-free-mode.js` | `FreeMode`: Modo livre (sem tempo, sem pontuação, nada salvo). |
 | `15-init.js` | Inicialização e service worker (fora dos testes). |
 
 ## Testes
@@ -182,4 +195,4 @@ Para lembrar de revisar a evolução de tempos em tempos, o app avisa quando pas
 node run-tests.js
 ```
 
-Sem dependências (só Node.js). Cobre geradores (exatidão, forma por level), fala, nivelamento, passo/convergência de `m`, XP, prova, reforço, patentes, simulação de usuários virtuais, `Progress`, saneamento/migração do `Store` e uma rodada completa do `Session` com UI "muda". Layout, teclado e TTS reais não são cobertos: teste manualmente no navegador (ou com Playwright).
+Sem dependências (só Node.js). Cobre geradores (exatidão, forma por level), fala, nivelamento, passo/convergência de `m`, XP, prova, reforço, patentes, simulação de usuários virtuais, `Progress`, saneamento/migração do `Store` uma rodada completa do `Session` com UI "muda" e o Modo livre (contas corretas em todo level/tamanho; `Store.data` e `localStorage` idênticos antes e depois). Layout, teclado e TTS reais não são cobertos: teste manualmente no navegador (ou com Playwright).

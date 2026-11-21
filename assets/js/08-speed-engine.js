@@ -302,6 +302,17 @@ const Engine = {
     b.idx++;
     return this.generateItem(b.key, level, m, {kind, isWarmup, isReinforce, size});
   },
+  // Campos da conta a partir do que o gerador devolveu (sem tempos). Compartilhado com o Modo livre
+  // (12-free-mode.js), que não usa a trilha da pessoa — assim a conta tem sempre o mesmo formato.
+  itemFromGen(gen, key, level, m){
+    const op = gen.op || TRACKS[key].op, opDef = OPS[op];
+    return {key, level, m, op,
+      a:gen.a, b:gen.b, c:gen.c, d:gen.d, answer:gen.answer, features:gen.features||{}, exprText:gen.exprText,
+      tree:gen.tree, terms:gen.terms, ops:gen.ops, innerOp:gen.innerOp, outerOp:gen.outerOp, leftOp:gen.leftOp, rightOp:gen.rightOp,
+      midOp:gen.midOp, isEquation:!!gen.isEquation, isReversePath:!!gen.isReversePath,
+      pairKind:gen.pairKind, pair:gen.pair, digitKey:gen.digitKey, digits:gen.digits,
+      symbol:opDef.symbol, label:opDef.label, kcLabel:trackLabel(key)};
+  },
   generateItem(key, level, m, ctx={}){
     const tr = this.track(key), def = levelDef(key, level);
     let gen, tries=0, pairKey;
@@ -309,18 +320,12 @@ const Engine = {
     do{ gen = def.gen(m, tr); pairKey = gen.exprText || (gen.a+'_'+gen.b); tries++; }
     while(tr.recentPairs.includes(pairKey) && tries<6);
     tr.recentPairs.push(pairKey); if(tr.recentPairs.length>24) tr.recentPairs.shift();
-    const op = gen.op || TRACKS[key].op, opDef = OPS[op];
     const size = ctx.size || 'mid';
     const times = levelTimes(key, level, size, tr.done && level===tr.level ? tr.rank : 0), goal = times.meta, limit = times.limit;
     const kind = ctx.kind || 'practice';
-    return {key, level, kind, isWarmup:!!ctx.isWarmup, isReinforce:!!ctx.isReinforce, m, op,
-      a:gen.a, b:gen.b, c:gen.c, d:gen.d, answer:gen.answer, features:gen.features||{}, exprText:gen.exprText,
-      tree:gen.tree, terms:gen.terms, ops:gen.ops, innerOp:gen.innerOp, outerOp:gen.outerOp, leftOp:gen.leftOp, rightOp:gen.rightOp,
-      midOp:gen.midOp, isEquation:!!gen.isEquation, isReversePath:!!gen.isReversePath,
-      pairKind:gen.pairKind, pair:gen.pair, digitKey:gen.digitKey, digits:gen.digits,
-      symbol:opDef.symbol, label:opDef.label, kcLabel:trackLabel(key),
+    return Object.assign(this.itemFromGen(gen, key, level, m), {kind, isWarmup:!!ctx.isWarmup, isReinforce:!!ctx.isReinforce,
       size, goalMs:goal, targetMs:goal, limitMs:limit, timeoutMs:U.clamp(limit*TIMEOUT_MULT, TIMEOUT_MIN_MS, TIMEOUT_MAX_MS),
-      isMasteredFlash: this.flashApplies(key) && !!ctx.isWarmup};
+      isMasteredFlash: this.flashApplies(key) && !!ctx.isWarmup});
   },
   // Aquecimento relâmpago (conta que borra após MASTERY_FLASH_MS): só nas 4 operações básicas.
   flashApplies(key){ const st = Store.data.settings; return !!st.masteryFlash && FLASH_TRACKS.includes(key) && (st.flashTracks||[]).includes(key); },
