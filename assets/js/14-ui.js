@@ -361,8 +361,10 @@ const UI = {
     else sub = levelName(spec.track, spec.level);
     $('ovSub').textContent = sub;
     const tr = Engine.track(spec.track);
+    // no modo alternado o limite mostrado já inclui a folga pelo custo de troca de conta
+    const lim = size=>{ const l = levelTimes(spec.track, spec.level, size, tr.done?tr.rank:0).limit; return l + (spec.mix ? Engine.mixSlack(l) : 0); };
     $('ovGoal').textContent = spec.kind==='placement' ? '' :
-      (spec.kind==='placement' ? '' : t('size_small')+' '+t('limit_label')+' '+this.fmtGoal(levelTimes(spec.track, spec.level, 'small', tr.done?tr.rank:0).limit)+' · '+t('size_big')+' '+t('limit_label')+' '+this.fmtGoal(levelTimes(spec.track, spec.level, 'big', tr.done?tr.rank:0).limit)+' · '+t('goal_label')+' = '+t('bonus_word'));
+      (t('size_small')+' '+t('limit_label')+' '+this.fmtGoal(lim('small'))+' · '+t('size_big')+' '+t('limit_label')+' '+this.fmtGoal(lim('big'))+' · '+t('goal_label')+' = '+t('bonus_word'));
     const tip = $('ovTip');
     if(spec.kind!=='placement' && (info.firstVisit || spec.kind==='test' || spec.kind==='climb')){
       tip.innerHTML = `<b>${esc(t('tip_title'))}</b><br>${esc(levelTip(spec.track, spec.level))}`;
@@ -894,6 +896,7 @@ const UI = {
     }
     addSeg(t('goal_alert'), t('goal_alert_sub'), 'goalAlert', [{v:'discreet',l:t('goal_alert_discreet')},{v:'screen',l:t('goal_alert_screen')}]);
     addSeg(t('round_size'), '', 'roundSize', [{v:'short',l:t('round_short')},{v:'normal',l:t('round_normal')},{v:'long',l:t('round_long')}]);
+    addSeg(t('order_mode'), t('order_mode_sub'), 'orderMode', [{v:'mixed',l:t('order_mixed')},{v:'block',l:t('order_block')}]);
     addSeg(t('challenge'), t('challenge_sub'), 'challenge', [{v:'gentle',l:t('challenge_gentle')},{v:'balanced',l:t('challenge_balanced')},{v:'intense',l:t('challenge_intense')}]);
 
     section(t('section_appearance'));

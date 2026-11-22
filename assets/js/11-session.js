@@ -77,6 +77,7 @@ const Session = {
     const spec = this.plan[i];
     this.blockIdx = i;
     if(!spec){ this.finish(true); return; }
+    if(spec.kind==='mix'){ this._beginMix(spec, i); return; }
     Engine.beginBlock(spec);
     this.stats.tracks.add(spec.track);
     UI.setBlockChip(spec);
@@ -97,6 +98,31 @@ const Session = {
       this.nextQuestion();
     }
   },
+  // Bloco misto (modo alternado): as contas alternam entre as trilhas do bloco. Antes da 1ª conta, uma tela de
+  // introdução por trilha que precisa (dica do level na 1ª visita, reforço, aviso do aquecimento relâmpago).
+  _beginMix(spec, i){
+    Engine.beginBlock(spec);
+    const seen = Store.data.seenTips, intros = [];
+    spec.parts.forEach(p=>{
+      const ps = Object.assign({kind:'practice', mix:true}, p);
+      const firstVisit = !seen[this.tipSeenKey(ps)] && !p.reinforce;
+      const flashNotice = p.warmup>0 && !p.reinforce && Engine.flashApplies(p.track) && !this.flashWarned;
+      if(flashNotice) this.flashWarned = true;
+      if(firstVisit) seen[this.tipSeenKey(ps)] = true;
+      if(firstVisit || flashNotice || p.reinforce) intros.push({spec:ps, firstVisit, flashNotice, index:i, total:this.plan.length});
+    });
+    if(!intros.length){ this.nextQuestion(); return; }
+    Store.save();
+    this.waiting = true;
+    const step = ()=>{
+      if(!this.active) return;
+      const info = intros.shift();
+      if(!info){ this.waiting = false; this.nextQuestion(); return; }
+      UI.setBlockChip(info.spec);
+      UI.showBlockIntro(info, step);
+    };
+    step();
+  },
   nextQuestion(){
     if(!this.active || this.paused) return;
     this.answering = false;
@@ -108,6 +134,11 @@ const Session = {
   presentItem(item){
     UI.setKeypadMode(item.op==='fracao_comparacao' ? 'comparison' : 'numeric');
     this.typed = ''; this.firstKeyAt = 0; this.qShownAt = U.now();
+    if(Engine.block && Engine.block.kind==='mix'){
+      // a trilha muda de uma conta para a outra: atualiza o selo (símbolo, nome, cor) antes de desenhar a conta
+      this.stats.tracks.add(item.key);
+      UI.setBlockChip({track:item.key, kind:item.kind, level:item.level, reinforce:item.isReinforce});
+    }
     clearTimeout(this.itemTimeoutHandle);
     // O prazo de abandono só corre depois que a voz terminou de ler (senão a conta seguinte
     // cortaria a leitura) e o input só é liberado nesse mesmo instante.

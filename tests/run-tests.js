@@ -711,9 +711,89 @@ ok(!TRACKS.potencia && !TRACKS.raiz, 'não há trilhas próprias de potência/ra
   const t1 = Engine.nextItem(); Engine.registerResult(t1, 100, false, false, '1');
   ok(Engine.block.count===TEST_ITEMS+1, 'lapso na prova repõe a conta');
 }
-// 3i. blocos: um level, uma trilha; aquecimento só no 1º bloco da trilha na rodada
+// 3i0. modo alternado: uma rodada = 1 bloco misto com 3 trilhas que se revezam, sem repetir a trilha em seguida
 {
   freshStore(); placeAll(4, 0.5);
+  ok(Store.data.settings.orderMode==='mixed', 'padrão: ordem alternada');
+  ok(Store.normalize({settings:{orderMode:'x'}}).settings.orderMode==='mixed' && Store.normalize({settings:{orderMode:'block'}}).settings.orderMode==='block', 'orderMode: inválido vira padrão, válido é mantido');
+  for(const size of [16,24,40]){
+    for(let r=0;r<40;r++){
+      const plan = Engine.planRound({size});
+      ok(plan.length===1 && plan[0].kind==='mix', 'rodada alternada = um bloco misto');
+      const mix = plan[0], keys = mix.parts.map(p=>p.track);
+      ok(mix.parts.length===MIX_TRACKS && new Set(keys).size===MIX_TRACKS, 'o bloco misto tem '+MIX_TRACKS+' trilhas distintas');
+      const mains = mix.parts.map(p=>p.count-p.warmup);
+      ok(mains.reduce((a,b)=>a+b,0)===size && Math.max(...mains)-Math.min(...mains)<=1, 'contas divididas por igual ('+mains+') somando '+size);
+      ok(mix.count===mix.parts.reduce((a,p)=>a+p.count,0), 'count do bloco misto = soma das partes');
+    }
+  }
+  // execução: cada trilha serve exatamente as contas dela, aquecimento no início de cada uma, nunca a mesma trilha em seguida
+  let firstOrders = new Set();
+  for(let r=0;r<60;r++){
+    freshStore(); placeAll(4, 0.5);
+    const mix = Engine.planRound({size:24})[0], seq = [], warm = [];
+    const outs = runBlock(mix, it=>{ seq.push(it.key); warm.push(it.isWarmup); return {correct:true, ms:it.goalMs}; });
+    ok(seq.length===mix.count && Engine.block===null, 'bloco misto serve todas as contas e termina');
+    mix.parts.forEach(p=>{
+      ok(seq.filter(k=>k===p.track).length===p.count, 'cada trilha recebe as contas dela');
+      ok(seq.map((k,i)=>k===p.track && warm[i]).filter(Boolean).length===p.warmup, 'aquecimento por trilha');
+    });
+    let repeats = 0; for(let i=1;i<seq.length;i++) if(seq[i]===seq[i-1]) repeats++;
+    ok(repeats===0, 'nenhuma trilha repete em seguida: '+seq.join(','));
+    // só o último resultado fecha o bloco; os intermediários não
+    ok(outs.slice(0,-1).every(o=>!o.out.blockDone) && outs[outs.length-1].out.blockDone && outs[outs.length-1].out.blockResult.kind==='mix', 'só a última conta fecha o bloco misto');
+    firstOrders.add(seq.slice(0,3).join('>'));
+    // não é periódico (a ordem do 1º ciclo não se repete sempre igual no 2º)
+  }
+  ok(firstOrders.size>1, 'a ordem das trilhas varia entre rodadas');
+  // a ordem muda de ciclo para ciclo dentro da rodada (não é A,B,C,A,B,C,...)
+  {
+    let periodic = 0;
+    for(let r=0;r<60;r++){
+      freshStore(); placeAll(4, 0.5);
+      const mix = Engine.planRound({size:24})[0], seq = [];
+      runBlock(mix, it=>{ seq.push(it.key); return {correct:true, ms:it.goalMs}; });
+      if(seq.slice(0,3).join()===seq.slice(3,6).join() && seq.slice(3,6).join()===seq.slice(6,9).join()) periodic++;
+    }
+    ok(periodic<30, 'a ordem não é um revezamento fixo ('+periodic+'/60 rodadas periódicas)');
+  }
+  // adaptação por trilha continua independente: acertos rápidos de uma trilha só mexem em m dela
+  freshStore(); placeAll(4, 0.5);
+  const mix = Engine.planRound({size:24})[0], tracked = mix.parts[0].track, other = mix.parts[1].track;
+  const mOther = Engine.track(other).m;
+  runBlock(mix, it=>({correct:it.key!==other, ms:it.goalMs*0.5}));
+  ok(Engine.track(tracked).m>0.5, 'm da trilha que acertou subiu');
+  ok(Engine.track(other).m<mOther, 'm da trilha que errou desceu');
+  // folga justa pelo custo de troca: só no modo alternado, no limite e na meta, mantendo a distância entre os dois
+  {
+    freshStore(); placeAll(4, 0.5);
+    const mixIts = [], blkIts = [];
+    runBlock(Engine.planRound({size:24})[0], it=>{ mixIts.push(it); return {correct:true, ms:it.goalMs}; });
+    runBlock({kind:'practice', track:'soma', level:4, count:12}, it=>{ blkIts.push(it); return {correct:true, ms:it.goalMs}; });
+    ok(mixIts.every(it=>it.mixSlackMs>=MIX_SLACK_MIN_MS && it.mixSlackMs<=MIX_SLACK_MAX_MS), 'contas do modo alternado têm folga entre '+MIX_SLACK_MIN_MS+' e '+MIX_SLACK_MAX_MS+' ms');
+    ok(blkIts.every(it=>it.mixSlackMs===0), 'modo em blocos não tem folga');
+    ok(mixIts.every(it=>{ const base = levelTimes(it.key, it.level, it.size); return it.limitMs===base.limit+it.mixSlackMs && it.goalMs===base.meta+it.mixSlackMs && it.limitMs-it.goalMs===base.limit-base.meta; }), 'limite e meta sobem a mesma folga (distância preservada)');
+    ok(Engine.mixSlack(1000)===MIX_SLACK_MIN_MS && Engine.mixSlack(100000)===MIX_SLACK_MAX_MS && Engine.mixSlack(5000)===600, 'folga: piso, teto e proporcional (12%)');
+    // uma conta que estourava a meta do bloco por pouco agora cai na zona certa no modo alternado
+    const it0 = mixIts[0], base0 = levelTimes(it0.key, it0.level, it0.size);
+    ok(Engine.zone(base0.meta+it0.mixSlackMs, it0.goalMs, it0.limitMs)==='fast' && Engine.zone(base0.meta+it0.mixSlackMs, base0.meta, base0.limit)!=='fast', 'tempo = meta + custo de troca é "dentro da meta" só no alternado');
+  }
+  // poucas contas / poucas trilhas voltam a blocos comuns
+  freshStore(); placeAll(4, 0.5); Store.data.settings.activeTracks = ['soma'];
+  ok(Engine.planRound({size:24}).every(b=>b.kind==='practice'), 'com uma trilha ativa só há blocos comuns');
+  freshStore(); placeAll(4, 0.5);
+  ok(Engine.planRound({size:5}).every(b=>b.kind!=='mix'), 'rodada minúscula não vira bloco misto');
+  // modo "em blocos" mantém o plano clássico
+  Store.data.settings.orderMode = 'block';
+  ok(Engine.planRound({size:24}).every(b=>b.kind==='practice') , 'orderMode=block gera blocos de uma trilha');
+  // trilha nova ainda faz nivelamento antes do bloco misto
+  freshStore(); placeAll(4, 0.5); Engine.track('soma').placed = false;
+  const pl = Engine.planRound({size:24});
+  ok(pl[0].kind==='placement' && pl[0].track==='soma' && pl.some(b=>b.kind==='mix'), 'nivelamento vem antes do bloco misto');
+}
+// 3i. blocos: um level, uma trilha; aquecimento só no 1º bloco da trilha na rodada
+{
+  freshStore(); placeAll(4, 0.5); Store.data.settings.orderMode = 'block';
   for(let r=0;r<30;r++){
     const plan = Engine.planRound();
     const seen = {};
@@ -936,6 +1016,24 @@ ok(!TRACKS.potencia && !TRACKS.raiz, 'não há trilhas próprias de potência/ra
     }
     await sleep(1);
   } };
+  // ordem das contas: alternada (padrão) alterna a trilha a cada conta; em blocos mantém 6–8 seguidas; ambas fecham a rodada
+  for(const mode of ['mixed','block']){
+    Store.data.history.length = 0; summary = null; Store.data.settings.orderMode = mode;
+    Store.data.seenTips = {};
+    const seq = []; const origRender = UI.renderQuestion; UI.renderQuestion = (item,ready)=>{ seq.push(item.key); ready(); };
+    const intros0 = intros;
+    Session.start({size:24}); await play(()=>false);
+    UI.renderQuestion = origRender;
+    ok(summary && summary.completed && summary.total>=24, mode+': rodada completa ('+(summary&&summary.total)+' contas)');
+    const switches = seq.filter((k,i)=>i>0 && k!==seq[i-1]).length;
+    if(mode==='mixed'){
+      ok(new Set(seq).size===3 && switches===seq.length-1, 'alternada: 3 trilhas, trilha muda a cada conta (trocas '+switches+'/'+(seq.length-1)+')');
+      ok(intros-intros0>=3, 'alternada: uma introdução por trilha na primeira visita ('+(intros-intros0)+')');
+    } else {
+      ok(switches<seq.length/3, 'em blocos: poucas trocas de trilha ('+switches+')');
+    }
+  }
+  Store.data.settings.orderMode = 'mixed';
   Store.data.history.length = 0; summary = null; goalScreens.length = 0;
   Store.data.settings.goalMode = 'count'; Store.data.settings.dailyGoal = Progress.day().items + 3; Store.data.settings.goalAlert = 'discreet';
   Progress.day().goalHit = false;

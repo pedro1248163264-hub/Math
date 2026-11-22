@@ -32,6 +32,7 @@ const Store = {
         dailyGoalMinutes:DEFAULT_DAILY_GOAL_MINUTES,   // meta em minutos por dia
         goalAlert:'discreet',           // discreet | screen (pausa e mostra tela com continuar/sair)
         roundSize:'normal',             // short | normal | long
+        orderMode:'mixed',              // mixed (alterna entre 3 trilhas conta a conta) | block (blocos de 6–8)
         challenge:'balanced',           // gentle | balanced | intense  (taxa de acerto desejada)
         activeTracks:[...DEFAULT_ACTIVE_TRACKS],
         exportReminder:true,            // avisar quando for hora de exportar para a IA
@@ -70,6 +71,7 @@ const Store = {
     s.dailyGoal = goalN>=1 ? Math.min(DAILY_GOAL_MAX, goalN) : DEFAULT_DAILY_GOAL;
     s.dailyGoalMinutes = goalM>=1 ? Math.min(DAILY_GOAL_MINUTES_MAX, goalM) : DEFAULT_DAILY_GOAL_MINUTES;
     if(!ROUND_SIZES[s.roundSize]) s.roundSize = 'normal';
+    if(!ORDER_MODES.includes(s.orderMode)) s.orderMode = 'mixed';
     if(!CHALLENGE_LEVELS[s.challenge]) s.challenge = 'balanced';
     s.activeTracks = Array.isArray(s.activeTracks) ? s.activeTracks.filter(k=>TRACKS[k]) : [];
     if(!s.activeTracks.length) s.activeTracks = [...DEFAULT_ACTIVE_TRACKS];

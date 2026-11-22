@@ -217,6 +217,7 @@ const Engine = {
 
   /* ----- planejamento da rodada ----- */
   roundSize(){ return ROUND_SIZES[Store.data.settings.roundSize] || ROUND_SIZES.normal; },
+  orderMode(){ return ORDER_MODES.includes(Store.data.settings.orderMode) ? Store.data.settings.orderMode : 'mixed'; },
   // Escolha ponderada da próxima trilha (entre BLOCOS): favorece trilhas mais fracas e há mais
   // tempo sem treino; nunca repete a anterior (se houver outra) e desestimula repetir na rodada.
   pickTrack(keys, prev, used){
@@ -254,6 +255,21 @@ const Engine = {
     const climbLen = k => opts.onlyTrack ? this.climbLeft(this.track(k)) : Math.min(this.climbLeft(this.track(k)), CLIMB_BLOCK_MAX);
     climbs.forEach(k=>total += climbLen(k));
     let prev = null; const used = {};
+    // Modo alternado: um único bloco "misto" com até MIX_TRACKS trilhas sorteadas; as contas alternam entre elas.
+    const mixN = Math.min(MIX_TRACKS, placed.length, Math.floor((size-total)/MIX_MIN_PER_TRACK));
+    if(this.orderMode()==='mixed' && mixN>=2){
+      const remaining = size-total, pool = placed.slice(), chosen = [];
+      while(chosen.length<mixN){ const k = this.pickTrack(pool, null, {}); chosen.push(k); pool.splice(pool.indexOf(k), 1); }
+      const parts = chosen.map((key, i)=>{
+        const tr = this.track(key), reinforce = !!tr.reinforce && tr.level>1 && !tr.climb;
+        const level = reinforce ? tr.level-1 : tr.level;
+        const warmup = (!reinforce && level>1) ? WARMUP_ITEMS : 0;
+        const len = Math.floor(remaining/mixN) + (i<remaining%mixN ? 1 : 0);
+        return {track:key, level, count:len+warmup, warmup, reinforce};
+      });
+      blocks.push({kind:'mix', track:parts[0].track, level:parts[0].level, parts, count:parts.reduce((a,p)=>a+p.count, 0), warmup:0});
+      total = size;
+    }
     while(total<size && placed.length){
       const key = this.pickTrack(placed, prev, used), tr = this.track(key);
       const remaining = size-total;
@@ -274,15 +290,55 @@ const Engine = {
   },
 
   /* ----- blocos e contas ----- */
-  beginBlock(spec){
-    this.block = {kind:spec.kind, key:spec.track, level:spec.level, count:spec.count, warmup:spec.warmup||0,
+  // Folga (ms) do modo alternado para o custo de trocar de tipo de conta; ver MIX_SLACK_*.
+  mixSlack(limitMs){ return U.clamp(Math.round(limitMs*MIX_SLACK_FRAC), MIX_SLACK_MIN_MS, MIX_SLACK_MAX_MS); },
+  _newBlock(spec){
+    return {mix:!!spec.mix, kind:spec.kind, key:spec.track, level:spec.level, count:spec.count, warmup:spec.warmup||0,
       reinforce:!!spec.reinforce, idx:0, done:0, extra:0, results:[], visited:[], bestSuccess:0,
       lvl: spec.kind==='placement' ? spec.level : null, startedAt:Date.now()};
+  },
+  // Bloco misto (kind 'mix'): guarda um sub-bloco de treino por trilha (cada um com o próprio level,
+  // aquecimento e contagem) e serve as contas alternando entre eles. Todo o resto do motor enxerga cada
+  // conta como de um bloco comum da trilha dela.
+  beginBlock(spec){
+    if(spec.kind==='mix'){
+      const subs = spec.parts.map(p=>this._newBlock(Object.assign({}, p, {kind:'practice', mix:true})));
+      this.block = {kind:'mix', key:null, count:subs.reduce((a,s)=>a+s.count, 0), idx:0, done:0, subs, cycle:[], lastKey:null,
+        results:[], startedAt:Date.now()};
+    } else this.block = this._newBlock(spec);
     return this.block;
+  },
+  // Próxima trilha do bloco misto. Regras: (1) nunca a mesma trilha duas vezes seguidas, enquanto houver como
+  // evitar (uma ordem assim existe se nenhuma trilha tiver mais que metade das contas restantes — a conta
+  // "obrigatória" é escolhida na hora certa); (2) entre as válidas, sorteia entre as que ainda não saíram
+  // neste ciclo (todas se revezam, mas a ordem muda a cada ciclo — não dá para prever a próxima).
+  _pickMixSub(b){
+    const open = b.subs.filter(s=>s.idx<s.count);
+    if(!open.length) return null;
+    const rem = s=>s.count-s.idx, total = open.reduce((a,s)=>a+rem(s), 0);
+    const feasible = x=>open.every(s=>rem(s)-(s===x?1:0) <= (s===x ? Math.floor((total-1)/2) : Math.ceil((total-1)/2)));
+    const notLast = open.length>1 ? open.filter(x=>x.key!==b.lastKey) : open;
+    let valid = notLast.filter(feasible);
+    if(!valid.length) valid = notLast;
+    let pool = valid.filter(s=>b.cycle.includes(s));
+    if(!pool.length){ b.cycle = open.slice(); pool = valid; }
+    const sub = pool[U.rint(0, pool.length-1)];
+    b.cycle = b.cycle.filter(s=>s!==sub);
+    b.lastKey = sub.key;
+    return sub;
   },
   // Próxima conta do bloco (ou null quando já foram servidas todas).
   nextItem(){
-    const b = this.block;
+    let b = this.block;
+    if(b && b.kind==='mix'){
+      const sub = this._pickMixSub(b);
+      if(!sub) return null;
+      b.idx++;
+      b = sub;
+    }
+    return this._nextFromBlock(b);
+  },
+  _nextFromBlock(b){
     if(!b || b.idx>=b.count) return null;
     const tr = this.track(b.key);
     let level=b.level, m=tr.m, kind='practice', isWarmup=false, isReinforce=false, size='mid';
@@ -300,7 +356,7 @@ const Engine = {
       if(big){ b.bigN++; m = 0.4+0.6*m; } else { b.smallN++; m = 0.6*m; }
     }
     b.idx++;
-    return this.generateItem(b.key, level, m, {kind, isWarmup, isReinforce, size});
+    return this.generateItem(b.key, level, m, {kind, isWarmup, isReinforce, size, mix:b.mix});
   },
   // Campos da conta a partir do que o gerador devolveu (sem tempos). Compartilhado com o Modo livre
   // (12-free-mode.js), que não usa a trilha da pessoa — assim a conta tem sempre o mesmo formato.
@@ -321,9 +377,11 @@ const Engine = {
     while(tr.recentPairs.includes(pairKey) && tries<6);
     tr.recentPairs.push(pairKey); if(tr.recentPairs.length>24) tr.recentPairs.shift();
     const size = ctx.size || 'mid';
-    const times = levelTimes(key, level, size, tr.done && level===tr.level ? tr.rank : 0), goal = times.meta, limit = times.limit;
+    const times = levelTimes(key, level, size, tr.done && level===tr.level ? tr.rank : 0);
+    const slack = ctx.mix ? this.mixSlack(times.limit) : 0;   // modo alternado: folga pelo custo de troca de conta
+    const goal = times.meta + slack, limit = times.limit + slack;
     const kind = ctx.kind || 'practice';
-    return Object.assign(this.itemFromGen(gen, key, level, m), {kind, isWarmup:!!ctx.isWarmup, isReinforce:!!ctx.isReinforce,
+    return Object.assign(this.itemFromGen(gen, key, level, m), {mixSlackMs:slack, kind, isWarmup:!!ctx.isWarmup, isReinforce:!!ctx.isReinforce,
       size, goalMs:goal, targetMs:goal, limitMs:limit, timeoutMs:U.clamp(limit*TIMEOUT_MULT, TIMEOUT_MIN_MS, TIMEOUT_MAX_MS),
       isMasteredFlash: this.flashApplies(key) && !!ctx.isWarmup});
   },
@@ -343,7 +401,9 @@ const Engine = {
   /* ----- resultado de uma conta ----- */
   // Devolve {etype, zone, targetHit, xp, lapse, hint, events[], blockDone, blockResult}.
   registerResult(item, ms, correct, timedOut, typedRaw){
-    const tr = this.track(item.key), b = this.block, now = Date.now();
+    const tr = this.track(item.key), now = Date.now();
+    let b = this.block;
+    if(b && b.kind==='mix') b = b.subs.find(s=>s.key===item.key) || null;   // bloco misto: a conta pertence ao sub-bloco da trilha dela
     const out = {zone:null, xp:0, lapse:false, hint:null, events:[], blockDone:false, blockResult:null};
     out.lapse = !correct && !timedOut && (ms<IMPULSE_FLOOR || this.isTypoLapse(typedRaw, item.answer));
     out.zone = correct ? this.zone(ms, item.goalMs, item.limitMs) : null;
@@ -455,8 +515,16 @@ const Engine = {
         else if(med < prevBest*0.97){ tr.bestMedian[b.level] = med; out.events.push({type:'record', key:b.key, level:b.level, ms:med, prev:prevBest}); }
       }
     }
-    this.block = null;
-    out.blockResult = res;
+    const mix = this.block && this.block.kind==='mix' ? this.block : null;
+    if(mix){
+      // fim de um sub-bloco: o bloco misto só termina quando todos os sub-blocos terminarem
+      mix.results.push(res);
+      if(mix.subs.every(s=>s.done>=s.count)){ this.block = null; out.blockResult = {kind:'mix', key:null, parts:mix.results}; }
+      else out.blockDone = false;
+    } else {
+      this.block = null;
+      out.blockResult = res;
+    }
   },
   _finishTest(b, tr, res, out){
     const goal = this.goalMs(tr, b.level);

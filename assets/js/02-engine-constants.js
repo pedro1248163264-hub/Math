@@ -124,6 +124,17 @@ const WARMUP_M = 0.7;
 const ROUND_SIZES = { short:16, normal:24, long:40 };
 const MAX_TESTS_PER_ROUND = 2;
 const MAX_PLACEMENTS_PER_ROUND = 6;
+/* Ordem das contas (ajuste orderMode): 'block' = blocos de 6–8 contas de uma trilha (o jeito clássico);
+   'mixed' = prática intercalada: a rodada sorteia até MIX_TRACKS trilhas e alterna entre elas conta a conta,
+   numa ordem que muda a cada ciclo (não dá para prever a próxima). Cada trilha ganha no mínimo
+   MIX_MIN_PER_TRACK contas; abaixo disso a rodada volta a usar blocos. */
+const ORDER_MODES = ['mixed', 'block'];
+const MIX_TRACKS = 3, MIX_MIN_PER_TRACK = 3;
+/* Custo de troca de tarefa: alternar o tipo de conta a cada conta custa uns décimos de segundo (reconhecer a
+   operação, trocar de estratégia) que no bloco não existem. Para ser justo, as contas do modo alternado ganham
+   essa folga no limite E na meta (a distância entre os dois é mantida): 12% do limite, entre 0,3 s e 1,0 s —
+   quase fixa nas contas rápidas (onde o custo pesa mais), limitada nas lentas. */
+const MIX_SLACK_FRAC = 0.12, MIX_SLACK_MIN_MS = 300, MIX_SLACK_MAX_MS = 1000;
 const TIMEOUT_MULT = 2.4, TIMEOUT_MIN_MS = 6000, TIMEOUT_MAX_MS = 25000;
 
 /* ---------- 7. JOGADOR (level geral) ---------- */
