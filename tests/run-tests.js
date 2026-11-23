@@ -123,6 +123,7 @@ function bracketsMatchDepth(text){
 function evalItem(it){
   const f = it.features||{};
   if(it.tree) return parseExprText(it.exprText);
+  if(f.fracOf) return it.a*it.c/it.b;
   if(f.neg || f.chain){ let v=it.terms[0].value; for(let i=0;i<it.ops.length;i++) v=applyOp2(it.ops[i],v,it.terms[i+1].value); return v; }
   switch(it.op){
     case 'soma': return it.a+it.b;
@@ -168,16 +169,27 @@ for(const key of TRACK_ORDER){
         const tag = key+'/L'+L+'/m'+m;
         const bad = msg=>{ genProblems++; if(genSamples.length<8) genSamples.push(tag+': '+msg+' '+JSON.stringify(it).slice(0,160)); };
         if(!Number.isFinite(it.answer)){ bad('resposta não finita'); continue; }
-        if((String(it.answer).split('.')[1]||'').length>2) bad('mais de 2 casas');
+        if(!it.answerFrac && (String(it.answer).split('.')[1]||'').length>2) bad('mais de 2 casas');
         if(it.isReversePath) continue;
         const ev = evalItem(it);
         if(ev===undefined) bad('op sem verificador '+it.op);
         else if(ev!==null && Math.abs(ev-it.answer)>1e-9) bad('resposta diverge '+ev+' vs '+it.answer);
         if(it.op==='equacao'){
-          if(it.a*it.answer+it.b !== it.c*it.answer+it.d) bad('equação não fecha');
+          if(it.eqL){
+            // forma estruturada: substitui x pela resposta no texto e confere os dois lados
+            const js = side=>Function('"use strict"; return ('+side.replace(/−/g,'-').replace(/(\\d)\\(/g,'$1*(').replace(/(\\d)x/g,'$1*x').replace(/x/g,'('+it.answer+')')+')')();
+            const [l,r] = it.exprText.split(' = ');
+            if(Math.abs(js(l)-js(r))>1e-9) bad('equação (forma nova) não fecha: '+it.exprText);
+          } else if(it.a*it.answer+it.b !== it.c*it.answer+it.d) bad('equação não fecha');
           if(!Number.isInteger(it.answer)) bad('x não inteiro');
         }
-        if(it.op!=='fracao_comparacao' && it.op!=='equacao' && !Number.isInteger(it.answer) && !(it.features&&it.features.decimalPlaces)) bad('resposta não inteira');
+        if(it.answerFrac){
+          const f = it.answerFrac;
+          if(!(Number.isInteger(f.n) && Number.isInteger(f.d) && f.n>0 && f.d>0 && gcd2(f.n,f.d)===1)) bad('answerFrac não simplificada '+JSON.stringify(f));
+          if(!fracTypedMatches(f.d===1 ? String(f.n) : f.n+'/'+f.d, it)) bad('answerFrac não confere com a própria resposta');
+          if(f.d>1 && fracTypedMatches(2*f.n+'/'+2*f.d, it)) bad('fração não simplificada foi aceita');
+        }
+        if(it.op!=='fracao_comparacao' && it.op!=='equacao' && !it.answerFrac && !Number.isInteger(it.answer) && !(it.features&&it.features.decimalPlaces)) bad('resposta não inteira');
         if(it.answer<0 && it.op!=='equacao' && it.op!=='fracao_comparacao' && key!=='expressoes' && !(it.features&&it.features.neg)) bad('resposta negativa');
         if(it.features&&it.features.neg){ negItems[key]=(negItems[key]||0)+1; if(it.answer<0) negAns[key]=(negAns[key]||0)+1; if(!def.neg) bad('sinais fora dos levels com sinais'); }
         if(it.answer<0 && key==='expressoes') negAnswers++;
@@ -432,6 +444,16 @@ ok(!TRACKS.potencia && !TRACKS.raiz, 'não há trilhas próprias de potência/ra
     multiplicacao:[[1,1],[1,1],[2,1],[2,1],[2,2],[2,2],[3,1],[3,2]],
     divisao:[null,null,[2,1],[3,1],[3,2],[4,1]]
   };
+  // frações/equações: os levels antigos mantêm o NOME depois de remapeados
+  const oldNames = {
+    fracoes:['Comparar: mesmo denominador ou numerador','Comparar: multiplicação cruzada','Soma e subtração (mesmo denominador)','Multiplicar e dividir frações','Comparar quase-empates'],
+    equacoes:['x + b = c','ax = c','ax + b = c','ax + b = cx + d','Com números negativos']
+  };
+  Object.keys(oldNames).forEach(key=>{
+    ok(LADDERS[key].map.length===oldNames[key].length, key+': mapa cobre os 5 levels antigos');
+    oldNames[key].forEach((nm,i)=>ok(levelDef(key, LADDERS[key].map[i]).n[0]===nm, key+': level antigo '+(i+1)+' → '+LADDERS[key].map[i]+' mantém o nome'));
+    ok(LADDERS[key].map.every((v,i,a)=>i===0 || v>a[i-1]) && LADDERS[key].map[4]<=trackLevels(key), key+': mapa crescente e dentro da escada');
+  });
   Object.keys(oldShapes).forEach(key=>{
     ok(LADDERS[key].map.length===oldShapes[key].length, key+': mapa cobre todos os levels antigos');
     oldShapes[key].forEach((sh,i)=>{
@@ -474,6 +496,43 @@ ok(!TRACKS.potencia && !TRACKS.raiz, 'não há trilhas próprias de potência/ra
   ok(done.done===false && done.level===5 && done.rank===0 && done.stars[10]===3 && done.stars[4]===3, 'soma concluída antes reabre no 1º level novo (L5): done='+done.done+' level='+done.level);
   // dado novo e dado sem trilhas
   ok(Store.normalize({}).tracks.soma===undefined && Engine.newTrack('soma').ladder===2 && Engine.newTrack('expressoes').ladder===1, 'trilha nova já nasce na escada nova');
+  // frações e equações: progresso salvo na escada antiga acompanha os levels (nomes preservados)
+  {
+    const oldF = Store.normalize({tracks:{
+      fracoes:{placed:true, level:4, xp:20, stars:{1:3,3:2,4:1}, climb:{level:5, need:12, results:[]}, bestMedian:{4:5000}},
+      equacoes:{placed:true, level:3, stars:{1:3,2:3,3:1}}}, seenTips:{'fracoes:4':true,'equacoes:3':true}});
+    const f = oldF.tracks.fracoes, e = oldF.tracks.equacoes;
+    ok(f.ladder===2 && f.level===7 && f.stars[1]===3 && f.stars[4]===2 && f.stars[7]===1 && f.climb.level===9 && f.bestMedian[7]===5000, 'frações: level antigo 4 (multiplicar/dividir) → 7, estrelas/subida/recorde acompanham: '+JSON.stringify(f.stars));
+    ok(e.ladder===2 && e.level===4 && e.stars[1]===3 && e.stars[2]===3 && e.stars[4]===1, 'equações: level antigo 3 (ax + b = c) → 4: '+JSON.stringify(e.stars));
+    ok(oldF.seenTips['fracoes:7'] && oldF.seenTips['equacoes:4'] && !oldF.seenTips['fracoes:4'], 'dicas vistas de frações/equações acompanham');
+    const allF = {1:3,2:3,3:3,4:3,5:3};
+    const dn = Store.normalize({tracks:{fracoes:{placed:true, level:5, done:true, stars:allF}, equacoes:{placed:true, level:5, done:true, stars:allF}}}).tracks;
+    ok(!dn.fracoes.done && dn.fracoes.level===2 && !dn.equacoes.done && dn.equacoes.level===3, 'frações/equações concluídas antes reabrem no 1º level novo sem estrela: '+dn.fracoes.level+'/'+dn.equacoes.level);
+    ok(Engine.newTrack('fracoes').ladder===2 && Engine.newTrack('equacoes').ladder===2, 'frações/equações novas já nascem na escada nova');
+  }
+  // resposta em fração simplificada: só a forma irredutível vale
+  {
+    const q = {answerFrac:{n:3,d:4}}, w = {answerFrac:{n:3,d:1}};
+    ok(answerMatches('3/4',q) && !answerMatches('6/8',q) && !answerMatches('3',q) && !answerMatches('3/',q) && !answerMatches('/4',q) && !answerMatches('0,75',q), 'resposta em fração: 3/4 vale; 6/8, 3, "3/" e 0,75 não');
+    ok(answerMatches('3',w) && !answerMatches('6/2',w) && fmtAnswer(w)==='3' && fmtAnswer(q)==='3/4', 'resposta inteira simplificada: 3 vale, 6/2 não; texto da resposta certa');
+    // voz: nenhuma conta nova gera "undefined"/"NaN"/"[object" em nenhum idioma
+    let badSpeech = 0;
+    for(const key of ['fracoes','equacoes']) for(let l=1;l<=trackLevels(key);l++) for(let i=0;i<40;i++){
+      const it = Engine.generateItem(key, l, Math.random(), {});
+      for(const lang of ['pt-BR','en-US']){ const sp = spokenPhrase(it, lang); if(!sp || /undefined|NaN|\\[object/.test(sp)) badSpeech++; }
+    }
+    ok(badSpeech===0, 'voz das frações/equações novas sem "undefined": '+badSpeech+' ruins');
+    const sp = spokenPhrase({op:'equacao', eqL:['2(x + 4)'], eqR:['26'], exprText:'2(x + 4) = 26', answer:9}, 'pt-BR');
+    ok(sp==='2 vezes abre parênteses x mais 4 fecha parênteses igual a 26', 'voz: 2(x + 4) = 26 → "'+sp+'"');
+    const sp2 = spokenPhrase({op:'equacao', eqL:[{n:'x + 4', d:'3'}], eqR:['7'], exprText:'(x + 4)/3 = 7', answer:17}, 'pt-BR');
+    ok(sp2==='abre parênteses x mais 4 fecha parênteses sobre 3 igual a 7', 'voz: (x + 4)/3 = 7 → "'+sp2+'"');
+    // variedade: cada level novo produz contas diferentes (não degenera)
+    const kinds = {};
+    [['fracoes',2],['fracoes',5],['fracoes',6],['fracoes',8],['fracoes',10],['fracoes',11],['equacoes',3],['equacoes',5],['equacoes',7],['equacoes',8],['equacoes',10]].forEach(([k,l])=>{
+      const set = new Set(); for(let i=0;i<300;i++) set.add(Engine.generateItem(k,l,Math.random(),{}).exprText); kinds[k+l] = set.size;
+    });
+    ok(Object.values(kinds).every(n=>n>=25), 'levels novos têm variedade (≥25 contas distintas em 300): '+JSON.stringify(kinds));
+  }
 }
 
 /* ---------- 3. MOTOR ---------- */
@@ -1114,7 +1173,7 @@ ok(!TRACKS.potencia && !TRACKS.raiz, 'não há trilhas próprias de potência/ra
         FreeMode.setSize(size); FreeMode.recent = [];
         for(let i=0;i<6;i++){
           const it = FreeMode.makeItem();
-          const typed = it.op==='fracao_comparacao' ? ({'-1':'<','0':'=','1':'>'})[it.answer] : String(it.answer).replace('.',',');
+          const typed = it.op==='fracao_comparacao' ? ({'-1':'<','0':'=','1':'>'})[it.answer] : it.answerFrac ? fmtAnswer(it) : String(it.answer).replace('.',',');
           if(it.kind!=='free' || it.key!==key || it.level!==l || !Number.isFinite(it.m) || it.timeoutMs!==undefined || it.limitMs!==undefined || !answerMatches(typed, it)) badItem++;
         }
       }

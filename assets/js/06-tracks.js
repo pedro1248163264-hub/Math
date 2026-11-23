@@ -205,6 +205,84 @@ function fracMulDiv(m){
   return {op:'fracao', terms, ops:[opKey], answer:r, exprText:chainText(terms,[opKey]), features:{}};
 }
 
+// ---- frações com resposta em fração SIMPLIFICADA ----
+// `answerFrac` = {n,d} já irredutível (d=1 → resposta inteira); `answer` guarda o valor n/d só para
+// os verificadores. A pessoa digita "n/d" (tecla /); fração não simplificada conta como erro.
+function fracReduce(n, d){ const g = gcd2(Math.abs(n), d); return {n:n/g, d:d/g}; }
+function fracItem(terms, ops, n, d, features){
+  const r = fracReduce(n, d);
+  return {op:'fracao', terms, ops, answer:r.n/r.d, answerFrac:r, exprText:chainText(terms, ops), features:features||{}};
+}
+// Fração própria irredutível n/d com d em [dLo, dHi].
+function fracProper(dLo, dHi){
+  for(let t=0; t<40; t++){ const d = rr(dLo, dHi), n = rr(1, d-1); if(gcd2(n,d)===1) return {n, d}; }
+  return {n:1, d:Math.max(2, dLo)};
+}
+// Simplificar uma fração: 18/24 → 3/4 (às vezes imprópria: 18/12 → 3/2).
+function fracSimplify(m){
+  const dMax = mix(5,12,m), kMax = mix(3,6,m), k = rr(2, kMax);
+  let n, d;
+  if(m>0.3 && Math.random()<0.2){
+    for(let t=0; t<40; t++){ d = rr(3, dMax); n = rr(d+1, 2*d-1); if(gcd2(n,d)===1) break; }
+    if(gcd2(n,d)!==1){ n = 3; d = 2; }
+  } else { const p = fracProper(3, dMax); n = p.n; d = p.d; }
+  return fracItem([fracTerm(n*k, d*k)], [], n, d, {simplify:true});
+}
+// Mesmo denominador, mas o resultado ainda se simplifica: 7/10 + 1/10 = 8/10 = 4/5.
+function fracAddSubSimplify(m){
+  const opKey = U.choice(['soma','subtracao']), qHi = mix(8,16,m);
+  for(let t=0; t<80; t++){
+    const q = rr(4, qHi), p1 = rr(1, q-1), p2 = rr(1, q-1);
+    if(opKey==='subtracao' && p1<=p2) continue;
+    const s = opKey==='soma' ? p1+p2 : p1-p2;
+    if(gcd2(s,q)>1) return fracItem([fracTerm(p1,q), fracTerm(p2,q)], [opKey], s, q, {simplify:true});
+  }
+  return fracItem([fracTerm(7,8), fracTerm(1,8)], ['subtracao'], 6, 8, {simplify:true});   // reserva: 7/8 − 1/8 = 3/4
+}
+// n/d de uma quantidade: 3/4 de 48 → 36.
+function fracOfQty(m){
+  const d = rr(2, mix(5,10,m)), n = rr(1, d-1), k = rr(2, mix(6,12,m)), total = d*k;
+  return {op:'fracao', a:n, b:d, c:total, answer:n*k, exprText:`${n}/${d} de ${total}`, features:{fracOf:true}};
+}
+// Soma/subtração com denominadores diferentes; resultado sempre simplificado.
+// kind 'multiple': um denominador é múltiplo do outro (1/2 + 1/4). kind 'other': nenhum dos dois (1/2 + 1/3).
+function fracAddSubDiff(m, kind){
+  const opKey = U.choice(['soma','subtracao']);
+  for(let t=0; t<80; t++){
+    let a, b;
+    if(kind==='multiple'){
+      const d1 = rr(2, mix(4,6,m)), k = rr(2, mix(2,3,m)), d2 = d1*k;
+      a = fracProper(d1, d1); b = fracProper(d2, d2);
+    } else {
+      const d1 = rr(2, mix(4,8,m)), d2 = rr(2, mix(5,9,m));
+      if(d1===d2 || d1%d2===0 || d2%d1===0) continue;
+      a = fracProper(d1, d1); b = fracProper(d2, d2);
+    }
+    if(a.d===1 || b.d===1 || a.n/a.d===b.n/b.d) continue;
+    if(Math.random()<0.5){ const x=a; a=b; b=x; }
+    if(opKey==='subtracao' && a.n/a.d<=b.n/b.d){ const x=a; a=b; b=x; }
+    const den = a.d*b.d/gcd2(a.d, b.d);
+    const num = opKey==='soma' ? a.n*(den/a.d)+b.n*(den/b.d) : a.n*(den/a.d)-b.n*(den/b.d);
+    if(num<=0) continue;
+    return fracItem([fracTerm(a.n,a.d), fracTerm(b.n,b.d)], [opKey], num, den, {simplify:true});
+  }
+  return fracItem([fracTerm(1,2), fracTerm(1,4)], ['soma'], 3, 4, {simplify:true});
+}
+// Multiplicar/dividir frações com resultado simplificado: 3/4 × 2/9 = 1/6 · 5/6 ÷ 5/12 = 2.
+function fracMulDivSimplify(m){
+  const opKey = U.choice(['multiplicacao','divisao']), dHi = mix(5,9,m);
+  for(let t=0; t<80; t++){
+    const a = fracProper(3, dHi), b = fracProper(3, dHi);
+    const num = opKey==='multiplicacao' ? a.n*b.n : a.n*b.d, den = opKey==='multiplicacao' ? a.d*b.d : a.d*b.n;
+    const r = fracReduce(num, den);
+    if(r.n===num && r.d===den && t<60) continue;   // quer algum cancelamento
+    if(r.n===a.n && r.d===a.d) continue;
+    const terms = opKey==='divisao' ? [fracTerm(a.n,a.d,true), fracTerm(b.n,b.d,true)] : [fracTerm(a.n,a.d), fracTerm(b.n,b.d)];
+    return fracItem(terms, [opKey], num, den, {simplify:true});
+  }
+  return fracItem([fracTerm(3,4), fracTerm(2,9)], ['multiplicacao'], 6, 36, {simplify:true});
+}
+
 // ---- expressões ----
 function opSym(k){ return OPS[k].symbol; }
 function exprSimple(m, outerPool, cMax){
@@ -553,6 +631,62 @@ function eqItem(a,b,c,d,x){
   return {op:'equacao', a,b,c,d, answer:x, exprText:eqText(a,b,c,d), features:{}, isEquation:true};
 }
 
+// Equações com formas além de ax + b = cx + d: cada lado é uma lista de segmentos —
+// texto puro ("2(x + 4)", " + 8") ou fração {n,d} (n e d são textos: "x", "x + 4", "3").
+// A tela, a voz e o teste usam a mesma lista; `exprText` é o texto linear (só para repetição/teste).
+const segText = sg=>typeof sg==='string' ? sg : ((/[ +−]/.test(sg.n) ? `(${sg.n})` : sg.n) + '/' + sg.d);
+const sideText = side=>side.map(segText).join('');
+function eqItemX(L, R, x){
+  return {op:'equacao', eqL:L, eqR:R, answer:x, exprText:`${sideText(L)} = ${sideText(R)}`, features:{}, isEquation:true};
+}
+const sgn = v=>v<0 ? '−' : '+';
+// x/a ± b = c  (ex.: x/3 + 8 = 15 · x/4 = 6)
+function eqDivConst(m){
+  const a = rr(2, mix(5,10,m)), k = rr(2, mix(6,12,m)), x = a*k;
+  let b = Math.random()<0.3 ? 0 : rr(1, mix(9,30,m));
+  let plus = Math.random()<0.5;
+  if(!plus && k-b<1) plus = true;
+  const c = plus ? k+b : k-b;
+  return eqItemX([{n:'x', d:String(a)}].concat(b ? [` ${plus?'+':'−'} ${b}`] : []), [String(c)], x);
+}
+// a(x + b) = c  (ex.: 2(x + 4) = 26)
+function eqParenConst(m){
+  const a = rr(2, mix(4,9,m)), x = rr(2, mix(9,20,m));
+  let b = rr(1, mix(6,15,m))*(Math.random()<0.5 ? 1 : -1);
+  if(x+b<=0) b = -b;
+  return eqItemX([`${a}(x ${sgn(b)} ${Math.abs(b)})`], [String(a*(x+b))], x);
+}
+// (x + b)/a = c  (ex.: (x + 4)/3 = 7)
+function eqFracParen(m){
+  const a = rr(2, mix(5,9,m)), c = rr(2, mix(6,12,m)), x = rr(2, mix(9,25,m));
+  let b = a*c - x;
+  if(b===0) return eqFracParen(m);
+  if(Math.abs(b)>mix(30,60,m)) return eqFracParen(m);
+  return eqItemX([{n:`x ${sgn(b)} ${Math.abs(b)}`, d:String(a)}], [String(c)], x);
+}
+// proporção x/a = b/c, com x inteiro  (ex.: x/4 = 9/6 → x = 6)
+function eqProportion(m){
+  for(let t=0; t<60; t++){
+    const q = rr(2, mix(4,6,m)), p = rr(2, mix(5,9,m)), u = rr(2, mix(3,5,m)), v = rr(1, mix(3,6,m));
+    if(p===q || gcd2(p,q)!==1) continue;
+    const a = q*v, b = p*u, c = q*u;
+    if(a<2) continue;
+    return eqItemX([{n:'x', d:String(a)}], [{n:String(b), d:String(c)}], p*v);
+  }
+  return eqItemX([{n:'x', d:'4'}], [{n:'9', d:'6'}], 6);
+}
+// a(x + b) = cx + d  (ex.: 2(x + 1) = x + 9)
+function eqParenBoth(m){
+  for(let t=0; t<60; t++){
+    const a = rr(3, mix(5,9,m)), c = rr(1, a-1), x = rr(2, mix(8,15,m));
+    const b = rr(1, mix(6,12,m))*(Math.random()<0.35 ? -1 : 1);
+    const d = (a-c)*x + a*b;
+    if(d===0 || x+b<=0 || Math.abs(d)>150) continue;
+    return eqItemX([`${a}(x ${sgn(b)} ${Math.abs(b)})`], [`${c===1?'':c}x ${sgn(d)} ${Math.abs(d)}`], x);
+  }
+  return eqItemX(['3(x + 2)'], ['x + 12'], 3);
+}
+
 /* ---------- as trilhas ---------- */
 const TRACKS = {
   soma:{ sym:'+', color:'#22C55E', op:'soma', label:['Soma','Addition'], levels:[
@@ -757,18 +891,36 @@ const TRACKS = {
     {n:['Comparar: mesmo denominador ou numerador','Compare: same denominator or numerator'], goal:1800, shape:null,
      tip:['Mesmo denominador: maior numerador vence. Mesmo numerador: menor denominador vence.','Same denominator: larger numerator wins. Same numerator: smaller denominator wins.'],
      gen(m,tr){ return fracCmp(tr?Engine.weightedBucket(tr,'case',['same_den','same_num']):U.choice(['same_den','same_num']), m, 9, 3); }},
+    {n:['Simplificar fração','Simplify a fraction'], goal:3200, shape:null,
+     tip:['Divida em cima e embaixo pelo mesmo número (teste 2, 3, 5) até não dar mais: 18/24 → 9/12 → 3/4. Digite com a tecla /.','Divide top and bottom by the same number (try 2, 3, 5) until you can\'t: 18/24 → 9/12 → 3/4. Type it with the / key.'],
+     gen(m,tr){ return fracSimplify(m); }},
     {n:['Comparar: multiplicação cruzada','Compare: cross-multiplication'], goal:3000, shape:null,
      tip:['Multiplicação cruzada: a/b ? c/d → compare a × d com c × b.','Cross-multiply: a/b ? c/d → compare a × d with c × b.'],
      gen(m,tr){ const o=['cross','cross','cross','equal']; return fracCmp(tr?Engine.weightedBucket(tr,'case',o):U.choice(o), m, mix(6,9,m), 3); }},
     {n:['Soma e subtração (mesmo denominador)','Add/subtract (same denominator)'], goal:3500, shape:null,
      tip:['Mesmo denominador: some/subtraia os numeradores e simplifique.','Same denominator: add/subtract the numerators and simplify.'],
      gen(m,tr){ return fracAddSub(m); }},
+    {n:['Mesmo denominador, simplificando','Same denominator, simplified'], goal:4800, shape:null,
+     tip:['Some/subtraia os numeradores e simplifique o resultado: 7/10 + 1/10 = 8/10 = 4/5.','Add/subtract the numerators, then simplify: 7/10 + 1/10 = 8/10 = 4/5.'],
+     gen(m,tr){ return fracAddSubSimplify(m); }},
+    {n:['Fração de uma quantidade','Fraction of a quantity'], goal:3500, shape:null,
+     tip:['Divida a quantidade pelo denominador e multiplique pelo numerador: 3/4 de 48 → 48 ÷ 4 = 12 → 12 × 3 = 36.','Divide the quantity by the denominator, then multiply by the numerator: 3/4 of 48 → 48 ÷ 4 = 12 → 12 × 3 = 36.'],
+     gen(m,tr){ return fracOfQty(m); }},
     {n:['Multiplicar e dividir frações','Multiply and divide fractions'], goal:4200, shape:null,
      tip:['Cancele antes de multiplicar. Dividir por fração = multiplicar pelo inverso.','Cancel before multiplying. Dividing by a fraction = multiplying by its inverse.'],
      gen(m,tr){ return fracMulDiv(m); }},
+    {n:['Soma e subtração (um denominador é múltiplo do outro)','Add/subtract (one denominator is a multiple)'], goal:6000, shape:null,
+     tip:['Leve a fração de menor denominador ao maior: 1/2 + 1/4 → 2/4 + 1/4 = 3/4. Simplifique no fim.','Convert the fraction with the smaller denominator: 1/2 + 1/4 → 2/4 + 1/4 = 3/4. Simplify at the end.'],
+     gen(m,tr){ return fracAddSubDiff(m, 'multiple'); }},
     {n:['Comparar quase-empates','Compare near-ties'], goal:5500, shape:null,
      tip:['Quase-empate: use a multiplicação cruzada e compare os dois produtos.','Near-tie: cross-multiply and compare the two products.'],
-     gen(m,tr){ const o=['cross','cross','cross','cross','equal']; return fracCmp(tr?Engine.weightedBucket(tr,'case',o):U.choice(o), Math.max(m,0.6), mix(10,18,m), 4); }}
+     gen(m,tr){ const o=['cross','cross','cross','cross','equal']; return fracCmp(tr?Engine.weightedBucket(tr,'case',o):U.choice(o), Math.max(m,0.6), mix(10,18,m), 4); }},
+    {n:['Multiplicar e dividir, simplificando','Multiply and divide, simplified'], goal:7000, shape:null,
+     tip:['Cancele cruzado antes de multiplicar: 3/4 × 2/9 → 1/2 × 1/3 = 1/6. Dividir = multiplicar pelo inverso.','Cross-cancel before multiplying: 3/4 × 2/9 → 1/2 × 1/3 = 1/6. Dividing = multiplying by the inverse.'],
+     gen(m,tr){ return fracMulDivSimplify(m); }},
+    {n:['Soma e subtração (denominadores diferentes)','Add/subtract (different denominators)'], goal:8500, shape:null,
+     tip:['Ache um denominador comum e simplifique: 1/2 + 1/3 = 3/6 + 2/6 = 5/6.','Find a common denominator and simplify: 1/2 + 1/3 = 3/6 + 2/6 = 5/6.'],
+     gen(m,tr){ return fracAddSubDiff(m, 'other'); }}
   ]},
 
   expressoes:{ sym:'( )', color:'#3B82F6', op:'expressao', label:['Expressões','Expressions'], levels:[
@@ -828,16 +980,28 @@ const TRACKS = {
     {n:['ax = c','ax = c'], goal:3000, shape:null,
      tip:['Divida os dois lados por quem multiplica x.','Divide both sides by the coefficient of x.'],
      gen(m,tr){ const a=rr(2,mix(6,12,m)), x=rr(2,mix(9,15,m)); return eqItem(a,0,0,a*x,x); }},
+    {n:['x/a ± b = c','x/a ± b = c'], goal:3200, shape:null,
+     tip:['Desfaça de fora para dentro: primeiro tire o + b (ou − b) dos dois lados, depois multiplique por a. x/3 + 8 = 15 → x/3 = 7 → x = 21.','Undo from the outside in: first remove the + b (or − b) on both sides, then multiply by a. x/3 + 8 = 15 → x/3 = 7 → x = 21.'],
+     gen(m,tr){ return eqDivConst(m); }},
     {n:['ax + b = c','ax + b = c'], goal:4000, shape:null,
      tip:['Primeiro afaste a constante (some/subtraia dos dois lados), depois divida.','First move the constant away (add/subtract on both sides), then divide.'],
      gen(m,tr){ const a=rr(2,mix(6,12,m)), x=rr(2,mix(9,20,m)); let B=rr(1,mix(10,40,m))*(Math.random()<0.5?1:-1);
        if(a*x+B<=0) B=-B;
        return eqItem(a,B,0,a*x+B,x); }},
+    {n:['a(x + b) = c','a(x + b) = c'], goal:4500, shape:null,
+     tip:['Divida os dois lados por a primeiro; sobra x + b. 2(x + 4) = 26 → x + 4 = 13 → x = 9.','Divide both sides by a first, leaving x + b. 2(x + 4) = 26 → x + 4 = 13 → x = 9.'],
+     gen(m,tr){ return eqParenConst(m); }},
     {n:['ax + b = cx + d','ax + b = cx + d'], goal:5500, shape:null,
      tip:['Junte os x de um lado e os números do outro.','Gather the x terms on one side and the numbers on the other.'],
      gen(m,tr){ const a=rr(3,mix(6,12,m)), c=rr(1,a-1), x=rr(2,mix(9,15,m)); let B=rr(1,mix(10,40,m))*(m>0.5&&Math.random()<0.4?-1:1);
        if((a-c)*x+B<=0) B=Math.abs(B);
        return eqItem(a,B,c,(a-c)*x+B,x); }},
+    {n:['(x + b)/a = c','(x + b)/a = c'], goal:5000, shape:null,
+     tip:['Multiplique os dois lados por a: x + b = a × c. Depois tire o b. (x + 4)/3 = 7 → x + 4 = 21 → x = 17.','Multiply both sides by a: x + b = a × c. Then remove b. (x + 4)/3 = 7 → x + 4 = 21 → x = 17.'],
+     gen(m,tr){ return eqFracParen(m); }},
+    {n:['Proporção: x/a = b/c','Proportion: x/a = b/c'], goal:6000, shape:null,
+     tip:['Simplifique b/c e multiplique por a (ou cruze: x × c = a × b). x/4 = 9/6 = 3/2 → x = 4 × 3/2 = 6.','Simplify b/c and multiply by a (or cross-multiply: x × c = a × b). x/4 = 9/6 = 3/2 → x = 4 × 3/2 = 6.'],
+     gen(m,tr){ return eqProportion(m); }},
     {n:['Com números negativos','With negative numbers'], goal:7500, shape:null,
      tip:['Cuidado com o sinal ao mudar um termo de lado.','Watch the sign when moving a term across the equals sign.'],
      gen(m,tr){ let x,a,c,B,d,t=0;
@@ -846,7 +1010,10 @@ const TRACKS = {
            B=rr(-mix(15,85,m), mix(15,85,m)); d=(a-c)*x+B; t++; }
        while((a===c || x===0 || Math.abs(d)>1999) && t<40);
        if(a===c || x===0){ a=3; c=1; x=4; B=5; d=(a-c)*x+B; }
-       return eqItem(a,B,c,d,x); }}
+       return eqItem(a,B,c,d,x); }},
+    {n:['a(x + b) = cx + d','a(x + b) = cx + d'], goal:7000, shape:null,
+     tip:['Distribua o a, junte os x de um lado e os números do outro. 2(x + 1) = x + 9 → 2x + 2 = x + 9 → x = 7.','Distribute a, gather the x terms on one side and the numbers on the other. 2(x + 1) = x + 9 → 2x + 2 = x + 9 → x = 7.'],
+     gen(m,tr){ return eqParenBoth(m); }}
   ]}
 };
 /* ---------- números negativos nos levels finais ----------
@@ -902,7 +1069,10 @@ const LADDERS = {
   soma:{v:2, map:[1,2,3,4,6,7,9,10]},
   subtracao:{v:2, map:[1,2,3,4,6,7,9,10]},
   multiplicacao:{v:2, map:[1,2,4,5,7,8,9,10]},
-  divisao:{v:2, map:[1,2,4,5,7,8]}
+  divisao:{v:2, map:[1,2,4,5,7,8]},
+  // v2 (frações e equações): levels novos de simplificação, fração de quantidade, parênteses, frações e proporção.
+  fracoes:{v:2, map:[1,3,4,7,9]},
+  equacoes:{v:2, map:[1,2,4,6,9]}
 };
 const ladderVersion = key=>(LADDERS[key] && LADDERS[key].v) || 1;
 // Posição nova de um level da escada antiga (clamp ao tamanho da escada antiga).

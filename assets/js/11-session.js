@@ -16,6 +16,7 @@
    Nada além do 1º é serializado. */
 // A resposta digitada confere com a da conta? (comparação de frações usa < = >; decimais aceitam vírgula)
 function answerMatches(typed, item){
+  if(item.answerFrac) return typed.length>0 && fracTypedMatches(typed, item);
   const code = COMPARE_SYMBOLS[typed];
   return typed.length>0 && (code!==undefined ? code===item.answer : (+typed.replace(',', '.') === item.answer));
 }
@@ -132,7 +133,7 @@ const Session = {
     this.presentItem(item);
   },
   presentItem(item){
-    UI.setKeypadMode(item.op==='fracao_comparacao' ? 'comparison' : 'numeric');
+    UI.setKeypadMode(UI.keypadModeFor(item));
     this.typed = ''; this.firstKeyAt = 0; this.qShownAt = U.now();
     if(Engine.block && Engine.block.kind==='mix'){
       // a trilha muda de uma conta para a outra: atualiza o selo (símbolo, nome, cor) antes de desenhar a conta
@@ -190,6 +191,11 @@ const Session = {
       this.firstKeyAt = U.now();
       clearTimeout(this.itemTimeoutHandle);   // já está digitando: não abandona no meio da resposta
     }
+    if(d==='slash'){
+      if(!this.current.answerFrac || !this.typed.length || this.typed.includes('/')) return;
+      this.typed += '/'; UI.updateAnswerDisplay(this.typed); return;
+    }
+    if(this.current.answerFrac && (d==='sign' || d==='dec')) return;   // resposta em fração: só dígitos e "/"
     if(d==='sign'){ this.typed = this.typed.startsWith('-') ? this.typed.slice(1) : ('-'+this.typed); UI.updateAnswerDisplay(this.typed); return; }
     if(d==='dec'){
       if(this.typed.includes(',') || this.typed.includes('.')) return;
@@ -205,7 +211,7 @@ const Session = {
     // bate — exceto resposta que pode ser negativa ou decimal (o auto-envio dispararia cedo).
     const isDecimalItem = !!(this.current.features && this.current.features.decimalPlaces);
     if(Store.data.settings.confirmBeforeAccept) return;
-    if(this.current.answer>=0 && Number.isInteger(this.current.answer) && !isDecimalItem && digitsOnly.length>=expectedLen) this.evaluate(false);
+    if(!this.current.answerFrac && this.current.answer>=0 && Number.isInteger(this.current.answer) && !isDecimalItem && digitsOnly.length>=expectedLen) this.evaluate(false);
   },
   submitComparison(sym){
     if(!this.active || this.paused || !this.current || this.answering || this.inputLocked) return;

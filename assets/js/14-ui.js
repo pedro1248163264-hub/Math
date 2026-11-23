@@ -411,6 +411,7 @@ const UI = {
     if(window.PointerEvent) btn.addEventListener('pointerdown', e=>{ e.preventDefault(); handler(); });
     else btn.addEventListener('click', handler);
   },
+  keypadModeFor(item){ return item.answerFrac ? 'fraction' : item.op==='fracao_comparacao' ? 'comparison' : 'numeric'; },
   setKeypadMode(mode){
     if(this.keypadMode===mode) return;
     this.keypadMode = mode;
@@ -432,17 +433,26 @@ const UI = {
       grid.appendChild(okBtn);
       return;
     }
-    ['1','2','3','4','5','6','7','8','9','±','0','←'].forEach(k=>{
+    const fracMode = this.keypadMode==='fraction';   // resposta em fração: "/" no lugar de ±, sem vírgula
+    ['1','2','3','4','5','6','7','8','9',fracMode?'/':'±','0','←'].forEach(k=>{
       const btn = document.createElement('button');
-      btn.className = 'key'+(k==='←'||k==='±' ? ' func':'');
+      btn.className = 'key'+(k==='←'||k==='±'||k==='/' ? ' func':'');
       btn.textContent = k;
       this.pressKey(btn, ()=>{
         if(k==='←') this.ctl().submitDigit('back');
         else if(k==='±') this.ctl().submitDigit('sign');
+        else if(k==='/') this.ctl().submitDigit('slash');
         else this.ctl().submitDigit(k);
       });
       grid.appendChild(btn);
     });
+    if(fracMode){
+      const ok3 = document.createElement('button');
+      ok3.className = 'key func wide3'; ok3.dataset.ok = '1'; ok3.textContent = '✓';
+      this.pressKey(ok3, ()=>this.ctl().evaluate(false));
+      grid.appendChild(ok3);
+      return;
+    }
     const decBtn = document.createElement('button');
     decBtn.className = 'key func'; decBtn.textContent = U.decimalSep();
     this.pressKey(decBtn, ()=>this.ctl().submitDigit('dec'));
@@ -462,6 +472,7 @@ const UI = {
       }
       if(/^[0-9]$/.test(e.key)) c.submitDigit(e.key);
       else if(e.key==='Backspace') c.submitDigit('back');
+      else if(e.key==='/'){ e.preventDefault(); c.submitDigit('slash'); }
       else if(e.key==='-') c.submitDigit('sign');
       else if(e.key==='.' || e.key===',') c.submitDigit('dec');
       else if(e.key==='<') c.submitComparison('<');
@@ -530,6 +541,9 @@ const UI = {
     else wrap.append(this.mathExpr(n.l), this.mathOperator(n.op), this.mathExpr(n.r));
     return wrap;
   },
+  eqSide(segs){
+    return segs.map(sg=>typeof sg==='string' ? this.mathSpan(sg) : this.mathFraction(this.mathSpan(sg.n), this.mathSpan(sg.d)));
+  },
   linearEquationPart(coef, constant){
     const fragment = document.createDocumentFragment();
     if(coef!==0){
@@ -546,12 +560,26 @@ const UI = {
     const longChain = !!(item.terms && item.ops && item.ops.length>=2 && item.exprText);   // 3+ parcelas (ex.: 384 + 278 + 398 + 210)
     eqEl.classList.toggle('fit-chars', !!item.tree || longChain);
     if(item.tree || longChain) eqEl.style.setProperty('--chars', String(item.exprText.length));
+    if(item.eqL){
+      const line = document.createElement('div');
+      line.className = 'math-equation-line';
+      line.append(...this.eqSide(item.eqL), this.mathSpan(' = ', 'math-operator'), ...this.eqSide(item.eqR));
+      eqEl.append(this.mathSpan('x = ?', 'math-equation-prompt'), line);
+      return;
+    }
     if(item.isEquation){
       const prompt = this.mathSpan('x = ?', 'math-equation-prompt');
       const line = document.createElement('div');
       line.className = 'math-equation-line';
       line.append(this.linearEquationPart(item.a, item.b), this.mathSpan(' = ', 'math-operator'), this.linearEquationPart(item.c, item.d));
       eqEl.append(prompt, line);
+      return;
+    }
+    if(item.features && item.features.fracOf){
+      const row = document.createElement('div');
+      row.className = 'math-row';
+      row.append(this.mathFraction(this.mathSpan(String(item.a)), this.mathSpan(String(item.b))), this.mathSpan(t('frac_of'), 'math-operator'), this.mathSpan(String(item.c)));
+      eqEl.append(row);
       return;
     }
     if(item.op==='porcentagem_original'){
@@ -599,6 +627,12 @@ const UI = {
         : `${U.fmtNum(item.a)} ${item.symbol} ${U.fmtNum(item.b)}`;
       row.textContent = text;
     }
+    if(item.features && item.features.simplify){
+      const pure = !item.ops || !item.ops.length;
+      if(pure) row.append(this.mathSpan('=', 'math-operator'), this.mathSpan('?'));
+      eqEl.append(row, this.mathSpan(t(pure ? 'frac_prompt_simplify' : 'frac_prompt_calc'), 'math-equation-prompt below'));
+      return;
+    }
     eqEl.append(row);
   },
   renderQuestion(item, onReady){
@@ -634,7 +668,7 @@ const UI = {
   },
   showCorrectAnswer(item){
     const isCmp = item && item.op==='fracao_comparacao';
-    const value = isCmp ? compareSymbolOf(item.answer) : U.fmtNum(item && item.answer);
+    const value = isCmp ? compareSymbolOf(item.answer) : fmtAnswer(item);
     $('feedbackAnswer').textContent = t('answer_label')+': '+value;
   },
   showHint(text){ $('feedbackHint').textContent = text; },

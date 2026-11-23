@@ -11,10 +11,12 @@
 const EXPR_WORDS = {
   'pt-BR':{soma:'mais', subtracao:'menos', multiplicacao:'vezes', divisao:'dividido por', open:'abre parênteses', close:'fecha parênteses',
     openB:'abre colchetes', closeB:'fecha colchetes', openC:'abre chaves', closeC:'fecha chaves',
-    root:'raiz quadrada de', croot:'raiz cúbica de', pow:'elevado a', of:'de', over:'sobre', equals:'igual a', compare:'comparado com'},
+    root:'raiz quadrada de', croot:'raiz cúbica de', pow:'elevado a', of:'de', over:'sobre', equals:'igual a', compare:'comparado com',
+    simplify:'simplifique', calcSimplify:'calcule e simplifique'},
   'en-US':{soma:'plus', subtracao:'minus', multiplicacao:'times', divisao:'divided by', open:'open parenthesis', close:'close parenthesis',
     openB:'open bracket', closeB:'close bracket', openC:'open brace', closeC:'close brace',
-    root:'square root of', croot:'cube root of', pow:'to the power of', of:'of', over:'over', equals:'equals', compare:'compared with'}
+    root:'square root of', croot:'cube root of', pow:'to the power of', of:'of', over:'over', equals:'equals', compare:'compared with',
+    simplify:'simplify', calcSimplify:'calculate and simplify'}
 };
 function speakTerm(term, w){
   if(term.kind==='power') return `${term.base<0?w.subtracao+' '+Math.abs(term.base):term.base} ${w.pow} ${term.exp}`;
@@ -39,7 +41,29 @@ function speakExpr(n, w){
   if(n.t==='pow') return `${speakExpr(n.base, w)} ${w.pow} ${n.exp}`;
   return `${speakExpr(n.l, w)} ${w[n.op]} ${speakExpr(n.r, w)}`;
 }
+// Lado de equação em segmentos (texto ou fração {n,d}): lê os símbolos pelo nome; "2(x + 4)" vira "2 vezes abre parênteses…".
+function speakSegText(str, w){
+  let out = '';
+  for(let i=0;i<str.length;i++){
+    const ch = str[i];
+    if(ch==='(') out += (i>0 && /\d/.test(str[i-1]) ? ` ${w.multiplicacao} ` : ' ') + w.open + ' ';
+    else if(ch===')') out += ' '+w.close+' ';
+    else if(ch==='+') out += ' '+w.soma+' ';
+    else if(ch==='−') out += ' '+w.subtracao+' ';
+    else if(ch==='x') out += ' x ';
+    else out += ch;
+  }
+  return out.replace(/\s+/g,' ').trim();
+}
+function speakSegs(segs, w){
+  return segs.map(sg=>{
+    if(typeof sg==='string') return speakSegText(sg, w);
+    const multi = /[ +−]/.test(sg.n), num = speakSegText(sg.n, w);
+    return `${multi ? w.open+' '+num+' '+w.close : num} ${w.over} ${sg.d}`;
+  }).join(' ');
+}
 function speakEquation(item, w){
+  if(item.eqL) return `${speakSegs(item.eqL, w)} ${w.equals} ${speakSegs(item.eqR, w)}`;
   const left = fmtCoefTerm(item.a).replace('−', w.subtracao+' ').replace('x', ' x') + (item.b!==0 ? ` ${item.b>0?w.soma:w.subtracao} ${Math.abs(item.b)}` : '');
   const right = item.c!==0
     ? fmtCoefTerm(item.c).replace('−', w.subtracao+' ').replace('x', ' x') + (item.d!==0 ? ` ${item.d>0?w.soma:w.subtracao} ${Math.abs(item.d)}` : '')
@@ -75,8 +99,12 @@ function spokenPhrase(item, voiceLang){
     return `${item.a} ${w.over} ${item.b} ${w.compare} ${item.c} ${w.over} ${item.d}`;
   }
   if(item.op==='equacao') return speakEquation(item, w);
+  if(item.features && item.features.fracOf) return `${item.a} ${w.over} ${item.b} ${w.of} ${item.c}`;
   if(item.tree) return speakExpr(item.tree, w);
-  if(item.terms && item.ops) return speakChain(item.terms, item.ops, w);
+  if(item.terms && item.ops){
+    const body = speakChain(item.terms, item.ops, w);
+    return item.features && item.features.simplify ? `${item.ops.length ? w.calcSimplify : w.simplify}: ${body}` : body;
+  }
   if(item.op==='expressao'){
     if(item.midOp){
       return `${w.open} ${item.a} ${w[item.leftOp]} ${item.b} ${w.close} ${w[item.midOp]} ${w.open} ${item.c} ${w[item.rightOp]} ${item.d} ${w.close}`;

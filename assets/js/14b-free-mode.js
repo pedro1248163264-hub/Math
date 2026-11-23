@@ -104,7 +104,7 @@ const FreeMode = {
     const item = this.makeItem();
     this.current = item;
     UI.setBlockChip({track:item.key, kind:'free', level:item.level});
-    UI.setKeypadMode(item.op==='fracao_comparacao' ? 'comparison' : 'numeric');
+    UI.setKeypadMode(UI.keypadModeFor(item));
     UI.clearAnswerFeedback();
     UI.renderQuestion(item, ()=>{
       if(!this.active || this.current!==item) return;
@@ -124,6 +124,11 @@ const FreeMode = {
   submitDigit(d){
     if(!this.active || !this.current || this.answering || this.awaitingNext || this.inputLocked) return;
     if(d==='back'){ this.typed = this.typed.slice(0,-1); UI.updateAnswerDisplay(this.typed); return; }
+    if(d==='slash'){
+      if(!this.current.answerFrac || !this.typed.length || this.typed.includes('/')) return;
+      this.typed += '/'; UI.updateAnswerDisplay(this.typed); return;
+    }
+    if(this.current.answerFrac && (d==='sign' || d==='dec')) return;
     if(d==='sign'){ this.typed = this.typed.startsWith('-') ? this.typed.slice(1) : ('-'+this.typed); UI.updateAnswerDisplay(this.typed); return; }
     if(d==='dec'){
       if(this.typed.includes(',') || this.typed.includes('.')) return;
@@ -134,7 +139,7 @@ const FreeMode = {
     const item = this.current, digitsOnly = this.typed.replace('-','');
     const isDecimalItem = !!(item.features && item.features.decimalPlaces);
     if(Store.data.settings.confirmBeforeAccept) return;
-    if(item.answer>=0 && Number.isInteger(item.answer) && !isDecimalItem && digitsOnly.length>=String(Math.abs(item.answer)).length) this.evaluate();
+    if(!item.answerFrac && item.answer>=0 && Number.isInteger(item.answer) && !isDecimalItem && digitsOnly.length>=String(Math.abs(item.answer)).length) this.evaluate();
   },
   submitComparison(sym){
     if(!this.active || !this.current || this.answering || this.awaitingNext || this.inputLocked) return;

@@ -53,6 +53,7 @@ const I18N = {
     confirm_exit_training:'Sair da rodada agora? Seu progresso até aqui fica salvo.', exit_training:'Sair do treino',
     answer_required:'Digite uma resposta antes de confirmar.', no_track:'Nenhuma trilha ativa.',
     answer_label:'Resposta',
+    frac_of:'de', frac_prompt_simplify:'simplifique', frac_prompt_calc:'calcule e simplifique',
     // resumo
     round_done:'Rodada concluída', round_partial:'Rodada encerrada', xp_earned:'XP ganho',
     accuracy_cap:'Precisão', median_cognitive:'Tempo mediano', target_rate:'Dentro da meta', max_combo:'Melhor combo',
@@ -172,6 +173,7 @@ const I18N = {
     confirm_exit_training:'Leave this round now? Your progress so far is saved.', exit_training:'Exit training',
     answer_required:'Enter an answer before confirming.', no_track:'No active track.',
     answer_label:'Answer',
+    frac_of:'of', frac_prompt_simplify:'simplify', frac_prompt_calc:'calculate and simplify',
     round_done:'Round complete', round_partial:'Round ended', xp_earned:'XP earned',
     accuracy_cap:'Accuracy', median_cognitive:'Median time', target_rate:'On target', max_combo:'Best combo',
     rewards:'Achievements', nothing_new:'Keep going: the next level gets closer with every problem.',

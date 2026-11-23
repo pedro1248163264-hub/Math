@@ -365,7 +365,7 @@ const Engine = {
     return {key, level, m, op,
       a:gen.a, b:gen.b, c:gen.c, d:gen.d, answer:gen.answer, features:gen.features||{}, exprText:gen.exprText,
       tree:gen.tree, terms:gen.terms, ops:gen.ops, innerOp:gen.innerOp, outerOp:gen.outerOp, leftOp:gen.leftOp, rightOp:gen.rightOp,
-      midOp:gen.midOp, isEquation:!!gen.isEquation, isReversePath:!!gen.isReversePath,
+      midOp:gen.midOp, isEquation:!!gen.isEquation, eqL:gen.eqL, eqR:gen.eqR, answerFrac:gen.answerFrac, isReversePath:!!gen.isReversePath,
       pairKind:gen.pairKind, pair:gen.pair, digitKey:gen.digitKey, digits:gen.digits,
       symbol:opDef.symbol, label:opDef.label, kcLabel:trackLabel(key)};
   },
@@ -405,7 +405,7 @@ const Engine = {
     let b = this.block;
     if(b && b.kind==='mix') b = b.subs.find(s=>s.key===item.key) || null;   // bloco misto: a conta pertence ao sub-bloco da trilha dela
     const out = {zone:null, xp:0, lapse:false, hint:null, events:[], blockDone:false, blockResult:null};
-    out.lapse = !correct && !timedOut && (ms<IMPULSE_FLOOR || this.isTypoLapse(typedRaw, item.answer));
+    out.lapse = !correct && !timedOut && (ms<IMPULSE_FLOOR || (!item.answerFrac && this.isTypoLapse(typedRaw, item.answer)));
     out.zone = correct ? this.zone(ms, item.goalMs, item.limitMs) : null;
     out.targetHit = out.zone==='fast';
     out.etype = timedOut ? 'abandono' : !correct ? 'erro' : out.zone==='fast' ? 'meta' : out.zone==='ok' ? 'bom' : 'lento_correto';

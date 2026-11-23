@@ -26,9 +26,9 @@ A v1 sorteava a próxima conta entre ~40 famílias, uma a uma, e ajustava a difi
 | Divisão | 9 (tabuada → 4 dígitos ÷ 1 dígito, com **3 levels de divisões em sequência**) | sim |
 | Porcentagem | 6 (10% e 50% → acréscimo/desconto → "é quantos %?" → valor original, variação e descontos sucessivos) | não |
 | Contas com vírgula | 6 | não |
-| Frações | 5 (soma/subtração, multiplicação/divisão, comparação) | não |
+| Frações | 11 (comparação, **simplificação**, soma/subtração com **denominadores diferentes**, **fração de uma quantidade**, multiplicação/divisão, tudo com resultado **simplificado**) | não |
 | Expressões | 15 (parênteses, cadeias, dois parênteses, **potências, cubos e raízes simples**, **ordem das operações**, **sinal na frente do parêntese**, **× e ÷ em ordem**, **colchetes**, **chaves** **potência de grupo** e, depois deles, **4 levels de misturas com números maiores**) | não |
-| Equações | 5 | não |
+| Equações | 10 (`x + b = c` até **`x/a ± b = c`**, **`a(x + b) = c`**, **`(x + b)/a = c`**, **proporção** e **parênteses com x dos dois lados**) | não |
 
 Potenciação e radiciação **não são trilhas**: aparecem só dentro das Expressões, de forma leve (quadrados de bases até 13, cubos de bases até 5 — inclusive negativas, p.ex. (−3)³ — e raízes quadradas exatas até √169), para treinar a ordem das operações.
 
@@ -51,6 +51,42 @@ Os 5 últimos levels da trilha (7–11) usam uma **árvore de expressão** (`X` 
 - **Voz:** cada símbolo é dito pelo nome ("abre colchetes", "fecha chaves") e o `−` na frente de grupo/base é lido como "menos".
 - **Tela:** a fonte encolhe com o tamanho da conta (`.fit-chars`) para não passar da largura do celular.
 - **Migração:** quem já tinha concluído a trilha (6/6) antes dos levels novos volta ao level 7 (as estrelas ficam); trilhas realmente concluídas não mudam.
+
+### Frações e Equações (v2 da escada)
+
+**Frações (11 levels)** — a resposta pode ser uma **fração simplificada**: o teclado troca `±` e vírgula pela tecla **`/`** (também vale o `/` do teclado físico) e a pessoa digita `3/4`. Fração não simplificada (`6/8`) conta como erro; resposta inteira digita-se só o número. Nunca há auto-envio nesses levels (use ✓). Item: `answerFrac {n,d}` (irredutível) + `answer` = valor (só para verificadores); `fmtAnswer`/`fracTypedMatches` em `04-operations.js`.
+
+| Lv | Nome | Exemplo → resposta |
+|---|---|---|
+| 1 | Comparar: mesmo denominador ou numerador | `3/8 ? 3/4` |
+| 2 | **Simplificar fração** | `18/24 = ?` → `3/4` |
+| 3 | Comparar: multiplicação cruzada | `3/4 ? 5/6` |
+| 4 | Soma/subtração (mesmo denominador, resultado inteiro) | `11/3 − 5/3` → `2` |
+| 5 | **Mesmo denominador, simplificando** | `7/10 + 1/10` → `4/5` |
+| 6 | **Fração de uma quantidade** | `3/4 de 48` → `36` |
+| 7 | Multiplicar e dividir (resultado inteiro) | `35/3 × 3/7` → `5` |
+| 8 | **Um denominador é múltiplo do outro** | `5/6 − 2/3` → `1/6` |
+| 9 | Comparar quase-empates | `4/13 ? 1/2` |
+| 10 | **Multiplicar e dividir, simplificando** | `3/4 × 2/9` → `1/6` |
+| 11 | **Denominadores diferentes** | `1/2 + 1/3` → `5/6` |
+
+Geradores: `fracSimplify`, `fracAddSubSimplify`, `fracOfQty`, `fracAddSubDiff(m,'multiple'|'other')`, `fracMulDivSimplify` em `06-tracks.js`. Resultados podem ser impróprios (`13/12`); não há número misto.
+
+**Equações (10 levels)** — resposta sempre inteira. As formas novas usam `eqL`/`eqR` (listas de segmentos: texto ou fração `{n,d}`) em vez de `a,b,c,d`; tela (`UI.eqSide`), voz (`speakSegs`) e teste usam a mesma lista.
+
+| Lv | Nome | Exemplo |
+|---|---|---|
+| 1–2 | `x + b = c` · `ax = c` | `x − 7 = 2` · `6x = 30` |
+| 3 | **`x/a ± b = c`** | `x/3 + 8 = 15` |
+| 4 | `ax + b = c` | `3x + 10 = 28` |
+| 5 | **`a(x + b) = c`** | `2(x + 4) = 26` |
+| 6 | `ax + b = cx + d` | `5x + 9 = 4x + 17` |
+| 7 | **`(x + b)/a = c`** | `(x + 4)/3 = 7` |
+| 8 | **Proporção `x/a = b/c`** | `x/4 = 9/6` → `6` |
+| 9 | Com números negativos | `−5x − 20 = −90` |
+| 10 | **`a(x + b) = cx + d`** | `2(x + 1) = x + 9` |
+
+**Migração:** `LADDERS.fracoes = {v:2, map:[1,3,4,7,9]}` e `LADDERS.equacoes = {v:2, map:[1,2,4,6,9]}` (level, estrelas, subida, recordes, dicas e histórico acompanham; quem tinha concluído reabre no primeiro level novo sem estrela). Cache do service worker: `mental-math-v2-17`.
 
 ### Contas de várias parcelas (Soma, Subtração, Multiplicação e Divisão)
 

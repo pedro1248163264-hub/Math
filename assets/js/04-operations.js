@@ -46,3 +46,15 @@ function applyOp2(opKey, x, y){
 // (13-ui.js). O inverso só é seguro para itens de comparação (op checada antes).
 const COMPARE_SYMBOLS = {'<':-1, '=':0, '>':1};
 function compareSymbolOf(code){ return code<0 ? '<' : code>0 ? '>' : '='; }
+// Resposta em fração simplificada ({n,d}, d=1 → inteiro): texto mostrado e conferência do que foi digitado ("3/4").
+function fmtAnswer(item){
+  if(!item) return '';
+  const f = item.answerFrac;
+  return f ? (f.d===1 ? String(f.n) : f.n+'/'+f.d) : U.fmtNum(item.answer);
+}
+function fracTypedMatches(typed, item){
+  const m = /^(\d+)(?:\/(\d+))?$/.exec(typed);
+  if(!m) return false;
+  const n = +m[1], d = m[2]===undefined ? 1 : +m[2];
+  return d>0 && n===item.answerFrac.n && d===item.answerFrac.d;   // fração não simplificada (6/8) não vale
+}
