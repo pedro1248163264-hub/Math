@@ -14,7 +14,9 @@ document.addEventListener('DOMContentLoaded', ()=>{
   UI.init();
   // Registrado sempre: ao mudar para "Automático" nos ajustes o tema passa a seguir o sistema.
   if(window.matchMedia){
-    window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', ()=>UI.applyTheme());
+    const dark = window.matchMedia('(prefers-color-scheme: dark)'), onChange = ()=>UI.applyTheme();
+    if(dark.addEventListener) dark.addEventListener('change', onChange);
+    else if(dark.addListener) dark.addListener(onChange);   // Safari antigo
   }
 });
 if('serviceWorker' in navigator){

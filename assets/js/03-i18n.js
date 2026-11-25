@@ -72,8 +72,8 @@ const I18N = {
     level_up_title:'Nível {n} conquistado!', continue_btn:'Continuar',
     // estatísticas
     stats_title:'Estatísticas', avg_accuracy:'Precisão média', avg_time_item:'Tempo médio / conta', all_operations:'todas as trilhas',
-    evolution_time:'Evolução — tempo médio', evolution_acc:'Evolução — precisão', median:'Mediana', p90:'Percentil 90',
-    by_track:'Por trilha', no_data_today:'sem dados hoje', today:'hoje', last_session:'última rodada', no_data_yet:'sem dados ainda',
+    evolution_time:'Evolução — tempo médio', evolution_acc:'Evolução — precisão', p90:'Percentil 90',
+    by_track:'Por trilha', no_data_today:'sem dados hoje',
     last_30_days:'últimos 30 dias', overall:'geral', no_data:'sem dados', not_enough_data:'Dados insuficientes',
     // ajustes
     settings_title:'Ajustes',
@@ -190,8 +190,8 @@ const I18N = {
     test_result_pass:'Passed!', test_result_fail:'So close', test_result_line:'{c}/{total} right · {h} on target · median {med}',
     level_up_title:'Level {n} conquered!', continue_btn:'Continue',
     stats_title:'Statistics', avg_accuracy:'Avg. accuracy', avg_time_item:'Avg. time / problem', all_operations:'all tracks',
-    evolution_time:'Evolution — average time', evolution_acc:'Evolution — accuracy', median:'Median', p90:'90th percentile',
-    by_track:'By track', no_data_today:'no data today', today:'today', last_session:'last round', no_data_yet:'no data yet',
+    evolution_time:'Evolution — average time', evolution_acc:'Evolution — accuracy', p90:'90th percentile',
+    by_track:'By track', no_data_today:'no data today',
     last_30_days:'last 30 days', overall:'overall', no_data:'no data', not_enough_data:'Not enough data',
     settings_title:'Settings',
     section_goals:'Goals and challenge', daily_goal:'Daily goal', daily_goal_sub:'Measure by number of problems or by training time per day. Hitting the goal keeps your streak.',

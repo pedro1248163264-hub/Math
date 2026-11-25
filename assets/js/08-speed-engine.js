@@ -359,7 +359,7 @@ const Engine = {
     return this.generateItem(b.key, level, m, {kind, isWarmup, isReinforce, size, mix:b.mix});
   },
   // Campos da conta a partir do que o gerador devolveu (sem tempos). Compartilhado com o Modo livre
-  // (12-free-mode.js), que não usa a trilha da pessoa — assim a conta tem sempre o mesmo formato.
+  // (14b-free-mode.js), que não usa a trilha da pessoa — assim a conta tem sempre o mesmo formato.
   itemFromGen(gen, key, level, m){
     const op = gen.op || TRACKS[key].op, opDef = OPS[op];
     return {key, level, m, op,

@@ -4,7 +4,7 @@
    dos contadores de vai-um/empréstimo, e a ÁRVORE DE EXPRESSÃO (grupos aninhados com
    parênteses, colchetes e chaves).
    Depende de: 01-utils.js (U), 04-operations.js (OPS).
-   Usado por: 06-tracks.js (geradores), 09-feedback.js e 13-ui.js.
+   Usado por: 06-tracks.js (geradores), 09-feedback.js e 14-ui.js.
    ===================================================================== */
 
 /* "Termo" = unidade de operando dentro de uma conta maior. Cada gerador de termo devolve

@@ -42,8 +42,8 @@ function applyOp2(opKey, x, y){
 
 // Comparação de frações: o símbolo respondido (<, > ou =) viaja como inteiro no campo
 // `answer` (mesma exigência de resposta numérica das demais contas). Fonte única do
-// mapeamento — usada pela correção (10-session.js), pelo teclado e pelo feedback de erro
-// (13-ui.js). O inverso só é seguro para itens de comparação (op checada antes).
+// mapeamento — usada pela correção (11-session.js), pelo teclado e pelo feedback de erro
+// (14-ui.js). O inverso só é seguro para itens de comparação (op checada antes).
 const COMPARE_SYMBOLS = {'<':-1, '=':0, '>':1};
 function compareSymbolOf(code){ return code<0 ? '<' : code>0 ? '>' : '='; }
 // Resposta em fração simplificada ({n,d}, d=1 → inteiro): texto mostrado e conferência do que foi digitado ("3/4").

@@ -1119,7 +1119,9 @@ ok(!TRACKS.potencia && !TRACKS.raiz, 'não há trilhas próprias de potência/ra
   const cur = Session.current; while(Session.inputLocked) await sleep(1);
   for(const ch of String(cur.answer).replace('.',',')) Session.submitDigit(ch==='-'?'sign':ch===','?'dec':ch);
   Session.evaluate(false);
-  ok(goalScreens.length===0, 'tela só entra depois do feedback da conta'); await sleep(10);
+  ok(goalScreens.length===0, 'tela só entra depois do feedback da conta');
+  // o feedback encadeia dois setTimeout(0): esperar um tempo fixo é frágil no Windows
+  for(let waitGuard=0; waitGuard<200 && (goalScreens.length===0 || Session.goalPending); waitGuard++) await sleep(1);
   ok(goalScreens.length===1 && Session.goalPending===false, 'terminada a conta, a tela de meta aparece uma vez');
   await play(()=>false);
   ok(summary && summary.completed && summary.goal.mode==='time' && summary.goal.hit && goalScreens.length===1, 'rodada por tempo termina com resumo da meta');

@@ -114,7 +114,8 @@ const Export = {
       lv.forEach(l=>{
         const a = core.filter(r=>r.key===k && r.level===l); if(a.length<10) return;
         const c = a.filter(r=>r.ok), n15 = Math.min(15, Math.floor(c.length/2));
-        const r0 = n15>=4 ? med(c.slice(0,n15).map(r=>r.ms/r.goal)) : null, r1 = n15>=4 ? med(c.slice(-n15).map(r=>r.ms/r.goal)) : null;
+        const ratio = r=>r.ms/(r.limit||r.goal*1.7);
+        const r0 = n15>=4 ? med(c.slice(0,n15).map(ratio)) : null, r1 = n15>=4 ? med(c.slice(-n15).map(ratio)) : null;
         L.push('| '+trackLabel(k)+' | '+l+' | '+a.length+' | '+pct(c.length/a.length)+' | '+f2(r0)+' | '+f2(r1)+' | '+(r0&&r1?(r1<r0?'−':'+')+Math.abs(Math.round((r1-r0)/r0*100))+'%':'—')+' | '+dayOf(a[0].t)+' | '+dayOf(a[a.length-1].t)+' |');
       });
     });

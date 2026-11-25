@@ -13,7 +13,7 @@
    Todos os geradores produzem respostas EXATAS (inteiras, ou decimais finitos de 1–2 casas).
    Depende de: 01-utils.js, 02-engine-constants.js, 04-operations.js,
    05-expression-terms.js; usa Engine/Store só em tempo de execução.
-   Usado por: 07-storage.js, 08-speed-engine.js, 09-feedback.js, 11-progress.js, 13-ui.js.
+   Usado por: 07-storage.js, 08-speed-engine.js, 09-feedback.js, 10-progress.js, 14-ui.js.
    ===================================================================== */
 
 /* ---------- helpers de geração ---------- */
@@ -94,16 +94,6 @@ function divTable(tr, lo, hi){
 function divExact(d, qLo, qHi){
   const lo = Math.max(2, qLo), q = rr(lo, Math.max(lo, qHi));
   return {a:d*q, b:d, answer:q, features:{exact:true}};
-}
-
-// ---- potência / raiz ----
-function singleTerm(term){ return {terms:[term], ops:[], answer:term.value, exprText:term.text, features:{}}; }
-function termPair(t1, t2, op){
-  let terms = [t1, t2];
-  if(op==='subtracao' && t1.value<t2.value) terms = [t2, t1];
-  else if(op!=='subtracao' && Math.random()<0.5) terms = [t2, t1];
-  const val = applyOp2(op, terms[0].value, terms[1].value);
-  return {terms, ops:[op], answer:val, exprText:chainText(terms,[op]), features:{}};
 }
 
 // ---- porcentagem ----
